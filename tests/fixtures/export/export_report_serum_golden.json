@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "target": "serum",
+  "success": true,
+  "dropped_count_min": 12,
+  "note": "Golden reference: preset with 16 mod slots → Serum export drops slots 4-15"
+}

@@ -40,3 +40,34 @@ Sidecar `.reelpreset` may reference a sibling `.reelwt` by `wavetable_id` or emb
 | Vital `.vitaltable` | frames, name | full mod matrix, FX |
 | WAV folder | sorted cycles → frames | metadata |
 | Serum `.fxp` | WT osc frames (subset) | full mod routing |
+
+## Export (v1)
+
+Export always from canonical `.reelwt` + `.reelpreset`. CLI:
+
+```bash
+cargo run --bin reelsynth-export -- vital table.reelwt -o table.vitaltable
+cargo run --bin reelsynth-export -- reelpack patch.reelpreset -o out/ \
+  --targets vital,wav,serum,ableton,sfz,midi,audio
+```
+
+Python (PyO3): `export_wavetable_py`, `export_preset_py`, `export_reelpack_py`.
+
+### `reelpack/` layout
+
+```
+my_sound.reelpack/
+  reelpack.json
+  export_report.json
+  canonical/patch.reelpreset
+  canonical/table.reelwt
+  synth/vital/table.vitaltable
+  synth/wav_frames/frame_000.wav …
+  synth/serum/patch_export.fxp
+  synth/ableton/wavetable_map.json
+  daw/midi/melody.mid
+  daw/audio/melody.wav
+  daw/sfz/patch.sfz + samples/
+```
+
+See [INTEROP.md](INTEROP.md) for the full loss matrix and [SERUM_FXP.md](SERUM_FXP.md) for Serum byte layout.

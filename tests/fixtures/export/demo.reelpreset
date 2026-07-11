@@ -1,0 +1,30 @@
+{
+  "schema": "reelsynth-preset-v1",
+  "name": "export_fixture",
+  "wavetable_id": "demo",
+  "wavetable_path": "demo.reelwt",
+  "oscillators": [
+    {"type": "wavetable", "level": 1.0, "position": 12.0, "detune": 0.0, "unison": 1}
+  ],
+  "filter": {"type": "lowpass", "cutoff": 1200, "resonance": 0.3},
+  "envelope": {"attack": 0.01, "decay": 0.2, "sustain": 0.6, "release": 0.4},
+  "lfo": {"rate": 0.5, "depth": 0.2, "target": "wt_position"},
+  "mod_matrix": [
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.35},
+    {"source": "lfo1", "target": "filter_cutoff", "amount": 200.0},
+    {"source": "env1", "target": "filter_cutoff", "amount": 100.0},
+    {"source": "velocity", "target": "osc1_level", "amount": 0.5},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1},
+    {"source": "lfo1", "target": "osc1_position", "amount": 0.1}
+  ]
+}

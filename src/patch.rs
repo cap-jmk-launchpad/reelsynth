@@ -1,11 +1,11 @@
 //! Patch schema parsing (reelsynth-preset-v1).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Oscillator {
-    #[serde(default = "default_wt_type")]
+    #[serde(default = "default_wt_type", rename = "type")]
     pub osc_type: String,
     #[serde(default = "one")]
     pub level: f32,
@@ -29,9 +29,9 @@ fn default_unison() -> u32 {
     1
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Filter {
-    #[serde(default = "default_lp")]
+    #[serde(default = "default_lp", rename = "type")]
     pub filter_type: String,
     #[serde(default = "default_cutoff")]
     pub cutoff: f32,
@@ -46,7 +46,7 @@ fn default_cutoff() -> f32 {
     1200.0
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Envelope {
     #[serde(default = "default_attack")]
     pub attack: f32,
@@ -82,7 +82,7 @@ impl Default for Envelope {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Lfo {
     #[serde(default = "default_lfo_rate")]
     pub rate: f32,
@@ -109,7 +109,7 @@ impl Default for Lfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModSlot {
     pub source: String,
     pub target: String,
@@ -117,7 +117,7 @@ pub struct ModSlot {
     pub amount: f32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Patch {
     #[serde(default)]
     pub schema: String,
@@ -176,6 +176,10 @@ impl Patch {
             }
         }
         serde_json::from_value(v).map_err(|e| e.to_string())
+    }
+
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self).map_err(|e| e.to_string())
     }
 
     pub fn default_mono() -> Self {

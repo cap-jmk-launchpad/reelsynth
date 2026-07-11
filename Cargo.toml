@@ -11,6 +11,11 @@ name = "gen_factory"
 path = "src/bin/gen_factory.rs"
 required-features = []
 
+[[bin]]
+name = "reelsynth-export"
+path = "src/bin/export.rs"
+required-features = []
+
 [lib]
 name = "reelsynth"
 crate-type = ["cdylib", "rlib"]

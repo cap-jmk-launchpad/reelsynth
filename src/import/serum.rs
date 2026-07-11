@@ -8,9 +8,12 @@ pub fn import_serum_fxp(path: &str) -> Result<WavetableBank, String> {
     if data.len() < 60 {
         return Err("truncated .fxp".into());
     }
-    // FXP header: 'CcnK' + size; content type at offset 8
     if &data[0..4] != b"CcnK" {
         return Err("not a valid FXP file (missing CcnK magic)".into());
+    }
+
+    if let Ok(bank) = import_rswt_chunk(&data) {
+        return Ok(bank);
     }
 
     let floats = extract_float_runs(&data);
@@ -26,6 +29,41 @@ pub fn import_serum_fxp(path: &str) -> Result<WavetableBank, String> {
         let start = fi * frame_len;
         let end = (start + frame_len).min(floats.len());
         bank.set_frame_from_cycle(fi, &floats[start..end]);
+    }
+    Ok(bank)
+}
+
+/// Parse ReelSynth-exported RSWT chunk embedded in FXP payload.
+pub fn import_rswt_chunk(data: &[u8]) -> Result<WavetableBank, String> {
+    let tag = b"RSWT";
+    let pos = data
+        .windows(4)
+        .position(|w| w == tag)
+        .ok_or("RSWT chunk not found")?;
+    let mut i = pos + 4;
+    if i + 4 > data.len() {
+        return Err("truncated RSWT name length".into());
+    }
+    let name_len = u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]) as usize;
+    i += 4 + name_len;
+    if i + 8 > data.len() {
+        return Err("truncated RSWT header".into());
+    }
+    let num_frames = u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]) as usize;
+    let frame_size =
+        u32::from_le_bytes([data[i + 4], data[i + 5], data[i + 6], data[i + 7]]) as usize;
+    i += 8 + 16; // skip preset scalar params
+    let needed = num_frames * frame_size;
+    if i + needed * 4 > data.len() {
+        return Err("truncated RSWT frame data".into());
+    }
+    let mut bank = WavetableBank::new(num_frames, frame_size);
+    for fi in 0..num_frames {
+        let start = i + fi * frame_size * 4;
+        for (si, slot) in bank.frame_mut(fi).iter_mut().enumerate() {
+            let off = start + si * 4;
+            *slot = f32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+        }
     }
     Ok(bank)
 }

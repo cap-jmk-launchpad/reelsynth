@@ -2,10 +2,15 @@ pub mod wavetable;
 pub mod patch;
 pub mod voice;
 pub mod import;
+pub mod export;
 
 pub use wavetable::WavetableBank;
 pub use patch::Patch;
 pub use voice::render_note;
+pub use export::{
+    export_preset, export_reelpack, export_wavetable, parse_targets, ExportOptions, ExportReport,
+    ExportTarget,
+};
 
 #[cfg(feature = "python")]
 use numpy::{PyArray1, PyReadonlyArray1};
@@ -93,6 +98,90 @@ fn bank_info(path: &str) -> PyResult<(usize, usize)> {
 }
 
 #[cfg(feature = "python")]
+fn report_to_py(py: Python<'_>, report: export::ExportReport) -> PyResult<PyObject> {
+    let json = serde_json::to_string(&report)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let mod_json = py.import_bound("json")?;
+    let obj = mod_json.call_method1("loads", (json,))?;
+    Ok(obj.unbind())
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
+fn export_wavetable_py(
+    py: Python<'_>,
+    format: &str,
+    input_path: &str,
+    output_path: &str,
+    table_name: Option<&str>,
+) -> PyResult<PyObject> {
+    let target = export::ExportTarget::parse(format)
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(format!("unknown target: {format}")))?;
+    let bank = WavetableBank::read_file(input_path)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+    let opts = export::ExportOptions {
+        table_name: table_name.unwrap_or("reelsynth").into(),
+        ..export::ExportOptions::default()
+    };
+    let report = export::export_wavetable(&bank, target, std::path::Path::new(output_path), &opts);
+    report_to_py(py, report)
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
+fn export_preset_py(
+    py: Python<'_>,
+    format: &str,
+    preset_path: &str,
+    output_path: &str,
+    bank_path: Option<&str>,
+) -> PyResult<PyObject> {
+    let target = export::ExportTarget::parse(format)
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(format!("unknown target: {format}")))?;
+    let preset = export::load_preset(std::path::Path::new(preset_path))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+    let bank = if let Some(bp) = bank_path {
+        WavetableBank::read_file(bp)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?
+    } else {
+        export::resolve_bank_for_preset(std::path::Path::new(preset_path), &preset)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?
+    };
+    let report = export::export_preset(
+        &preset,
+        &bank,
+        target,
+        std::path::Path::new(output_path),
+        &export::ExportOptions::default(),
+    );
+    report_to_py(py, report)
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
+fn export_reelpack_py(
+    py: Python<'_>,
+    preset_path: &str, out_dir: &str, targets_json: Option<&str>) -> PyResult<PyObject> {
+    let targets: Vec<export::ExportTarget> = if let Some(raw) = targets_json {
+        let parsed: Vec<String> = serde_json::from_str(raw)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        parsed
+            .iter()
+            .filter_map(|t| export::ExportTarget::parse(t))
+            .collect()
+    } else {
+        export::parse_targets("vital,wav,serum,ableton,sfz,midi,audio")
+    };
+    let report = export::export_reelpack(
+        std::path::Path::new(preset_path),
+        std::path::Path::new(out_dir),
+        &targets,
+        &export::ExportOptions::default(),
+    );
+    report_to_py(py, report)
+}
+
+#[cfg(feature = "python")]
 #[pymodule]
 fn reelsynth(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(modulated_one_pole_lowpass, m)?)?;
@@ -100,6 +189,9 @@ fn reelsynth(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(write_factory_wavetables, m)?)?;
     m.add_function(wrap_pyfunction!(import_wavetable, m)?)?;
     m.add_function(wrap_pyfunction!(bank_info, m)?)?;
+    m.add_function(wrap_pyfunction!(export_wavetable_py, m)?)?;
+    m.add_function(wrap_pyfunction!(export_preset_py, m)?)?;
+    m.add_function(wrap_pyfunction!(export_reelpack_py, m)?)?;
     m.add("DEFAULT_NUM_FRAMES", wavetable::DEFAULT_NUM_FRAMES)?;
     m.add("DEFAULT_FRAME_SIZE", wavetable::DEFAULT_FRAME_SIZE)?;
     Ok(())

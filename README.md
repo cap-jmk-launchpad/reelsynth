@@ -7,6 +7,7 @@ Open-source wavetable synthesizer engine (MIT). Powers offline rendering in [Ree
 - **WavetableBank** — 256 frames × 2048 samples, linear + spectral crossfade
 - **Voice** — multi-osc wavetable, ADSR, state-variable filter, modulation matrix
 - **Import** — Vital `.vitaltable`, WAV single-cycle folders, Serum `.fxp` (wavetable subset v1)
+- **Export** — Vital, WAV frames, Serum RSWT, Ableton param JSON, SFZ, MIDI, 24-bit audio, `reelpack/` bundle
 - **Formats** — `.reelwt` (binary bank), `.reelpreset` (JSON patch) — see [docs/FORMAT.md](docs/FORMAT.md)
 
 ## Build
@@ -14,6 +15,9 @@ Open-source wavetable synthesizer engine (MIT). Powers offline rendering in [Ree
 ```bash
 # Rust library + tests
 cargo test
+
+# Export CLI
+cargo run --bin reelsynth-export -- --help
 
 # Python wheel (PyO3)
 maturin develop --features python
