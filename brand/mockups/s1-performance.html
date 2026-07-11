@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="reelsynth-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280">
+  <title>ReelSynth S1 — Performance Mockup</title>
+  <link rel="stylesheet" href="mockups.css">
+</head>
+<body>
+  <div class="rs-app rs-app--s1" role="img" aria-label="ReelSynth S1 performance layout mockup">
+    <!-- Header: wordmark only -->
+    <header class="rs-header">
+      <span class="rs-wordmark">ReelSynth</span>
+    </header>
+
+    <div class="rs-s1-main">
+      <!-- Center: preset hero + WT strip -->
+      <main class="rs-s1-center">
+        <div class="rs-spectrum-hero">
+          <h1 class="rs-spectrum-hero__title">Factory Lead</h1>
+          <p class="rs-spectrum-hero__category">Bass · Wavetable · Saw Morph</p>
+          <div class="rs-spectrum-hero__viz">
+            <svg viewBox="0 0 520 160" width="100%" height="100%" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="spec-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#183d50" stop-opacity="0.9"/>
+                  <stop offset="50%" stop-color="#2a6b8a" stop-opacity="0.5"/>
+                  <stop offset="100%" stop-color="#183d50" stop-opacity="0.1"/>
+                </linearGradient>
+              </defs>
+              <rect width="520" height="160" fill="var(--bg)"/>
+              <!-- Static spectrum bars -->
+              <rect x="12" y="90" width="8" height="58" fill="url(#spec-grad)" rx="1"/>
+              <rect x="24" y="72" width="8" height="76" fill="url(#spec-grad)" rx="1"/>
+              <rect x="36" y="48" width="8" height="100" fill="url(#spec-grad)" rx="1"/>
+              <rect x="48" y="28" width="8" height="120" fill="url(#spec-grad)" rx="1"/>
+              <rect x="60" y="18" width="8" height="130" fill="url(#spec-grad)" rx="1"/>
+              <rect x="72" y="12" width="8" height="136" fill="url(#spec-grad)" rx="1"/>
+              <rect x="84" y="8" width="8" height="140" fill="url(#spec-grad)" rx="1"/>
+              <rect x="96" y="6" width="8" height="142" fill="url(#spec-grad)" rx="1"/>
+              <rect x="108" y="10" width="8" height="138" fill="url(#spec-grad)" rx="1"/>
+              <rect x="120" y="16" width="8" height="132" fill="url(#spec-grad)" rx="1"/>
+              <rect x="132" y="24" width="8" height="124" fill="url(#spec-grad)" rx="1"/>
+              <rect x="144" y="34" width="8" height="114" fill="url(#spec-grad)" rx="1"/>
+              <rect x="156" y="44" width="8" height="104" fill="url(#spec-grad)" rx="1"/>
+              <rect x="168" y="52" width="8" height="96" fill="url(#spec-grad)" rx="1"/>
+              <rect x="180" y="58" width="8" height="90" fill="url(#spec-grad)" rx="1"/>
+              <rect x="192" y="64" width="8" height="84" fill="url(#spec-grad)" rx="1"/>
+              <rect x="204" y="70" width="8" height="78" fill="url(#spec-grad)" rx="1"/>
+              <rect x="216" y="76" width="8" height="72" fill="url(#spec-grad)" rx="1"/>
+              <rect x="228" y="82" width="8" height="66" fill="url(#spec-grad)" rx="1"/>
+              <rect x="240" y="88" width="8" height="60" fill="url(#spec-grad)" rx="1"/>
+              <rect x="252" y="92" width="8" height="56" fill="url(#spec-grad)" rx="1"/>
+              <rect x="264" y="96" width="8" height="52" fill="url(#spec-grad)" rx="1"/>
+              <rect x="276" y="100" width="8" height="48" fill="url(#spec-grad)" rx="1"/>
+              <rect x="288" y="104" width="8" height="44" fill="url(#spec-grad)" rx="1"/>
+              <rect x="300" y="108" width="8" height="40" fill="url(#spec-grad)" rx="1"/>
+              <rect x="312" y="112" width="8" height="36" fill="url(#spec-grad)" rx="1"/>
+              <rect x="324" y="116" width="8" height="32" fill="url(#spec-grad)" rx="1"/>
+              <rect x="336" y="120" width="8" height="28" fill="url(#spec-grad)" rx="1"/>
+              <rect x="348" y="124" width="8" height="24" fill="url(#spec-grad)" rx="1"/>
+              <rect x="360" y="128" width="8" height="20" fill="url(#spec-grad)" rx="1"/>
+              <rect x="372" y="132" width="8" height="16" fill="url(#spec-grad)" rx="1"/>
+              <rect x="384" y="136" width="8" height="12" fill="url(#spec-grad)" rx="1"/>
+              <rect x="396" y="140" width="8" height="8" fill="url(#spec-grad)" rx="1"/>
+              <!-- Waveform overlay -->
+              <path d="M12 80 Q130 20 260 80 T500 80" fill="none" stroke="var(--accent-on)" stroke-width="1.5" opacity="0.6"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="rs-wt-strip" style="flex-shrink:0;">
+          <span class="rs-wt-strip__label">Position · frame 108 / 255</span>
+          <div class="rs-wt-strip__frames">
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 8 L20 40 L30 12 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 12 L20 36 L30 16 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 14 L20 34 L30 18 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame rs-wt-frame--active"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 10 L20 38 L30 14 L40 24" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 8 L20 40 L30 10 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 6 L20 42 L30 8 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 4 L20 44 L30 6 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 2 L20 46 L30 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 0 L20 48 L30 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 0 L20 48 L30 0 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 2 L20 46 L30 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 4 L20 44 L30 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 6 L20 42 L30 6 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 8 L20 40 L30 8 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 10 L20 38 L30 10 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 12 L20 36 L30 12 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          </div>
+          <div class="rs-wt-strip__playhead" style="left:42%;"></div>
+        </div>
+      </main>
+
+      <!-- Right rail: WT + Filter wired; ADSR/LFO disabled -->
+      <aside class="rs-col rs-col--right">
+        <div style="padding:12px; display:flex; flex-direction:column; gap:12px;">
+          <div class="rs-panel">
+            <div class="rs-panel__title">Performance</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob rs-knob--wired">
+                <span class="rs-wire-badge">Live</span>
+                <div class="rs-knob__dial rs-knob__dial--lg">
+                  <svg class="rs-knob__arc" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="130 32" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent-ui)" stroke-width="3" stroke-dasharray="85 77" transform="rotate(135 32 32)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(42deg);"></div>
+                </div>
+                <span class="rs-knob__label">WT Position</span>
+                <span class="rs-knob__value">108</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rs-panel">
+            <div class="rs-panel__title">Filter</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob rs-knob--wired">
+                <span class="rs-wire-badge">Live</span>
+                <div class="rs-knob__dial rs-knob__dial--lg">
+                  <svg class="rs-knob__arc" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="130 32" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent-ui)" stroke-width="3" stroke-dasharray="62 100" transform="rotate(135 32 32)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(35deg);"></div>
+                </div>
+                <span class="rs-knob__label">Cutoff</span>
+                <span class="rs-knob__value">1.2 kHz</span>
+              </div>
+              <div class="rs-knob rs-knob--wired">
+                <span class="rs-wire-badge">Live</span>
+                <div class="rs-knob__dial rs-knob__dial--lg">
+                  <svg class="rs-knob__arc" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="130 32" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent-ui)" stroke-width="3" stroke-dasharray="38 124" transform="rotate(135 32 32)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(8deg);"></div>
+                </div>
+                <span class="rs-knob__label">Resonance</span>
+                <span class="rs-knob__value">0.30</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rs-panel rs-group--disabled">
+            <div class="rs-panel__title">Amp Envelope</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob rs-knob--disabled">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(-30deg);"></div></div>
+                <span class="rs-knob__label">A</span><span class="rs-knob__value">—</span>
+              </div>
+              <div class="rs-knob rs-knob--disabled">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(10deg);"></div></div>
+                <span class="rs-knob__label">D</span><span class="rs-knob__value">—</span>
+              </div>
+              <div class="rs-knob rs-knob--disabled">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(45deg);"></div></div>
+                <span class="rs-knob__label">S</span><span class="rs-knob__value">—</span>
+              </div>
+              <div class="rs-knob rs-knob--disabled">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(20deg);"></div></div>
+                <span class="rs-knob__label">R</span><span class="rs-knob__value">—</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rs-panel rs-group--disabled">
+            <div class="rs-panel__title">LFO</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob rs-knob--disabled">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(0deg);"></div></div>
+                <span class="rs-knob__label">Rate</span><span class="rs-knob__value">—</span>
+              </div>
+              <div class="rs-knob rs-knob--disabled">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(0deg);"></div></div>
+                <span class="rs-knob__label">Depth</span><span class="rs-knob__value">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Piano (toggleable via footer) -->
+    <div class="rs-piano-wrap">
+      <div class="rs-piano">
+        <div class="rs-piano__white">
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key rs-piano__white-key--active"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+        </div>
+        <div class="rs-piano__black-keys">
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key rs-piano__black-key--active"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer: piano toggle + status -->
+    <footer class="rs-footer">
+      <button class="rs-toggle rs-toggle--on" type="button" aria-pressed="true">Piano</button>
+      <span class="rs-status"><span class="rs-status__dot"></span>Audio OK — click keys or use QWERTY row (Z–M)</span>
+      <span class="mono muted">WT 108 · Cutoff 1.2 kHz</span>
+    </footer>
+  </div>
+</body>
+</html>

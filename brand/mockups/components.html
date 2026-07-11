@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="reelsynth-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReelSynth — Component Gallery</title>
+  <link rel="stylesheet" href="mockups.css">
+  <style>
+    body { align-items: flex-start; justify-content: flex-start; }
+  </style>
+</head>
+<body>
+  <div class="rs-gallery">
+    <h1>ReelSynth Component Gallery</h1>
+    <p class="rs-gallery__intro">Gate 1 reference for egui implementation. All sizes on 8px grid. See <a href="COMPONENT_SPEC.md" style="color:var(--accent-ui);">COMPONENT_SPEC.md</a> for widget mapping.</p>
+
+    <!-- Knobs -->
+    <section class="rs-gallery__section">
+      <h2>Knobs</h2>
+      <div class="rs-gallery__row">
+        <div class="rs-knob">
+          <div class="rs-knob__dial rs-knob__dial--sm">
+            <svg class="rs-knob__arc" viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="none" stroke="var(--border)" stroke-width="2.5" stroke-dasharray="90 24" transform="rotate(135 24 24)"/><circle cx="24" cy="24" r="18" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="55 59" transform="rotate(135 24 24)"/></svg>
+            <div class="rs-knob__pointer" style="transform:rotate(28deg);"></div>
+          </div>
+          <span class="rs-knob__label">Small</span>
+          <span class="rs-knob__value">48px</span>
+        </div>
+        <div class="rs-knob">
+          <div class="rs-knob__dial rs-knob__dial--md">
+            <svg class="rs-knob__arc" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="110 28" transform="rotate(135 28 28)"/><circle cx="28" cy="28" r="22" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="72 66" transform="rotate(135 28 28)"/></svg>
+            <div class="rs-knob__pointer" style="transform:rotate(42deg);"></div>
+          </div>
+          <span class="rs-knob__label">Medium</span>
+          <span class="rs-knob__value">56px</span>
+        </div>
+        <div class="rs-knob">
+          <div class="rs-knob__dial rs-knob__dial--lg">
+            <svg class="rs-knob__arc" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="130 32" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="85 77" transform="rotate(135 32 32)"/></svg>
+            <div class="rs-knob__pointer" style="transform:rotate(42deg);"></div>
+          </div>
+          <span class="rs-knob__label">Large</span>
+          <span class="rs-knob__value">64px</span>
+        </div>
+        <div class="rs-knob rs-knob--wired">
+          <span class="rs-wire-badge">Live</span>
+          <div class="rs-knob__dial rs-knob__dial--lg">
+            <svg class="rs-knob__arc" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="130 32" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent-ui)" stroke-width="3" stroke-dasharray="85 77" transform="rotate(135 32 32)"/></svg>
+            <div class="rs-knob__pointer" style="transform:rotate(42deg);"></div>
+          </div>
+          <span class="rs-knob__label">Wired</span>
+          <span class="rs-knob__value">S1 perf</span>
+        </div>
+        <div class="rs-knob rs-knob--disabled">
+          <div class="rs-knob__dial rs-knob__dial--md"><div class="rs-knob__pointer" style="transform:rotate(0deg);"></div></div>
+          <span class="rs-knob__label">Disabled</span>
+          <span class="rs-knob__value">—</span>
+        </div>
+      </div>
+      <p class="rs-gallery__spec">.rs-knob · dial 48/56/64px · label 10px uppercase · value JetBrains Mono 11px</p>
+    </section>
+
+    <!-- Sliders -->
+    <section class="rs-gallery__section">
+      <h2>Sliders</h2>
+      <div class="rs-gallery__row" style="flex-direction:column; align-items:stretch; max-width:320px;">
+        <div class="rs-slider">
+          <span class="rs-slider__label">WT Position</span>
+          <div class="rs-slider__track">
+            <div class="rs-slider__fill" style="width:42%;"></div>
+            <div class="rs-slider__thumb" style="left:42%;"></div>
+          </div>
+          <span class="rs-slider__value mono">108 / 255</span>
+        </div>
+        <div class="rs-slider">
+          <span class="rs-slider__label">Cutoff (log)</span>
+          <div class="rs-slider__track">
+            <div class="rs-slider__fill" style="width:58%;"></div>
+            <div class="rs-slider__thumb" style="left:58%;"></div>
+          </div>
+          <span class="rs-slider__value mono">1.2 kHz</span>
+        </div>
+      </div>
+      <p class="rs-gallery__spec">.rs-slider · track 6px · thumb 12px · fill accent gradient</p>
+    </section>
+
+    <!-- Tabs -->
+    <section class="rs-gallery__section">
+      <h2>Tabs</h2>
+      <div class="rs-gallery__row" style="max-width:400px;">
+        <div class="rs-tabs" style="flex:1;">
+          <button class="rs-tab rs-tab--active" type="button">WT A</button>
+          <button class="rs-tab" type="button">WT B</button>
+          <button class="rs-tab" type="button">Sub</button>
+          <button class="rs-tab" type="button">Noise</button>
+        </div>
+      </div>
+      <div class="rs-gallery__row" style="max-width:400px; margin-top:8px;">
+        <div class="rs-tabs" style="flex:1;">
+          <button class="rs-tab rs-tab--active" type="button">LP</button>
+          <button class="rs-tab" type="button">HP</button>
+          <button class="rs-tab rs-tab--disabled" type="button" disabled>BP</button>
+        </div>
+      </div>
+      <p class="rs-gallery__spec">.rs-tabs · .rs-tab · active = --accent fill · padding 6×8px</p>
+    </section>
+
+    <!-- Piano -->
+    <section class="rs-gallery__section">
+      <h2>Piano Keys</h2>
+      <div style="max-width:640px;">
+        <div class="rs-piano">
+          <div class="rs-piano__white">
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key rs-piano__white-key--active"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+            <div class="rs-piano__white-key"></div>
+          </div>
+          <div class="rs-piano__black-keys">
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key rs-piano__black-key--active"></div></div>
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+            <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          </div>
+        </div>
+      </div>
+      <p class="rs-gallery__spec">.rs-piano · height 88px · black keys 56% height · active = --accent-ui</p>
+    </section>
+
+    <!-- Mod cell -->
+    <section class="rs-gallery__section">
+      <h2>Mod Matrix Cell</h2>
+      <div class="rs-gallery__row">
+        <div class="rs-mod-cell">0</div>
+        <div class="rs-mod-cell rs-mod-cell--positive">+68</div>
+        <div class="rs-mod-cell rs-mod-cell--negative">−18</div>
+        <div class="rs-mod-cell rs-mod-cell--bipolar">±40</div>
+      </div>
+      <p class="rs-gallery__spec">.rs-mod-cell · 72×28px · mono 11px · bipolar uses --accent-muted bg</p>
+    </section>
+
+    <!-- ADSR graph -->
+    <section class="rs-gallery__section">
+      <h2>ADSR Graph</h2>
+      <div style="max-width:280px;">
+        <svg class="rs-adsr-graph" viewBox="0 0 200 80" preserveAspectRatio="none">
+          <rect width="200" height="80" fill="var(--surface2)"/>
+          <path d="M8 72 L40 20 L100 44 L192 72" fill="none" stroke="var(--accent-ui)" stroke-width="2"/>
+          <circle cx="40" cy="20" r="3" fill="var(--accent)"/>
+          <circle cx="100" cy="44" r="3" fill="var(--accent)"/>
+        </svg>
+      </div>
+      <p class="rs-gallery__spec">.rs-adsr-graph · 80px tall · draggable nodes in egui</p>
+    </section>
+
+    <!-- Meter -->
+    <section class="rs-gallery__section">
+      <h2>Meter</h2>
+      <div class="rs-meter" style="width:48px;">
+        <div class="rs-meter__bar rs-meter__bar--l"></div>
+        <div class="rs-meter__bar rs-meter__bar--r"></div>
+      </div>
+      <p class="rs-gallery__spec">.rs-meter · 48px tall · stereo bars · green→accent gradient</p>
+    </section>
+
+    <!-- WT strip -->
+    <section class="rs-gallery__section">
+      <h2>WT Strip</h2>
+      <div class="rs-wt-strip" style="max-width:560px;">
+        <span class="rs-wt-strip__label">256 frames</span>
+        <div class="rs-wt-strip__frames">
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 8 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          <div class="rs-wt-frame rs-wt-frame--active"><svg viewBox="0 0 40 48"><path d="M0 24 L20 10 L40 24" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div>
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 0 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 6 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 10 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+          <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 14 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+        </div>
+        <div class="rs-wt-strip__playhead" style="left:14%;"></div>
+      </div>
+      <p class="rs-gallery__spec">.rs-wt-strip · 72px tall · playhead 2px --accent · frame cells flex</p>
+    </section>
+
+    <!-- Disabled group -->
+    <section class="rs-gallery__section">
+      <h2>Disabled States</h2>
+      <div class="rs-panel rs-group--disabled" style="max-width:320px;">
+        <div class="rs-panel__title">Amp Envelope</div>
+        <div class="rs-knob-row">
+          <div class="rs-knob rs-knob--disabled">
+            <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer"></div></div>
+            <span class="rs-knob__label">A</span><span class="rs-knob__value">—</span>
+          </div>
+          <div class="rs-knob rs-knob--disabled">
+            <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer"></div></div>
+            <span class="rs-knob__label">D</span><span class="rs-knob__value">—</span>
+          </div>
+        </div>
+      </div>
+      <p class="rs-gallery__spec">.rs-group--disabled · opacity 0.38 · grayscale · pointer-events none</p>
+    </section>
+
+    <!-- Collapsible -->
+    <section class="rs-gallery__section">
+      <h2>Collapsible Section</h2>
+      <div style="max-width:480px; border:1px solid var(--border); border-radius:8px; overflow:hidden;">
+        <section class="rs-section">
+          <div class="rs-section__header">
+            <svg class="rs-section__chevron" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+            <span class="rs-section__title">Modulation Matrix</span>
+            <span class="rs-section__meta">8 routes</span>
+          </div>
+          <div class="rs-section__body">
+            <div class="rs-mod-row" style="max-width:100%;">
+              <span class="rs-mod-row__src">LFO 1</span><span class="muted">→ WT Pos</span>
+              <div class="rs-mod-cell rs-mod-cell--bipolar">+32</div>
+              <div class="rs-mod-cell">Lin</div><span class="mono muted">On</span>
+            </div>
+          </div>
+        </section>
+        <section class="rs-section rs-section--collapsed">
+          <div class="rs-section__header">
+            <svg class="rs-section__chevron" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+            <span class="rs-section__title">Effects</span>
+            <span class="rs-section__meta">collapsed</span>
+          </div>
+          <div class="rs-section__body"></div>
+        </section>
+      </div>
+      <p class="rs-gallery__spec">.rs-section · .rs-section--collapsed hides body · chevron rotates −90°</p>
+    </section>
+
+    <p class="muted" style="margin-top:32px;">Mockup pages: <a href="index.html" style="color:var(--accent-ui);">index.html</a> · <a href="s1-performance.html" style="color:var(--accent-ui);">s1-performance.html</a> · <a href="narrow.html" style="color:var(--accent-ui);">narrow.html</a></p>
+  </div>
+</body>
+</html>

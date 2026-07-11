@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="reelsynth-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280">
+  <title>ReelSynth S6 — Full Layout Mockup</title>
+  <link rel="stylesheet" href="mockups.css">
+</head>
+<body>
+  <div class="rs-app" role="img" aria-label="ReelSynth S6 full layout mockup at 1280×820">
+    <!-- Header -->
+    <header class="rs-header">
+      <span class="rs-wordmark">ReelSynth</span>
+      <div class="rs-preset-bar">
+        <span class="rs-preset-name">Factory Lead</span>
+        <span class="rs-preset-category">Bass · Wavetable</span>
+      </div>
+      <div class="rs-header__spacer"></div>
+      <button class="rs-toggle rs-toggle--on" type="button" aria-pressed="true">Piano</button>
+      <button class="rs-btn rs-btn--ghost" type="button">Save</button>
+      <button class="rs-btn" type="button">Play</button>
+    </header>
+
+    <!-- Main 3-column -->
+    <div class="rs-main">
+      <!-- Osc left column 280px -->
+      <aside class="rs-col rs-col--osc">
+        <div style="padding:8px; display:flex; flex-direction:column; gap:8px; flex:1; min-height:0; overflow:auto;">
+          <div class="rs-panel">
+            <div class="rs-panel__title">Oscillators</div>
+            <div class="rs-tabs">
+              <button class="rs-tab rs-tab--active" type="button">WT A</button>
+              <button class="rs-tab" type="button">WT B</button>
+              <button class="rs-tab" type="button">Sub</button>
+              <button class="rs-tab" type="button">Noise</button>
+            </div>
+            <div class="rs-panel__body" style="margin-top:8px;">
+              <div class="rs-knob-row">
+                <div class="rs-knob">
+                  <div class="rs-knob__dial rs-knob__dial--md">
+                    <svg class="rs-knob__arc" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="110 28" transform="rotate(135 28 28)"/><circle cx="28" cy="28" r="22" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="72 66" transform="rotate(135 28 28)"/></svg>
+                    <div class="rs-knob__pointer" style="transform:rotate(42deg);"></div>
+                  </div>
+                  <span class="rs-knob__label">Level</span>
+                  <span class="rs-knob__value">0.85</span>
+                </div>
+                <div class="rs-knob">
+                  <div class="rs-knob__dial rs-knob__dial--md">
+                    <svg class="rs-knob__arc" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="110 28" transform="rotate(135 28 28)"/><circle cx="28" cy="28" r="22" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="48 90" transform="rotate(135 28 28)"/></svg>
+                    <div class="rs-knob__pointer" style="transform:rotate(18deg);"></div>
+                  </div>
+                  <span class="rs-knob__label">Pan</span>
+                  <span class="rs-knob__value">C</span>
+                </div>
+                <div class="rs-knob">
+                  <div class="rs-knob__dial rs-knob__dial--md">
+                    <svg class="rs-knob__arc" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="110 28" transform="rotate(135 28 28)"/><circle cx="28" cy="28" r="22" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="85 53" transform="rotate(135 28 28)"/></svg>
+                    <div class="rs-knob__pointer" style="transform:rotate(62deg);"></div>
+                  </div>
+                  <span class="rs-knob__label">Coarse</span>
+                  <span class="rs-knob__value">0 st</span>
+                </div>
+              </div>
+              <div class="rs-slider">
+                <span class="rs-slider__label">WT Position</span>
+                <div class="rs-slider__track">
+                  <div class="rs-slider__fill" style="width:42%;"></div>
+                  <div class="rs-slider__thumb" style="left:42%;"></div>
+                </div>
+                <span class="rs-slider__value mono">108 / 255</span>
+              </div>
+              <div class="rs-slider">
+                <span class="rs-slider__label">Unison</span>
+                <div class="rs-slider__track">
+                  <div class="rs-slider__fill" style="width:20%;"></div>
+                  <div class="rs-slider__thumb" style="left:20%;"></div>
+                </div>
+                <span class="rs-slider__value mono">3 voices</span>
+              </div>
+            </div>
+          </div>
+          <div class="rs-panel">
+            <div class="rs-panel__title">Unison</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm">
+                  <svg class="rs-knob__arc" viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="none" stroke="var(--border)" stroke-width="2.5" stroke-dasharray="90 24" transform="rotate(135 24 24)"/><circle cx="24" cy="24" r="18" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="35 79" transform="rotate(135 24 24)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(-10deg);"></div>
+                </div>
+                <span class="rs-knob__label">Detune</span>
+                <span class="rs-knob__value">12¢</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm">
+                  <svg class="rs-knob__arc" viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="none" stroke="var(--border)" stroke-width="2.5" stroke-dasharray="90 24" transform="rotate(135 24 24)"/><circle cx="24" cy="24" r="18" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="55 59" transform="rotate(135 24 24)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(28deg);"></div>
+                </div>
+                <span class="rs-knob__label">Spread</span>
+                <span class="rs-knob__value">64%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center WT hero -->
+      <main class="rs-col rs-col--center">
+        <div style="padding:8px; display:flex; flex-direction:column; gap:8px; flex:1; min-height:0;">
+          <div class="rs-wt-strip">
+            <span class="rs-wt-strip__label">Saw Morph · 256 frames</span>
+            <div class="rs-wt-strip__frames">
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 8 L20 40 L30 12 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 12 L20 36 L30 16 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 14 L20 34 L30 18 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame rs-wt-frame--active"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 10 L20 38 L30 14 L40 24" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 8 L20 40 L30 10 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 6 L20 42 L30 8 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 4 L20 44 L30 6 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 2 L20 46 L30 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 0 L20 48 L30 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 0 L20 48 L30 0 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 2 L20 46 L30 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48" preserveAspectRatio="none"><path d="M0 24 L10 4 L20 44 L30 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            </div>
+            <div class="rs-wt-strip__playhead" style="left:32%;"></div>
+          </div>
+
+          <div class="rs-wt-views">
+            <div class="rs-wt-view">
+              <span class="rs-wt-view__label">2D Waveform</span>
+              <svg viewBox="0 0 400 200" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="wt2d-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35"/>
+                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <rect width="400" height="200" fill="var(--bg)"/>
+                <line x1="0" y1="100" x2="400" y2="100" stroke="var(--border)" stroke-width="1"/>
+                <path d="M0 100 C50 40 80 160 120 100 S200 40 240 100 S320 160 360 100 L400 100" fill="url(#wt2d-fill)" stroke="var(--accent-ui)" stroke-width="2"/>
+                <circle cx="168" cy="72" r="4" fill="var(--accent)" stroke="var(--accent-on)" stroke-width="1"/>
+              </svg>
+            </div>
+            <div class="rs-wt-view">
+              <span class="rs-wt-view__label">3D Mesh</span>
+              <div class="rs-wt-3d-mesh"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right rail 240px -->
+      <aside class="rs-col rs-col--right">
+        <div style="padding:8px; display:flex; flex-direction:column; gap:8px; flex:1; overflow:auto;">
+          <div class="rs-panel">
+            <div class="rs-panel__title">Filter</div>
+            <div class="rs-tabs" style="margin-bottom:8px;">
+              <button class="rs-tab rs-tab--active" type="button">LP</button>
+              <button class="rs-tab" type="button">HP</button>
+              <button class="rs-tab" type="button">BP</button>
+              <button class="rs-tab" type="button">Notch</button>
+            </div>
+            <div class="rs-knob-row">
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--md">
+                  <svg class="rs-knob__arc" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="110 28" transform="rotate(135 28 28)"/><circle cx="28" cy="28" r="22" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="62 76" transform="rotate(135 28 28)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(35deg);"></div>
+                </div>
+                <span class="rs-knob__label">Cutoff</span>
+                <span class="rs-knob__value">1.2 kHz</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--md">
+                  <svg class="rs-knob__arc" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" stroke-width="3" stroke-dasharray="110 28" transform="rotate(135 28 28)"/><circle cx="28" cy="28" r="22" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="38 100" transform="rotate(135 28 28)"/></svg>
+                  <div class="rs-knob__pointer" style="transform:rotate(8deg);"></div>
+                </div>
+                <span class="rs-knob__label">Res</span>
+                <span class="rs-knob__value">0.30</span>
+              </div>
+            </div>
+          </div>
+          <div class="rs-panel">
+            <div class="rs-panel__title">Amp Envelope</div>
+            <svg class="rs-adsr-graph" viewBox="0 0 200 80" preserveAspectRatio="none">
+              <rect width="200" height="80" fill="var(--surface2)"/>
+              <path d="M8 72 L40 20 L100 44 L192 72" fill="none" stroke="var(--accent-ui)" stroke-width="2"/>
+              <circle cx="40" cy="20" r="3" fill="var(--accent)"/>
+              <circle cx="100" cy="44" r="3" fill="var(--accent)"/>
+            </svg>
+            <div class="rs-knob-row" style="margin-top:8px;">
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(-30deg);"></div></div>
+                <span class="rs-knob__label">A</span><span class="rs-knob__value">12 ms</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(10deg);"></div></div>
+                <span class="rs-knob__label">D</span><span class="rs-knob__value">220 ms</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(45deg);"></div></div>
+                <span class="rs-knob__label">S</span><span class="rs-knob__value">60%</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(20deg);"></div></div>
+                <span class="rs-knob__label">R</span><span class="rs-knob__value">400 ms</span>
+              </div>
+            </div>
+          </div>
+          <div class="rs-panel">
+            <div class="rs-panel__title">LFO 1</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(55deg);"></div></div>
+                <span class="rs-knob__label">Rate</span><span class="rs-knob__value">2.4 Hz</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(0deg);"></div></div>
+                <span class="rs-knob__label">Depth</span><span class="rs-knob__value">0%</span>
+              </div>
+            </div>
+          </div>
+          <div class="rs-meter" style="padding:0 4px;">
+            <div class="rs-meter__bar rs-meter__bar--l"></div>
+            <div class="rs-meter__bar rs-meter__bar--r"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Mod matrix (expanded) -->
+    <section class="rs-section">
+      <div class="rs-section__header">
+        <svg class="rs-section__chevron" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+        <span class="rs-section__title">Modulation Matrix</span>
+        <span class="rs-section__meta">8 / 24 routes</span>
+      </div>
+      <div class="rs-section__body">
+        <div class="rs-mod-grid">
+          <div class="rs-mod-row"><span class="rs-mod-row__src">LFO 1</span><span class="muted">→ WT Pos</span><div class="rs-mod-cell rs-mod-cell--bipolar">+32</div><div class="rs-mod-cell">Lin</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">Env 2</span><span class="muted">→ Cutoff</span><div class="rs-mod-cell rs-mod-cell--positive">+68</div><div class="rs-mod-cell">Exp</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">Velo</span><span class="muted">→ Level</span><div class="rs-mod-cell rs-mod-cell--positive">+45</div><div class="rs-mod-cell">Lin</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">ModWh</span><span class="muted">→ Res</span><div class="rs-mod-cell rs-mod-cell--negative">−18</div><div class="rs-mod-cell">Lin</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">After</span><span class="muted">→ Pitch</span><div class="rs-mod-cell rs-mod-cell--bipolar">±12</div><div class="rs-mod-cell">Lin</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">LFO 2</span><span class="muted">→ Pan</span><div class="rs-mod-cell rs-mod-cell--bipolar">±40</div><div class="rs-mod-cell">Lin</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">Step</span><span class="muted">→ WT Pos</span><div class="rs-mod-cell rs-mod-cell--positive">+100</div><div class="rs-mod-cell">Step</div><span class="mono muted">On</span></div>
+          <div class="rs-mod-row"><span class="rs-mod-row__src">Rand</span><span class="muted">→ Detune</span><div class="rs-mod-cell rs-mod-cell--positive">+8</div><div class="rs-mod-cell">Lin</div><span class="mono muted">On</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FX rack (expanded) -->
+    <section class="rs-section">
+      <div class="rs-section__header">
+        <svg class="rs-section__chevron" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+        <span class="rs-section__title">Effects</span>
+        <span class="rs-section__meta">3 active</span>
+      </div>
+      <div class="rs-section__body">
+        <div class="rs-fx-rack">
+          <div class="rs-fx-slot rs-fx-slot--active">
+            <div class="rs-fx-slot__name">Chorus</div>
+            <div class="rs-fx-slot__bypass">Mix 24% · Rate 0.8 Hz</div>
+          </div>
+          <div class="rs-fx-slot rs-fx-slot--active">
+            <div class="rs-fx-slot__name">Delay</div>
+            <div class="rs-fx-slot__bypass">1/8 dotted · FB 32%</div>
+          </div>
+          <div class="rs-fx-slot">
+            <div class="rs-fx-slot__name">Reverb</div>
+            <div class="rs-fx-slot__bypass">Bypassed</div>
+          </div>
+          <div class="rs-fx-slot">
+            <div class="rs-fx-slot__name">+ Slot</div>
+            <div class="rs-fx-slot__bypass">Empty</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Piano -->
+    <div class="rs-piano-wrap">
+      <div class="rs-piano">
+        <div class="rs-piano__white">
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key rs-piano__white-key--active"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+          <div class="rs-piano__white-key"></div>
+        </div>
+        <div class="rs-piano__black-keys">
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key rs-piano__black-key--active"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+          <div class="rs-piano__black-slot"><div class="rs-piano__black-key"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer status -->
+    <footer class="rs-footer">
+      <span class="rs-status"><span class="rs-status__dot"></span>Audio OK · 48 kHz · 128 smp · C3 = 130.8 Hz</span>
+      <span class="mono muted">MIDI Ch 1 · Voices 2/16</span>
+    </footer>
+  </div>
+</body>
+</html>

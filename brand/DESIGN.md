@@ -50,3 +50,16 @@ Light theme tokens in [design/tokens.css](./design/tokens.css).
 ## 7. Logo
 
 Pending user selection in [Majico Studio canvas](http://localhost:3000/canvas?project=95409489-3d96-4083-b35e-08bf5c824bfa&cursor=1). Placeholder until `logo/reelsynth-mark.svg` synced.
+
+## 8. S6 UI mockups (Gate 1)
+
+Static HTML/CSS mockups for user review before egui work. Open locally in a browser:
+
+| Mockup | Path | Shows |
+|--------|------|-------|
+| Full S6 layout | [mockups/index.html](./mockups/index.html) | 1280×820 — osc / WT hero / filter rail, mod matrix, FX, piano |
+| S1 performance | [mockups/s1-performance.html](./mockups/s1-performance.html) | Playable-app target — preset hero, WT strip, wired knobs |
+| Component gallery | [mockups/components.html](./mockups/components.html) | Knobs, sliders, tabs, piano, mod cells, meters |
+| Narrow viewport | [mockups/narrow.html](./mockups/narrow.html) | 900×600 — collapsed mod/FX |
+
+Supporting docs: [mockups/DECISIONS.md](./mockups/DECISIONS.md) (layout rationale), [mockups/COMPONENT_SPEC.md](./mockups/COMPONENT_SPEC.md) (HTML → egui mapping). Styles: [mockups/mockups.css](./mockups/mockups.css).

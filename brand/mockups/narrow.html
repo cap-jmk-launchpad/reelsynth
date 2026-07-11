@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="reelsynth-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=900">
+  <title>ReelSynth S6 — Narrow Layout (900×600)</title>
+  <link rel="stylesheet" href="mockups.css">
+</head>
+<body>
+  <div class="rs-app rs-app--narrow" role="img" aria-label="ReelSynth narrow layout mockup at 900×600 with collapsed mod and FX">
+    <header class="rs-header">
+      <span class="rs-wordmark">ReelSynth</span>
+      <div class="rs-preset-bar">
+        <span class="rs-preset-name">Factory Lead</span>
+        <span class="rs-preset-category">Bass</span>
+      </div>
+      <div class="rs-header__spacer"></div>
+      <button class="rs-toggle" type="button" aria-pressed="false">Piano</button>
+    </header>
+
+    <div class="rs-main" style="grid-template-columns: 220px 1fr 200px;">
+      <aside class="rs-col">
+        <div style="padding:6px;">
+          <div class="rs-panel">
+            <div class="rs-panel__title">Osc</div>
+            <div class="rs-tabs">
+              <button class="rs-tab rs-tab--active" type="button">A</button>
+              <button class="rs-tab" type="button">B</button>
+              <button class="rs-tab" type="button">Sub</button>
+            </div>
+            <div class="rs-knob-row" style="margin-top:6px;">
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(42deg);"></div></div>
+                <span class="rs-knob__label">Lvl</span><span class="rs-knob__value">0.85</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(62deg);"></div></div>
+                <span class="rs-knob__label">Pos</span><span class="rs-knob__value">108</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="rs-col rs-col--center">
+        <div style="padding:6px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0;">
+          <div class="rs-wt-strip" style="height:56px;">
+            <span class="rs-wt-strip__label">Saw Morph</span>
+            <div class="rs-wt-strip__frames">
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 8 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame rs-wt-frame--active"><svg viewBox="0 0 40 48"><path d="M0 24 L20 10 L40 24" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 6 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 0 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 2 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+              <div class="rs-wt-frame"><svg viewBox="0 0 40 48"><path d="M0 24 L20 4 L40 24" fill="none" stroke="var(--accent-ui)" stroke-width="1.5"/></svg></div>
+            </div>
+            <div class="rs-wt-strip__playhead" style="left:18%;"></div>
+          </div>
+          <div class="rs-wt-views" style="grid-template-columns:1fr 1fr; min-height:100px;">
+            <div class="rs-wt-view" style="min-height:100px;">
+              <span class="rs-wt-view__label">2D</span>
+              <svg viewBox="0 0 200 100"><path d="M0 50 Q50 20 100 50 T200 50" fill="none" stroke="var(--accent-ui)" stroke-width="2"/></svg>
+            </div>
+            <div class="rs-wt-view" style="min-height:100px;">
+              <span class="rs-wt-view__label">3D</span>
+              <div class="rs-wt-3d-mesh"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="rs-col">
+        <div style="padding:6px;">
+          <div class="rs-panel">
+            <div class="rs-panel__title">Filter</div>
+            <div class="rs-knob-row">
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(35deg);"></div></div>
+                <span class="rs-knob__label">Cut</span><span class="rs-knob__value">1.2k</span>
+              </div>
+              <div class="rs-knob">
+                <div class="rs-knob__dial rs-knob__dial--sm"><div class="rs-knob__pointer" style="transform:rotate(8deg);"></div></div>
+                <span class="rs-knob__label">Res</span><span class="rs-knob__value">0.3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Collapsed mod matrix -->
+    <section class="rs-section rs-section--collapsed">
+      <div class="rs-section__header">
+        <svg class="rs-section__chevron" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+        <span class="rs-section__title">Modulation Matrix</span>
+        <span class="rs-section__meta">8 routes</span>
+      </div>
+      <div class="rs-section__body"></div>
+    </section>
+
+    <!-- Collapsed FX -->
+    <section class="rs-section rs-section--collapsed">
+      <div class="rs-section__header">
+        <svg class="rs-section__chevron" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L9 6 L3 10 Z"/></svg>
+        <span class="rs-section__title">Effects</span>
+        <span class="rs-section__meta">3 active</span>
+      </div>
+      <div class="rs-section__body"></div>
+    </section>
+
+    <footer class="rs-footer">
+      <span class="rs-status"><span class="rs-status__dot"></span>Narrow viewport · mod/FX collapsed</span>
+      <span class="mono muted">900 × 600</span>
+    </footer>
+  </div>
+</body>
+</html>
