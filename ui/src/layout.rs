@@ -6,6 +6,11 @@ pub const GRID_UNIT: f32 = 8.0;
 pub const SPACE_SM: f32 = 12.0;
 pub const SPACE_MD: f32 = 20.0;
 
+/// `--radius-sm` in `brand/design/tokens.css`.
+pub const RADIUS_SM: f32 = 10.0;
+/// `--radius-md` in `brand/design/tokens.css`.
+pub const RADIUS_MD: f32 = 16.0;
+
 pub const APP_WIDTH: f32 = 1280.0;
 pub const APP_HEIGHT_S1: f32 = 720.0;
 pub const APP_HEIGHT_FULL: f32 = 820.0;

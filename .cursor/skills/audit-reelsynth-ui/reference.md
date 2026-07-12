@@ -21,11 +21,11 @@
 | Severity | Definition | Examples |
 |----------|------------|----------|
 | **Critical** | Blocks gate sign-off; wrong sprint scope; broken affordance | Unshipped osc column visible in S1; live knobs not wired; theme not applied (light/wrong bg); piano unusable |
-| **Major** | Visible parity break >4px or wrong token/component | Header 56px not 48px; knob 40px not 48px; ADSR interactive in S1; wrong accent colour; missing WT strip |
-| **Minor** | Within ~4px but noticeable; secondary typography | Label 12px not 13px; gutter 6px not 8px; muted text too bright |
+| **Major** | Visible parity break ≥1px or wrong token/component | Header 49px not 48px; knob 40px not 48px; ADSR interactive in S1; wrong accent colour; missing WT strip |
+| **Minor** | Sub-pixel drift only visible on zoom; secondary typography | Label 12px not 13px; muted text too bright |
 | **Polish** | Cosmetic; motion; micro-interaction | Hover mix slightly off; chevron rotation timing; badge spacing |
 
-**Parity tolerance:** ≤4px on layout regions vs mockup at 1× (1280×720 S1 / 1280×820 S6 canonical). Widget internal geometry (arc stroke, gradient) judged qualitatively against `components.html`.
+**Parity tolerance:** **<1px** on layout regions vs mockup at 1× (1280×720 S1 / 1280×820 S6 canonical). Sub-pixel rounding via egui f32 coords is OK; no visible drift. Widget internal geometry (arc stroke, gradient) judged qualitatively against `components.html`.
 
 ---
 
@@ -36,7 +36,7 @@
 | **1. Capture** | Launch `reelsynth-ui` → `screencapture` → `brand/mockups/audits/` |
 | **2. Compare** | Read PNG + diff vs `s1-performance.html` + `COMPONENT_SPEC.md` |
 | **3. Loop** | `/loop audit UI` — max 5×: screenshot → audit → fix Critical/Major in `ui/` → rebuild |
-| **4. Exit** | S1 ~4px parity; piano ~18px keys; alignments match mockup |
+| **4. Exit** | S1 <1px parity; piano 18px keys; alignments match mockup |
 
 Full workflow: [SKILL.md § Screenshot audit workflow](SKILL.md#screenshot-audit-workflow).
 
@@ -115,17 +115,19 @@ Use these when screenshot diff suggests misalignment. Source: `COMPONENT_SPEC.md
 | Landmark | CSS / mockup | egui constant | Tolerance |
 |----------|--------------|---------------|-----------|
 | Viewport | 1280×720 | `APP_WIDTH` × `APP_HEIGHT_S1` | exact |
-| Header height | 48px (`--grid-unit` × 6) | `HEADER_HEIGHT` | ≤4px |
-| Footer height | 36px | `FOOTER_HEIGHT` | ≤4px |
-| Right rail width | 240px | `RAIL_WIDTH` | ≤4px |
-| WT strip height | 72px | `WT_STRIP_HEIGHT` | ≤4px |
-| Piano keyboard height | 80px (`--piano-h`) | `PIANO_HEIGHT` | ≤4px |
-| Piano white key width | 18px (`--piano-white-w`) | `PIANO_WHITE_KEY_WIDTH` | ≤4px |
-| Piano wrap total | 96px (16px pad + 80px keys) | `GRID_UNIT * 2 + PIANO_HEIGHT` | ≤4px |
-| Knob sm / lg | 48px / 64px | `KNOB_SM` / `KNOB_LG` | ≤4px |
-| Panel padding | 8px | `GRID_UNIT` | ≤4px |
-| Knob row gap | 12px | `SPACE_SM` | ≤4px |
-| ADSR graph height | 80px | rail panel | ≤4px |
+| Header height | 48px (`--grid-unit` × 6) | `HEADER_HEIGHT` | <1px |
+| Footer height | 36px | `FOOTER_HEIGHT` | <1px |
+| Right rail width | 240px | `RAIL_WIDTH` | <1px |
+| WT strip height | 72px | `WT_STRIP_HEIGHT` | <1px |
+| Piano keyboard height | 80px (`--piano-h`) | `PIANO_HEIGHT` | <1px |
+| Piano white key width | 18px (`--piano-white-w`) | `PIANO_WHITE_KEY_WIDTH` | <1px |
+| Piano wrap total | 96px (16px pad + 80px keys) | `GRID_UNIT * 2 + PIANO_HEIGHT` | <1px |
+| Knob sm / lg | 48px / 64px | `KNOB_SM` / `KNOB_LG` | <1px |
+| Panel padding | 8px | `GRID_UNIT` | <1px |
+| Knob row gap | 12px | `SPACE_SM` | <1px |
+| Panel / strip radius | 10px (`--radius-sm`) | `RADIUS_SM` | <1px |
+| Hero viz radius | 16px (`--radius-md`) | `RADIUS_MD` | <1px |
+| ADSR graph height | 80px | rail panel | <1px |
 
 **Piano readability check:** 14 white keys × 18px = 252px keyboard width, centered in wrap. Keys must not stretch to fill viewport width.
 
@@ -139,7 +141,7 @@ Use these when screenshot diff suggests misalignment. Source: `COMPONENT_SPEC.md
 |-----------|-------------|
 | S1 layout | Matches `s1-performance.html` region map |
 | Piano | 18px keys, 80px tall, readable |
-| Alignment | All landmarks within ~4px |
+| Alignment | All landmarks within <1px |
 | Borders | Panel edges visible (`--border` #27272a) |
 | Disabled groups | ADSR/LFO greyed, knobs non-draggable |
 | Sprint scope | No osc/mod/FX/2D/3D columns |
@@ -348,4 +350,4 @@ Match mockup and app defaults when checking content parity:
 | Gate 1 | User approves `components.html`, `s1-performance.html`, `index.html` in browser |
 | Gate 1b | Majico palette pass on `tokens.css` + mockups (when MCP ready) |
 | Gate 2 | Proto: knob drag, piano, disabled-state feel approved |
-| S1 parity | App matches `s1-performance.html`; screenshot diff ≤4px; only shipped panels visible |
+| S1 parity | App matches `s1-performance.html`; screenshot diff <1px; only shipped panels visible |

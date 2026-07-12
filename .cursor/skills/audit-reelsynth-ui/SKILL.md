@@ -59,7 +59,7 @@ Trigger: `/loop` + audit UI (e.g. `/loop until UI matches mockup`). After 5 pass
 
 ### 4. Exit criteria
 
-- **S1 parity ~4px** vs `s1-performance.html` at 1280×720
+- **S1 parity <1px** vs `s1-performance.html` at 1280×720
 - **Piano ~18px** white keys, 80px tall, readable
 - **Alignments** match mockup landmarks (header 48px, rail 240px, WT strip 72px, etc.)
 
@@ -100,7 +100,7 @@ Always read before auditing:
 | `brand/design/tokens.css` | Colour + spacing tokens |
 | `brand/mockups/mockups.css` | `--accent-ui` and mockup-only tokens |
 
-Plan context: `.cursor/plans/reelsynth_ui_redesign_cc8a6033.plan.md` (Gate 1/2, ≤4px parity target).
+Plan context: `.cursor/plans/reelsynth_ui_redesign_cc8a6033.plan.md` (Gate 1/2, <1px parity target).
 
 ## Audit workflow
 
@@ -230,7 +230,7 @@ pkill -f 'target/debug/reelsynth-ui' || true
 
 - Layout matches `s1-performance.html` at 1280×720
 - Piano readable size (18px white keys, 80px tall)
-- Region alignments within ~4px of mockup landmarks
+- Region alignments within **<1px** of mockup landmarks
 - No missing panel borders
 - ADSR/LFO visibly greyed (`panel_disabled`), not interactive
 - Only S1 panels visible (no osc/mod/FX columns)
@@ -253,7 +253,7 @@ echo 'AGENT_LOOP_WAKE_reelsynth-ui-audit {"prompt":"Continue ReelSynth UI audit 
 
 **Final screenshot:** `brand/mockups/audits/YYYY-MM-DD_HH-MM-ss-app.png`
 **Run app:** `cargo run -p reelsynth-app --bin reelsynth-ui`
-**Verdict:** S1 parity ✅ (≤4px)
+**Verdict:** S1 parity ✅ (<1px)
 ```
 
 ### E. Gate reviews
@@ -262,7 +262,7 @@ echo 'AGENT_LOOP_WAKE_reelsynth-ui-audit {"prompt":"Continue ReelSynth UI audit 
 |------|---------------|---------------|
 | **Gate 1** | Static HTML mockups | Matches DECISIONS + COMPONENT_SPEC; user sign-off |
 | **Gate 2** | Proto binary | Knob drag, piano keys, disabled groups feel correct |
-| **S1 parity** | App vs `s1-performance.html` | Layout ≤4px tolerance; only S1 panels visible |
+| **S1 parity** | App vs `s1-performance.html` | Layout <1px tolerance; only S1 panels visible |
 
 ## Checklist (summary)
 
@@ -307,7 +307,7 @@ Full checklist: [reference.md](reference.md).
 ## Gate verdict
 - [ ] Gate 1 mockup parity
 - [ ] Gate 2 proto feel
-- [ ] S1 app parity (≤4px)
+- [ ] S1 app parity (<1px)
 
 ## Recommended next steps
 1. …

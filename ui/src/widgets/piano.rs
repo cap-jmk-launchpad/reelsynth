@@ -104,7 +104,12 @@ impl<'a> PianoKeyboard<'a> {
             let black_w = PIANO_WHITE_KEY_WIDTH * PIANO_BLACK_WIDTH_RATIO;
 
             for &(note, slot) in &black_notes {
-                let cx = rect.min.x + slot as f32 * PIANO_WHITE_KEY_WIDTH + PIANO_WHITE_KEY_WIDTH;
+                let slot_min_x = rect.min.x + slot as f32 * PIANO_WHITE_KEY_WIDTH;
+                let slot_max_x = slot_min_x + PIANO_WHITE_KEY_WIDTH;
+                // mockups.css: .rs-piano__black-key { right: -29%; }
+                let key_right = slot_max_x + PIANO_WHITE_KEY_WIDTH * 0.29;
+                let key_left = key_right - black_w;
+                let cx = (key_left + key_right) * 0.5;
                 let key_rect = Rect::from_center_size(
                     Pos2::new(cx, rect.min.y + black_h * 0.5),
                     Vec2::new(black_w, black_h),
@@ -168,7 +173,11 @@ fn hit_test(
 
     if pos.y < rect.min.y + black_h {
         for &(note, slot) in black_notes {
-            let cx = rect.min.x + slot as f32 * PIANO_WHITE_KEY_WIDTH + PIANO_WHITE_KEY_WIDTH;
+            let slot_min_x = rect.min.x + slot as f32 * PIANO_WHITE_KEY_WIDTH;
+            let slot_max_x = slot_min_x + PIANO_WHITE_KEY_WIDTH;
+            let key_right = slot_max_x + PIANO_WHITE_KEY_WIDTH * 0.29;
+            let key_left = key_right - black_w;
+            let cx = (key_left + key_right) * 0.5;
             let key_rect = Rect::from_center_size(
                 Pos2::new(cx, rect.min.y + black_h * 0.5),
                 Vec2::new(black_w, black_h),

@@ -13,6 +13,13 @@ Reference for Phase B egui implementation. Sizes are physical pixels at 1× scal
 | `.rs-col--osc` | `SidePanel::left` | `min_width(280.0)` |
 | `.rs-col--right` | `SidePanel::right` | `min_width(240.0)` |
 
+**Parity gate:** layout landmarks must match mockup within **<1px** at 1× (sub-pixel egui f32 rounding OK).
+
+| Token | px | egui constant |
+|-------|-----|---------------|
+| `--radius-sm` | 10 | `layout::RADIUS_SM` |
+| `--radius-md` | 16 | `layout::RADIUS_MD` |
+
 ## Typography
 
 | Context | Font | Size |

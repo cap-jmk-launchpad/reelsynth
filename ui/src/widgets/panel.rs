@@ -1,5 +1,7 @@
 use egui::{Frame, Margin, Ui};
-use reelsynth_ui_theme::Tokens;
+use reelsynth_ui_theme::{heading_font, Tokens};
+
+use crate::layout::RADIUS_SM;
 
 /// Branded section frame matching `.rs-panel`.
 pub fn panel<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
@@ -7,15 +9,19 @@ pub fn panel<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> 
     Frame {
         fill: tokens.bg_muted,
         stroke: egui::Stroke::new(1.0_f32, tokens.border),
-        rounding: egui::Rounding::same(8.0),
+        rounding: egui::Rounding::same(RADIUS_SM),
         inner_margin: Margin::same(8.0),
         ..Default::default()
     }
     .show(ui, |ui| {
+        let display = if let Some(base) = title.strip_suffix(" (locked)") {
+            format!("{} (locked)", base.to_uppercase())
+        } else {
+            title.to_uppercase()
+        };
         ui.label(
-            egui::RichText::new(title.to_uppercase())
-                .size(11.0)
-                .strong()
+            egui::RichText::new(display)
+                .font(heading_font(11.0))
                 .color(tokens.text_muted),
         );
         ui.add_space(8.0);
@@ -26,7 +32,7 @@ pub fn panel<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> 
 
 /// Disabled panel wrapper matching `.rs-group--disabled`.
 pub fn panel_disabled<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
-    let title = format!("{title} (locked)");
-    ui.add_enabled_ui(false, |ui| panel(ui, &title, add_contents))
+    let locked_title = format!("{} (locked)", title.to_uppercase());
+    ui.add_enabled_ui(false, |ui| panel(ui, &locked_title, add_contents))
         .inner
 }

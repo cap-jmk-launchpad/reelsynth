@@ -2,7 +2,7 @@ use egui::{Color32, Pos2, Rect, Response, Sense, Shape, Ui, Vec2};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::Tokens;
 
-use crate::layout::WT_STRIP_HEIGHT;
+use crate::layout::{RADIUS_SM, WT_STRIP_HEIGHT};
 
 pub struct WtStripResponse {
     pub response: Response,
@@ -42,10 +42,10 @@ impl<'a> WtStrip<'a> {
 
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect);
-            painter.rect_filled(rect, 8.0, tokens.surface2);
+            painter.rect_filled(rect, RADIUS_SM, tokens.surface2);
             painter.rect_stroke(
                 rect,
-                8.0,
+                RADIUS_SM,
                 egui::Stroke::new(1.0_f32, tokens.border),
             );
 
