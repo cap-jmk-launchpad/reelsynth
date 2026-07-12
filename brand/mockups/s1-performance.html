@@ -8,9 +8,18 @@
 </head>
 <body>
   <div class="rs-app rs-app--s1" role="img" aria-label="ReelSynth S1 performance layout mockup">
-    <!-- Header: wordmark only -->
+    <!-- Header: wordmark + file I/O + MIDI + piano toggle + status -->
     <header class="rs-header">
       <span class="rs-wordmark">ReelSynth</span>
+      <button class="rs-btn rs-btn--ghost" type="button">Open</button>
+      <button class="rs-btn rs-btn--ghost" type="button">Save</button>
+      <div class="rs-header__spacer"></div>
+      <select class="rs-midi-select" aria-label="MIDI input">
+        <option>None</option>
+        <option>IAC Driver Bus 1</option>
+      </select>
+      <button class="rs-toggle rs-toggle--on" type="button" aria-pressed="true">Piano</button>
+      <span class="rs-status"><span class="rs-status__dot"></span>Audio OK — click keys, QWERTY (Z–M), or MIDI</span>
     </header>
 
     <div class="rs-s1-main">
@@ -205,11 +214,10 @@
       </div>
     </div>
 
-    <!-- Footer: piano toggle + status -->
+    <!-- Footer: param telemetry -->
     <footer class="rs-footer">
-      <button class="rs-toggle rs-toggle--on" type="button" aria-pressed="true">Piano</button>
-      <span class="rs-status"><span class="rs-status__dot"></span>Audio OK — click keys or use QWERTY row (Z–M)</span>
-      <span class="mono muted">WT 108 · Cutoff 1.2 kHz</span>
+      <span class="mono muted">Performance</span>
+      <span class="mono muted" style="margin-left:auto;">WT 108 · Cutoff 1.2 kHz</span>
     </footer>
   </div>
 </body>

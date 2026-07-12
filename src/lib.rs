@@ -11,8 +11,8 @@ pub use patch::Patch;
 pub use voice::render_note;
 pub use engine::SynthEngine;
 pub use export::{
-    export_preset, export_reelpack, export_wavetable, parse_targets, ExportOptions, ExportReport,
-    ExportTarget,
+    export_preset, export_reelpack, export_wavetable, load_preset, parse_targets,
+    resolve_bank_for_preset, ExportOptions, ExportReport, ExportTarget,
 };
 
 #[cfg(feature = "python")]

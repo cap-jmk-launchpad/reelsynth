@@ -2,17 +2,19 @@
 
 use eframe::egui;
 use reelsynth_ui::widgets::{Knob, KnobSize, KnobStyle, panel};
-use reelsynth_ui::{draw_s1, S1State};
+use reelsynth_ui::{draw_s1, S1MidiDevices, S1ShellConfig, S1State};
 use reelsynth_ui_theme;
 
 struct ProtoApp {
     state: S1State,
+    midi_names: Vec<String>,
 }
 
 impl Default for ProtoApp {
     fn default() -> Self {
         Self {
             state: S1State::default(),
+            midi_names: vec!["None".into(), "Demo MIDI".into()],
         }
     }
 }
@@ -26,7 +28,12 @@ impl eframe::App for ProtoApp {
             })
             .show(ctx, |ui| {
                 let screen = ui.max_rect();
-                let actions = draw_s1(ui, screen, &mut self.state, None);
+                let midi = S1MidiDevices {
+                    names: &self.midi_names,
+                    selected: 0,
+                };
+                let config = S1ShellConfig::default();
+                let actions = draw_s1(ui, screen, &mut self.state, None, &midi, &config);
 
                 if let Some(n) = actions.note_on {
                     self.state.keys_down.insert(n);

@@ -4,9 +4,15 @@ use egui::{Color32, FontId, Pos2, Rect, Shape, Ui};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{heading_font, Tokens};
 
-use crate::layout::{S1Layout, GRID_UNIT, RADIUS_MD, SPACE_MD, SPACE_SM, WT_STRIP_HEIGHT};
+use crate::layout::{S1Layout, GRID_UNIT, RADIUS_MD, SPACE_MD, SPACE_SM, WT_STRIP_HEIGHT, WT_VIEW_MIN_HEIGHT};
 use crate::widgets::{Knob, KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled};
-use crate::wt::WtStrip;
+use crate::wt::{WtStrip, WtView2d, WtView3d};
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct S1ShellConfig {
+    /// S2+: show 2D waveform + 3D mesh panels in center column.
+    pub show_wt_editor: bool,
+}
 
 #[derive(Default)]
 pub struct S1Actions {
@@ -15,6 +21,12 @@ pub struct S1Actions {
     pub note_off: Option<u8>,
     pub open_preset: bool,
     pub save_preset: bool,
+    pub midi_device_selected: Option<usize>,
+}
+
+pub struct S1MidiDevices<'a> {
+    pub names: &'a [String],
+    pub selected: usize,
 }
 
 pub struct S1State {
@@ -50,6 +62,8 @@ pub fn draw_s1(
     screen: Rect,
     state: &mut S1State,
     bank: Option<&WavetableBank>,
+    midi: &S1MidiDevices<'_>,
+    config: &S1ShellConfig,
 ) -> S1Actions {
     let layout = S1Layout::compute(screen, state.piano_visible);
     let tokens = Tokens::default();
@@ -81,8 +95,8 @@ pub fn draw_s1(
         border,
     );
 
-    draw_header(ui, layout.header, state, &mut actions);
-    draw_center(ui, layout.center, state, bank, &mut actions);
+    draw_header(ui, layout.header, state, midi, &mut actions);
+    draw_center(ui, layout.center, state, bank, config, &mut actions);
     draw_rail(ui, layout.rail, state, &mut actions);
 
     if state.piano_visible && layout.piano_wrap.is_positive() {
@@ -94,7 +108,13 @@ pub fn draw_s1(
     actions
 }
 
-fn draw_header(ui: &mut Ui, rect: Rect, _state: &mut S1State, _actions: &mut S1Actions) {
+fn draw_header(
+    ui: &mut Ui,
+    rect: Rect,
+    state: &mut S1State,
+    midi: &S1MidiDevices<'_>,
+    actions: &mut S1Actions,
+) {
     let tokens = Tokens::default();
     ui.allocate_ui_at_rect(rect, |ui| {
         ui.set_min_height(rect.height());
@@ -103,15 +123,123 @@ fn draw_header(ui: &mut Ui, rect: Rect, _state: &mut S1State, _actions: &mut S1A
             .show(ui, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.set_min_height(rect.height());
+                    ui.spacing_mut().item_spacing.x = GRID_UNIT;
+
                     ui.label(
                         egui::RichText::new("ReelSynth")
                             .font(heading_font(15.0))
                             .color(tokens.text)
                             .extra_letter_spacing(0.04),
                     );
+
+                    ui.add_space(GRID_UNIT);
+
+                    if header_btn(ui, "Open", true).clicked() {
+                        actions.open_preset = true;
+                    }
+                    if header_btn(ui, "Save", true).clicked() {
+                        actions.save_preset = true;
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.set_width(ui.available_width());
+
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let (dot_rect, _) = ui.allocate_exact_size(
+                                egui::vec2(6.0, 6.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter_at(dot_rect).circle_filled(
+                                dot_rect.center(),
+                                3.0,
+                                Color32::from_rgb(0x4a, 0xde, 0x80),
+                            );
+                            ui.label(
+                                egui::RichText::new(truncate_status(&state.status, 48))
+                                    .font(FontId::monospace(11.0))
+                                    .color(tokens.text_muted),
+                            );
+                        });
+
+                        let toggle = draw_piano_toggle(ui, state.piano_visible);
+                        if toggle.clicked() {
+                            state.piano_visible = !state.piano_visible;
+                        }
+
+                        egui::ComboBox::from_id_source("s1_midi_device")
+                            .selected_text(
+                                midi.names
+                                    .get(midi.selected)
+                                    .map(String::as_str)
+                                    .unwrap_or("MIDI"),
+                            )
+                            .width(160.0)
+                            .show_ui(ui, |ui| {
+                                for (idx, name) in midi.names.iter().enumerate() {
+                                    if ui
+                                        .selectable_label(midi.selected == idx, name)
+                                        .clicked()
+                                    {
+                                        actions.midi_device_selected = Some(idx);
+                                    }
+                                }
+                            });
+                    });
                 });
             });
     });
+}
+
+fn truncate_status(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        format!("{}…", s.chars().take(max_chars.saturating_sub(1)).collect::<String>())
+    }
+}
+
+fn header_btn(ui: &mut Ui, label: &str, ghost: bool) -> egui::Response {
+    let tokens = Tokens::default();
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        FontId::proportional(11.0),
+        if ghost { tokens.text } else { tokens.accent_on },
+    );
+    let size = egui::vec2(galley.size().x + 24.0, galley.size().y + 12.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter_at(rect);
+        let fill = if ghost {
+            Color32::TRANSPARENT
+        } else {
+            tokens.accent
+        };
+        let stroke = if ghost {
+            tokens.border
+        } else {
+            Color32::from_rgb(0x2a, 0x6b, 0x8a)
+        };
+        let text_color = if ghost {
+            tokens.text
+        } else {
+            tokens.accent_on
+        };
+        if response.hovered() {
+            painter.rect_filled(rect, 6.0, tokens.bg_muted);
+        } else {
+            painter.rect_filled(rect, 6.0, fill);
+        }
+        painter.rect_stroke(rect, 6.0, egui::Stroke::new(1.0_f32, stroke));
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            FontId::proportional(11.0),
+            text_color,
+        );
+    }
+    response
 }
 
 fn draw_center(
@@ -119,6 +247,7 @@ fn draw_center(
     rect: Rect,
     state: &mut S1State,
     bank: Option<&WavetableBank>,
+    config: &S1ShellConfig,
     actions: &mut S1Actions,
 ) {
     let inner = rect.shrink(SPACE_SM);
@@ -126,9 +255,67 @@ fn draw_center(
         egui::pos2(inner.min.x, inner.max.y - WT_STRIP_HEIGHT),
         inner.max,
     );
-    let hero_rect = Rect::from_min_max(inner.min, egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT));
 
-    draw_spectrum_hero(ui, hero_rect, state);
+    let views_h = if config.show_wt_editor {
+        WT_VIEW_MIN_HEIGHT + GRID_UNIT
+    } else {
+        0.0
+    };
+    let views_rect = if config.show_wt_editor {
+        Rect::from_min_max(
+            egui::pos2(inner.min.x, strip_rect.min.y - views_h),
+            egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT),
+        )
+    } else {
+        Rect::NOTHING
+    };
+
+    let hero_rect = Rect::from_min_max(
+        inner.min,
+        egui::pos2(
+            inner.max.x,
+            if config.show_wt_editor {
+                views_rect.min.y - GRID_UNIT
+            } else {
+                strip_rect.min.y - GRID_UNIT
+            },
+        ),
+    );
+
+    if hero_rect.is_positive() {
+        draw_spectrum_hero(ui, hero_rect, state);
+    }
+
+    if config.show_wt_editor && views_rect.is_positive() {
+        ui.allocate_ui_at_rect(views_rect, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = GRID_UNIT;
+                let half_w = (ui.available_width() - GRID_UNIT) * 0.5;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(half_w, WT_VIEW_MIN_HEIGHT),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        WtView2d {
+                            position: state.wt_position,
+                            bank,
+                        }
+                        .show(ui);
+                    },
+                );
+                ui.allocate_ui_with_layout(
+                    egui::vec2(half_w, WT_VIEW_MIN_HEIGHT),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        WtView3d {
+                            position: state.wt_position,
+                            bank,
+                        }
+                        .show(ui);
+                    },
+                );
+            });
+        });
+    }
 
     ui.allocate_ui_at_rect(strip_rect, |ui| {
         let strip = WtStrip {
@@ -163,8 +350,9 @@ fn draw_spectrum_hero(ui: &mut Ui, area: Rect, state: &S1State) {
                 );
 
                 let viz_w = inner.width().min(520.0);
+                let viz_h = (inner.height() * 0.55).clamp(80.0, 180.0);
                 let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(viz_w, 180.0),
+                    egui::vec2(viz_w, viz_h),
                     egui::Sense::hover(),
                 );
                 let painter = ui.painter_at(rect);
@@ -304,7 +492,7 @@ fn draw_piano_wrap(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S
     });
 }
 
-fn draw_footer(ui: &mut Ui, rect: Rect, state: &mut S1State) {
+fn draw_footer(ui: &mut Ui, rect: Rect, state: &S1State) {
     let tokens = Tokens::default();
     ui.allocate_ui_at_rect(rect, |ui| {
         ui.set_min_height(rect.height());
@@ -315,28 +503,11 @@ fn draw_footer(ui: &mut Ui, rect: Rect, state: &mut S1State) {
                     ui.set_min_height(rect.height());
                     ui.spacing_mut().item_spacing.x = GRID_UNIT;
 
-                    let toggle = draw_piano_toggle(ui, state.piano_visible);
-                    if toggle.clicked() {
-                        state.piano_visible = !state.piano_visible;
-                    }
-
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        let (dot_rect, _) = ui.allocate_exact_size(
-                            egui::vec2(6.0, 6.0),
-                            egui::Sense::hover(),
-                        );
-                        ui.painter_at(dot_rect).circle_filled(
-                            dot_rect.center(),
-                            3.0,
-                            Color32::from_rgb(0x4a, 0xde, 0x80),
-                        );
-                        ui.label(
-                            egui::RichText::new(&state.status)
-                                .font(FontId::monospace(11.0))
-                                .color(tokens.text_muted),
-                        );
-                    });
+                    ui.label(
+                        egui::RichText::new("Performance")
+                            .size(11.0)
+                            .color(tokens.text_muted),
+                    );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.set_width(ui.available_width());

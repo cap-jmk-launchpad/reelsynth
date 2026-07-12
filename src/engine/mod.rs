@@ -52,6 +52,16 @@ impl SynthEngine {
         self.patch = patch;
     }
 
+    pub fn bank(&self) -> &WavetableBank {
+        &self.bank
+    }
+
+    /// Hot-swap wavetable bank and patch (preset load).
+    pub fn load_preset(&mut self, bank: WavetableBank, patch: Patch) {
+        self.bank = bank;
+        self.set_patch(patch);
+    }
+
     pub fn set_wt_position(&mut self, position: f32) {
         if let Some(osc) = self.patch.oscillators.get_mut(0) {
             osc.position = position.clamp(0.0, 255.0);

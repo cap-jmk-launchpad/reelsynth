@@ -1,13 +1,15 @@
 //! ReelSynth S1 performance UI — matches `brand/mockups/s1-performance.html`.
 
+mod midi_input;
+
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
-use reelsynth::patch::Patch;
-use reelsynth::SynthEngine;
-use reelsynth::WavetableBank;
-use reelsynth_ui::{draw_s1, S1State};
-use std::sync::Arc;
+use midi_input::{MidiDevices, MidiInputHandle};
+use reelsynth::{load_preset, resolve_bank_for_preset, Patch, SynthEngine, WavetableBank};
+use reelsynth_ui::{draw_s1, S1MidiDevices, S1ShellConfig, S1State};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 enum AudioCmd {
     NoteOn(u8, f32),
@@ -15,26 +17,36 @@ enum AudioCmd {
     SetWtPosition(f32),
     SetFilterCutoff(f32),
     SetFilterResonance(f32),
+    LoadPreset {
+        patch: Patch,
+        bank: WavetableBank,
+    },
 }
 
 struct AudioHandle {
     tx: Sender<AudioCmd>,
     _stream: cpal::Stream,
-    bank: WavetableBank,
+    bank: Arc<RwLock<WavetableBank>>,
 }
 
 impl AudioHandle {
     fn send(&self, cmd: AudioCmd) {
         let _ = self.tx.send(cmd);
     }
+
+    fn bank(&self) -> Arc<RwLock<WavetableBank>> {
+        Arc::clone(&self.bank)
+    }
 }
 
 fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
     let bank = WavetableBank::factory_saw_morph();
     let patch = Patch::default_mono();
-    let mut engine = SynthEngine::new(bank.clone(), patch, sample_rate);
+    let bank_shared = Arc::new(RwLock::new(bank.clone()));
+    let mut engine = SynthEngine::new(bank, patch, sample_rate);
 
     let (tx, rx) = crossbeam_channel::unbounded::<AudioCmd>();
+    let bank_for_audio = Arc::clone(&bank_shared);
 
     let host = cpal::default_host();
     let device = host
@@ -55,7 +67,7 @@ fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
         cpal::SampleFormat::F32 => device.build_output_stream(
             &config.into(),
             move |data: &mut [f32], _| {
-                drain_commands(&mut engine, &rx);
+                drain_commands(&mut engine, &rx, &bank_for_audio);
                 engine.process(data);
             },
             err_fn,
@@ -64,7 +76,7 @@ fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
         cpal::SampleFormat::I16 => device.build_output_stream(
             &config.into(),
             move |data: &mut [i16], _| {
-                drain_commands(&mut engine, &rx);
+                drain_commands(&mut engine, &rx, &bank_for_audio);
                 let mut buf = vec![0.0f32; data.len()];
                 engine.process(&mut buf);
                 for (out, sample) in data.iter_mut().zip(buf.iter()) {
@@ -83,11 +95,15 @@ fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
     Ok(AudioHandle {
         tx,
         _stream: stream,
-        bank,
+        bank: bank_shared,
     })
 }
 
-fn drain_commands(engine: &mut SynthEngine, rx: &Receiver<AudioCmd>) {
+fn drain_commands(
+    engine: &mut SynthEngine,
+    rx: &Receiver<AudioCmd>,
+    bank_shared: &Arc<RwLock<WavetableBank>>,
+) {
     loop {
         match rx.try_recv() {
             Ok(AudioCmd::NoteOn(n, v)) => engine.note_on(n, v),
@@ -95,10 +111,56 @@ fn drain_commands(engine: &mut SynthEngine, rx: &Receiver<AudioCmd>) {
             Ok(AudioCmd::SetWtPosition(p)) => engine.set_wt_position(p),
             Ok(AudioCmd::SetFilterCutoff(c)) => engine.set_filter_cutoff(c),
             Ok(AudioCmd::SetFilterResonance(r)) => engine.set_filter_resonance(r),
+            Ok(AudioCmd::LoadPreset { patch, bank }) => {
+                engine.load_preset(bank.clone(), patch);
+                if let Ok(mut g) = bank_shared.write() {
+                    *g = engine.bank().clone();
+                }
+            }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => break,
         }
     }
+}
+
+fn resolve_bank(path: &Path, preset: &Patch) -> Result<WavetableBank, String> {
+    resolve_bank_for_preset(path, preset).or_else(|_| match preset.wavetable_id.as_deref() {
+        Some("saw_morph") => Ok(WavetableBank::factory_saw_morph()),
+        Some(id) => Err(format!("could not resolve wavetable for id {id}")),
+        None => Ok(WavetableBank::factory_saw_morph()),
+    })
+}
+
+fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
+    state.preset_name = patch.name.clone();
+    state.preset_category = preset_category_label(patch);
+    state.wt_position = patch
+        .oscillators
+        .first()
+        .map(|o| o.position)
+        .unwrap_or(0.0);
+    state.filter_cutoff = patch.filter.cutoff;
+    state.filter_resonance = patch.filter.resonance;
+}
+
+fn preset_category_label(patch: &Patch) -> String {
+    let wt = patch
+        .wavetable_id
+        .as_deref()
+        .unwrap_or("wavetable")
+        .replace('_', " ");
+    format!("Preset · Wavetable · {wt}")
+}
+
+fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
+    let mut patch = base.clone();
+    patch.name = state.preset_name.clone();
+    if let Some(osc) = patch.oscillators.get_mut(0) {
+        osc.position = state.wt_position;
+    }
+    patch.filter.cutoff = state.filter_cutoff;
+    patch.filter.resonance = state.filter_resonance;
+    patch
 }
 
 fn main() -> eframe::Result<()> {
@@ -109,6 +171,9 @@ fn main() -> eframe::Result<()> {
             None
         }
     };
+
+    let midi_devices = MidiDevices::enumerate();
+    let (midi_note_tx, midi_note_rx) = crossbeam_channel::unbounded::<(u8, bool, f32)>();
 
     eframe::run_native(
         "ReelSynth",
@@ -121,7 +186,12 @@ fn main() -> eframe::Result<()> {
         },
         Box::new(move |cc| {
             reelsynth_ui_theme::apply(&cc.egui_ctx);
-            Ok(Box::new(ReelSynthApp::new(audio.clone())))
+            Ok(Box::new(ReelSynthApp::new(
+                audio.clone(),
+                midi_devices,
+                midi_note_tx,
+                midi_note_rx,
+            )))
         }),
     )
 }
@@ -129,28 +199,48 @@ fn main() -> eframe::Result<()> {
 struct ReelSynthApp {
     audio: Option<Arc<AudioHandle>>,
     state: S1State,
+    current_patch: Patch,
+    preset_path: Option<PathBuf>,
+    midi_devices: MidiDevices,
+    midi_selected: usize,
+    midi_handle: MidiInputHandle,
+    midi_note_tx: Sender<(u8, bool, f32)>,
+    midi_note_rx: Receiver<(u8, bool, f32)>,
 }
 
 impl ReelSynthApp {
-    fn new(audio: Option<Arc<AudioHandle>>) -> Self {
+    fn new(
+        audio: Option<Arc<AudioHandle>>,
+        midi_devices: MidiDevices,
+        midi_note_tx: Sender<(u8, bool, f32)>,
+        midi_note_rx: Receiver<(u8, bool, f32)>,
+    ) -> Self {
         let status = if audio.is_some() {
-            "Audio OK — click keys or use QWERTY row (Z–M)".into()
+            "Audio OK — click keys, QWERTY (Z–M), or MIDI".into()
         } else {
             "No audio — UI only".into()
         };
+        let midi_handle = MidiInputHandle::disconnected();
         Self {
             audio,
             state: S1State {
                 status,
                 ..S1State::default()
             },
+            current_patch: Patch::default_mono(),
+            preset_path: None,
+            midi_devices,
+            midi_selected: 0,
+            midi_handle,
+            midi_note_tx,
+            midi_note_rx,
         }
     }
 
-    fn note_on(&mut self, note: u8) {
+    fn note_on(&mut self, note: u8, velocity: f32) {
         if self.state.keys_down.insert(note) {
             if let Some(a) = &self.audio {
-                a.send(AudioCmd::NoteOn(note, 0.9));
+                a.send(AudioCmd::NoteOn(note, velocity));
             }
         }
     }
@@ -169,6 +259,124 @@ impl ReelSynthApp {
             a.send(AudioCmd::SetFilterCutoff(self.state.filter_cutoff));
             a.send(AudioCmd::SetFilterResonance(self.state.filter_resonance));
         }
+        self.current_patch = patch_from_state(&self.state, &self.current_patch);
+    }
+
+    fn connect_midi(&mut self, index: usize) {
+        self.midi_selected = index;
+        self.midi_handle = match MidiInputHandle::connect(
+            &self.midi_devices,
+            index,
+            self.midi_note_tx.clone(),
+        ) {
+            Ok(h) => {
+                let label = self
+                    .midi_devices
+                    .names
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| "MIDI".into());
+                self.state.midi_device = if index == 0 {
+                    "None".into()
+                } else {
+                    label.clone()
+                };
+                if index == 0 {
+                    self.state.status = "MIDI disconnected".into();
+                } else {
+                    self.state.status = format!("MIDI: {label}");
+                }
+                h
+            }
+            Err(e) => {
+                self.state.status = e;
+                MidiInputHandle::disconnected()
+            }
+        };
+    }
+
+    fn open_preset(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("ReelSynth Preset", &["reelpreset"])
+            .pick_file()
+        else {
+            return;
+        };
+
+        match load_preset(&path) {
+            Ok(patch) => match resolve_bank(&path, &patch) {
+                Ok(bank) => {
+                    if let Some(a) = &self.audio {
+                        a.send(AudioCmd::LoadPreset {
+                            patch: patch.clone(),
+                            bank,
+                        });
+                    }
+                    sync_state_from_patch(&mut self.state, &patch);
+                    self.current_patch = patch;
+                    self.preset_path = Some(path);
+                    self.state.status = format!(
+                        "Loaded {}",
+                        self.preset_path
+                            .as_ref()
+                            .and_then(|p| p.file_name())
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("preset")
+                    );
+                }
+                Err(e) => self.state.status = e,
+            },
+            Err(e) => self.state.status = format!("Open failed: {e}"),
+        }
+    }
+
+    fn save_preset(&mut self) {
+        let path = if let Some(p) = &self.preset_path {
+            Some(p.clone())
+        } else {
+            let default_name = format!(
+                "{}.reelpreset",
+                self.state
+                    .preset_name
+                    .replace(['/', '\\'], "_")
+                    .trim()
+            );
+            rfd::FileDialog::new()
+                .add_filter("ReelSynth Preset", &["reelpreset"])
+                .set_file_name(&default_name)
+                .save_file()
+        };
+
+        let Some(mut path) = path else {
+            return;
+        };
+
+        if path.extension().is_none() {
+            path.set_extension("reelpreset");
+        }
+
+        self.current_patch = patch_from_state(&self.state, &self.current_patch);
+        match self.current_patch.to_json() {
+            Ok(json) => match std::fs::write(&path, json) {
+                Ok(()) => {
+                    self.preset_path = Some(path.clone());
+                    self.state.status = format!(
+                        "Saved {}",
+                        path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("preset")
+                    );
+                }
+                Err(e) => self.state.status = format!("Save failed: {e}"),
+            },
+            Err(e) => self.state.status = format!("Serialize failed: {e}"),
+        }
+    }
+
+    fn bank_for_ui(&self) -> Option<WavetableBank> {
+        self.audio
+            .as_ref()
+            .and_then(|a| a.bank().read().ok().map(|g| (*g).clone()))
     }
 }
 
@@ -193,6 +401,14 @@ fn keyboard_note(key: egui::Key) -> Option<u8> {
 
 impl eframe::App for ReelSynthApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        while let Ok((note, on, vel)) = self.midi_note_rx.try_recv() {
+            if on {
+                self.note_on(note, vel.max(0.05));
+            } else {
+                self.note_off(note);
+            }
+        }
+
         ctx.input(|i| {
             for event in &i.events {
                 if let egui::Event::Key {
@@ -204,7 +420,7 @@ impl eframe::App for ReelSynthApp {
                 {
                     if let Some(note) = keyboard_note(*key) {
                         if *pressed {
-                            self.note_on(note);
+                            self.note_on(note, 0.9);
                         } else {
                             self.note_off(note);
                         }
@@ -219,11 +435,19 @@ impl eframe::App for ReelSynthApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                let bank = self.audio.as_ref().map(|a| &a.bank);
-                let actions = draw_s1(ui, ui.max_rect(), &mut self.state, bank);
+                let bank = self.bank_for_ui();
+                let bank_ref = bank.as_ref();
+                let midi = S1MidiDevices {
+                    names: &self.midi_devices.names,
+                    selected: self.midi_selected,
+                };
+                let config = S1ShellConfig {
+                    show_wt_editor: true,
+                };
+                let actions = draw_s1(ui, ui.max_rect(), &mut self.state, bank_ref, &midi, &config);
 
                 if let Some(n) = actions.note_on {
-                    self.note_on(n);
+                    self.note_on(n, 0.9);
                 }
                 if let Some(n) = actions.note_off {
                     self.note_off(n);
@@ -232,10 +456,15 @@ impl eframe::App for ReelSynthApp {
                     self.sync_params();
                 }
                 if actions.open_preset {
-                    self.state.status = "Open preset — stub".into();
+                    self.open_preset();
                 }
                 if actions.save_preset {
-                    self.state.status = "Save preset — stub".into();
+                    self.save_preset();
+                }
+                if let Some(idx) = actions.midi_device_selected {
+                    if idx != self.midi_selected {
+                        self.connect_midi(idx);
+                    }
                 }
             });
 

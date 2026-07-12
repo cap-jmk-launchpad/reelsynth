@@ -25,6 +25,7 @@ pub const KNOB_MD: f32 = 56.0;
 pub const KNOB_LG: f32 = 64.0;
 
 pub const WT_STRIP_HEIGHT: f32 = 72.0;
+pub const WT_VIEW_MIN_HEIGHT: f32 = 140.0;
 
 pub const PIANO_HEIGHT: f32 = 80.0;
 pub const PIANO_WHITE_KEY_WIDTH: f32 = 18.0;
