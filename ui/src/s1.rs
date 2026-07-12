@@ -6,7 +6,7 @@ use reelsynth_ui_theme::{heading_font, Tokens};
 
 use crate::layout::{S1Layout, GRID_UNIT, RADIUS_MD, SPACE_MD, SPACE_SM, WT_STRIP_HEIGHT, WT_VIEW_MIN_HEIGHT};
 use crate::widgets::{Knob, KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled};
-use crate::wt::{WtStrip, WtView2d, WtView3d};
+use crate::wt::{WtStrip, WtView2d, WtView3d, FACTORY_BANKS};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct S1ShellConfig {
@@ -21,6 +21,9 @@ pub struct S1Actions {
     pub note_off: Option<u8>,
     pub open_preset: bool,
     pub save_preset: bool,
+    pub import_wt_file: bool,
+    pub save_wt_file: bool,
+    pub import_factory_wt: Option<String>,
     pub midi_device_selected: Option<usize>,
 }
 
@@ -31,6 +34,7 @@ pub struct S1MidiDevices<'a> {
 
 pub struct S1State {
     pub wt_position: f32,
+    pub wt_bank_name: String,
     pub filter_cutoff: f32,
     pub filter_resonance: f32,
     pub keys_down: HashSet<u8>,
@@ -45,6 +49,7 @@ impl Default for S1State {
     fn default() -> Self {
         Self {
             wt_position: 108.0,
+            wt_bank_name: "Saw Morph".into(),
             filter_cutoff: 1200.0,
             filter_resonance: 0.3,
             keys_down: HashSet::new(),
@@ -140,6 +145,29 @@ fn draw_header(
                     if header_btn(ui, "Save", true).clicked() {
                         actions.save_preset = true;
                     }
+
+                    ui.menu_button(header_menu_label("WT"), |ui| {
+                        if ui.button("Open .reelwt…").clicked() {
+                            actions.import_wt_file = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Save .reelwt…").clicked() {
+                            actions.save_wt_file = true;
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new("Factory banks")
+                                .size(10.0)
+                                .color(tokens.text_muted),
+                        );
+                        for entry in FACTORY_BANKS {
+                            if ui.button(entry.label).clicked() {
+                                actions.import_factory_wt = Some(entry.id.to_string());
+                                ui.close_menu();
+                            }
+                        }
+                    });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.set_width(ui.available_width());
@@ -242,6 +270,10 @@ fn header_btn(ui: &mut Ui, label: &str, ghost: bool) -> egui::Response {
     response
 }
 
+fn header_menu_label(label: &str) -> egui::WidgetText {
+    egui::RichText::new(label).size(11.0).into()
+}
+
 fn draw_center(
     ui: &mut Ui,
     rect: Rect,
@@ -251,36 +283,37 @@ fn draw_center(
     actions: &mut S1Actions,
 ) {
     let inner = rect.shrink(SPACE_SM);
-    let strip_rect = Rect::from_min_max(
-        egui::pos2(inner.min.x, inner.max.y - WT_STRIP_HEIGHT),
-        inner.max,
-    );
-
     let views_h = if config.show_wt_editor {
         WT_VIEW_MIN_HEIGHT + GRID_UNIT
     } else {
         0.0
     };
+
     let views_rect = if config.show_wt_editor {
         Rect::from_min_max(
-            egui::pos2(inner.min.x, strip_rect.min.y - views_h),
-            egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT),
+            egui::pos2(inner.min.x, inner.max.y - views_h),
+            inner.max,
         )
     } else {
         Rect::NOTHING
     };
 
+    let strip_bottom = if config.show_wt_editor {
+        views_rect.min.y - GRID_UNIT
+    } else {
+        inner.max.y
+    };
+    let strip_rect = Rect::from_min_max(
+        egui::pos2(inner.min.x, strip_bottom - WT_STRIP_HEIGHT),
+        egui::pos2(inner.max.x, strip_bottom),
+    );
+
     let hero_rect = Rect::from_min_max(
         inner.min,
-        egui::pos2(
-            inner.max.x,
-            if config.show_wt_editor {
-                views_rect.min.y - GRID_UNIT
-            } else {
-                strip_rect.min.y - GRID_UNIT
-            },
-        ),
+        egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT),
     );
+
+    let bank_name = state.wt_bank_name.as_str();
 
     if hero_rect.is_positive() {
         draw_spectrum_hero(ui, hero_rect, state);
@@ -298,6 +331,7 @@ fn draw_center(
                         WtView2d {
                             position: state.wt_position,
                             bank,
+                            bank_name: Some(bank_name),
                         }
                         .show(ui);
                     },
@@ -321,6 +355,7 @@ fn draw_center(
         let strip = WtStrip {
             position: &mut state.wt_position,
             bank,
+            bank_name: Some(bank_name),
             visible_frames: 16,
         };
         if strip.show(ui).changed {

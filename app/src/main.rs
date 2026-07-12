@@ -7,7 +7,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
 use midi_input::{MidiDevices, MidiInputHandle};
 use reelsynth::{load_preset, resolve_bank_for_preset, Patch, SynthEngine, WavetableBank};
-use reelsynth_ui::{draw_s1, S1MidiDevices, S1ShellConfig, S1State};
+use reelsynth_ui::{draw_s1, factory_bank, factory_label, S1MidiDevices, S1ShellConfig, S1State};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -134,6 +134,18 @@ fn resolve_bank(path: &Path, preset: &Patch) -> Result<WavetableBank, String> {
 fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
     state.preset_name = patch.name.clone();
     state.preset_category = preset_category_label(patch);
+    state.wt_bank_name = patch
+        .wavetable_id
+        .as_deref()
+        .and_then(factory_label)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            patch
+                .wavetable_id
+                .as_deref()
+                .unwrap_or("wavetable")
+                .replace('_', " ")
+        });
     state.wt_position = patch
         .oscillators
         .first()
@@ -201,6 +213,7 @@ struct ReelSynthApp {
     state: S1State,
     current_patch: Patch,
     preset_path: Option<PathBuf>,
+    wt_path: Option<PathBuf>,
     midi_devices: MidiDevices,
     midi_selected: usize,
     midi_handle: MidiInputHandle,
@@ -229,6 +242,7 @@ impl ReelSynthApp {
             },
             current_patch: Patch::default_mono(),
             preset_path: None,
+            wt_path: None,
             midi_devices,
             midi_selected: 0,
             midi_handle,
@@ -373,6 +387,107 @@ impl ReelSynthApp {
         }
     }
 
+    fn load_bank(&mut self, bank: WavetableBank, name: String, wt_id: Option<String>) {
+        if let Some(id) = wt_id {
+            self.current_patch.wavetable_id = Some(id);
+        }
+        self.state.wt_bank_name = name;
+        if let Some(a) = &self.audio {
+            let patch = patch_from_state(&self.state, &self.current_patch);
+            a.send(AudioCmd::LoadPreset {
+                patch: patch.clone(),
+                bank,
+            });
+            self.current_patch = patch;
+        }
+    }
+
+    fn import_wt_file(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("ReelSynth Wavetable", &["reelwt"])
+            .pick_file()
+        else {
+            return;
+        };
+
+        match WavetableBank::read_file(path.to_str().unwrap_or_default()) {
+            Ok(bank) => {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Wavetable")
+                    .replace('_', " ");
+                self.wt_path = Some(path.clone());
+                self.load_bank(bank, name, None);
+                self.state.status = format!(
+                    "Loaded WT {}",
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("wavetable")
+                );
+            }
+            Err(e) => self.state.status = format!("WT open failed: {e}"),
+        }
+    }
+
+    fn import_factory_wt(&mut self, id: &str) {
+        let Some(bank) = factory_bank(id) else {
+            self.state.status = format!("Unknown factory bank: {id}");
+            return;
+        };
+        let label = factory_label(id).unwrap_or(id).to_string();
+        self.wt_path = None;
+        self.load_bank(bank, label, Some(id.to_string()));
+        self.state.status = format!("Loaded factory WT: {id}");
+    }
+
+    fn save_wt_file(&mut self) {
+        let bank = match self.bank_for_ui() {
+            Some(b) => b,
+            None => {
+                self.state.status = "No wavetable loaded".into();
+                return;
+            }
+        };
+
+        let path = if let Some(p) = &self.wt_path {
+            Some(p.clone())
+        } else {
+            let default_name = format!(
+                "{}.reelwt",
+                self.state
+                    .wt_bank_name
+                    .replace(['/', '\\'], "_")
+                    .trim()
+            );
+            rfd::FileDialog::new()
+                .add_filter("ReelSynth Wavetable", &["reelwt"])
+                .set_file_name(&default_name)
+                .save_file()
+        };
+
+        let Some(mut path) = path else {
+            return;
+        };
+
+        if path.extension().is_none() {
+            path.set_extension("reelwt");
+        }
+
+        match bank.write_file(path.to_str().unwrap_or_default()) {
+            Ok(()) => {
+                self.wt_path = Some(path.clone());
+                self.state.status = format!(
+                    "Saved WT {}",
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("wavetable")
+                );
+            }
+            Err(e) => self.state.status = format!("WT save failed: {e}"),
+        }
+    }
+
     fn bank_for_ui(&self) -> Option<WavetableBank> {
         self.audio
             .as_ref()
@@ -460,6 +575,15 @@ impl eframe::App for ReelSynthApp {
                 }
                 if actions.save_preset {
                     self.save_preset();
+                }
+                if actions.import_wt_file {
+                    self.import_wt_file();
+                }
+                if actions.save_wt_file {
+                    self.save_wt_file();
+                }
+                if let Some(id) = actions.import_factory_wt {
+                    self.import_factory_wt(&id);
                 }
                 if let Some(idx) = actions.midi_device_selected {
                     if idx != self.midi_selected {

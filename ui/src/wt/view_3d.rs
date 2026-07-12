@@ -4,6 +4,8 @@ use reelsynth_ui_theme::Tokens;
 
 use crate::layout::{RADIUS_SM, WT_VIEW_MIN_HEIGHT};
 
+use super::waveform::{frame_index, waveform_points};
+
 pub struct WtView3d<'a> {
     pub position: f32,
     pub bank: Option<&'a WavetableBank>,
@@ -79,69 +81,90 @@ fn paint_mesh_from_bank(
     accent_ui: Color32,
     accent: Color32,
 ) {
-    let num_slices = 12usize;
-    let max_frame = bank.num_frames.saturating_sub(1).max(1);
-    let center = (position / max_frame as f32).clamp(0.0, 1.0);
-    let half = (num_slices as f32 * 0.45) as i32;
+    let num_slices = 16usize;
+    let center_frame = frame_index(position, bank.num_frames);
+    let half = num_slices / 2;
+    let mesh_left = rect.min.x + rect.width() * 0.08;
+    let mesh_width = rect.width() * 0.84;
+    let depth_pitch = rect.width() * 0.028;
+
+    let mut slice_polylines: Vec<Vec<Pos2>> = Vec::with_capacity(num_slices);
 
     for s in 0..num_slices {
-        let fi = ((center * max_frame as f32) as i32 + s as i32 - half)
-            .clamp(0, max_frame as i32) as usize;
+        let fi = (center_frame as i32 + s as i32 - half as i32)
+            .clamp(0, bank.num_frames.saturating_sub(1) as i32) as usize;
         let depth = (s as f32 / num_slices as f32 - 0.5).abs();
-        let alpha = (1.0 - depth * 1.6).clamp(0.15, 1.0);
-        let z_offset = (s as f32 / num_slices as f32 - 0.5) * rect.width() * 0.35;
-        let y_offset = depth * rect.height() * 0.25;
+        let z_offset = (s as f32 - half as f32) * depth_pitch;
+        let y_offset = depth * rect.height() * 0.22;
+
+        let slice_rect = Rect::from_min_max(
+            Pos2::new(mesh_left + z_offset, rect.min.y + y_offset),
+            Pos2::new(mesh_left + z_offset + mesh_width, rect.max.y - y_offset),
+        );
 
         let frame = bank.frame(fi);
-        let step = (frame.len() / 48).max(1);
-        let mid_y = rect.center().y + y_offset;
-        let left = rect.min.x + rect.width() * 0.1 + z_offset;
-        let width = rect.width() * 0.75;
+        let points = waveform_points(frame, slice_rect, 64, 0.30);
+        slice_polylines.push(points);
+    }
 
-        let points: Vec<Pos2> = frame
-            .iter()
-            .step_by(step)
-            .take(49)
-            .enumerate()
-            .map(|(i, sample)| {
-                let t = i as f32 / 48.0;
-                Pos2::new(
-                    left + t * width,
-                    mid_y - sample * rect.height() * 0.28,
-                )
-            })
-            .collect();
-
-        if points.len() >= 2 {
-            let is_active = s == num_slices / 2;
-            let color = if is_active {
-                accent
-            } else {
-                accent_ui.gamma_multiply(alpha)
-            };
-            let width_stroke = if is_active { 2.0_f32 } else { 1.0_f32 };
-            painter.add(Shape::line(points, egui::Stroke::new(width_stroke, color)));
+    // Vertical mesh ribs between adjacent slices.
+    let rib_count = 12usize;
+    for rib in 0..=rib_count {
+        let t = rib as f32 / rib_count as f32;
+        for window in slice_polylines.windows(2) {
+            if let [a, b] = window {
+                if a.is_empty() || b.is_empty() {
+                    continue;
+                }
+                let ia = ((a.len() - 1) as f32 * t).round() as usize;
+                let ib = ((b.len() - 1) as f32 * t).round() as usize;
+                let pa = a[ia.min(a.len() - 1)];
+                let pb = b[ib.min(b.len() - 1)];
+                painter.line_segment(
+                    [pa, pb],
+                    egui::Stroke::new(0.75_f32, accent_ui.gamma_multiply(0.25)),
+                );
+            }
         }
+    }
+
+    for (s, points) in slice_polylines.iter().enumerate() {
+        if points.len() < 2 {
+            continue;
+        }
+        let depth = (s as f32 / num_slices as f32 - 0.5).abs();
+        let alpha = (1.0 - depth * 1.5).clamp(0.2, 1.0);
+        let is_active = s == half;
+        let color = if is_active {
+            accent
+        } else {
+            accent_ui.gamma_multiply(alpha)
+        };
+        let width_stroke = if is_active { 2.0_f32 } else { 1.0_f32 };
+        painter.add(Shape::line(
+            points.clone(),
+            egui::Stroke::new(width_stroke, color),
+        ));
     }
 }
 
 fn paint_placeholder_mesh(painter: &egui::Painter, rect: Rect, accent_ui: Color32) {
-    for i in 0..8 {
-        let t = i as f32 / 7.0;
-        let y_off = t * rect.height() * 0.35;
-        let x_off = (t - 0.5) * rect.width() * 0.2;
-        let points: Vec<Pos2> = (0..=32)
+    for i in 0..10 {
+        let t = i as f32 / 9.0;
+        let y_off = t * rect.height() * 0.32;
+        let x_off = (t - 0.5) * rect.width() * 0.22;
+        let points: Vec<Pos2> = (0..=40)
             .map(|j| {
-                let u = j as f32 / 32.0;
-                let x = rect.min.x + x_off + u * rect.width() * 0.8;
+                let u = j as f32 / 40.0;
+                let x = rect.min.x + x_off + u * rect.width() * 0.78;
                 let y = rect.center().y + y_off
-                    + (u * std::f32::consts::TAU * 2.0 + t * 2.0).sin() * rect.height() * 0.2;
+                    + (u * std::f32::consts::TAU * 2.0 + t * 2.0).sin() * rect.height() * 0.18;
                 Pos2::new(x, y)
             })
             .collect();
         painter.add(Shape::line(
             points,
-            egui::Stroke::new(1.0_f32, accent_ui.gamma_multiply(0.4 + t * 0.5)),
+            egui::Stroke::new(1.0_f32, accent_ui.gamma_multiply(0.35 + t * 0.45)),
         ));
     }
 }

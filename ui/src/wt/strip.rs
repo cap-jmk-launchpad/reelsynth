@@ -4,6 +4,8 @@ use reelsynth_ui_theme::Tokens;
 
 use crate::layout::{RADIUS_SM, WT_STRIP_HEIGHT};
 
+use super::waveform::waveform_points;
+
 pub struct WtStripResponse {
     pub response: Response,
     pub changed: bool,
@@ -12,6 +14,7 @@ pub struct WtStripResponse {
 pub struct WtStrip<'a> {
     pub position: &'a mut f32,
     pub bank: Option<&'a WavetableBank>,
+    pub bank_name: Option<&'a str>,
     pub visible_frames: usize,
 }
 
@@ -96,10 +99,15 @@ impl<'a> WtStrip<'a> {
             );
 
             let frame_i = self.position.round() as u32;
+            let label = if let Some(name) = self.bank_name {
+                format!("{name} · {num_frames} frames · pos {frame_i}")
+            } else {
+                format!("Position · frame {frame_i} / {}", num_frames - 1)
+            };
             painter.text(
                 Pos2::new(rect.min.x + 8.0, rect.min.y + 4.0),
                 egui::Align2::LEFT_TOP,
-                format!("Position · frame {frame_i} / {}", num_frames - 1),
+                label,
                 egui::FontId::proportional(10.0),
                 tokens.text_muted,
             );
@@ -119,16 +127,7 @@ fn paint_waveform_thumbnail(
     accent: Color32,
 ) {
     let frame = bank.frame(frame_idx);
-    let step = (frame.len() / 32).max(1);
-    let mut points: Vec<Pos2> = Vec::new();
-    let mid_y = rect.center().y;
-    let half_h = rect.height() * 0.35;
-    for (i, chunk) in frame.iter().step_by(step).take(32).enumerate() {
-        let t = i as f32 / 31.0;
-        let x = egui::lerp(rect.min.x..=rect.max.x, t);
-        let y = mid_y - chunk * half_h;
-        points.push(Pos2::new(x, y));
-    }
+    let points = waveform_points(frame, rect, 32, 0.35);
     if points.len() >= 2 {
         let color = if active { accent } else { accent_ui };
         painter.add(Shape::line(points, egui::Stroke::new(if active { 2.0_f32 } else { 1.5_f32 }, color)));
