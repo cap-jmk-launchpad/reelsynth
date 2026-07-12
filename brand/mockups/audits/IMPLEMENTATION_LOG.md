@@ -46,7 +46,7 @@ Progress tracker for the UI platform plan (`reelsynth_ui_platform` + `reelsynth_
 | 3D mesh | CSS gradient placeholder | slice polylines + depth ribs from bank | data-driven |
 | Center column order | strip → views | hero → strip → views (S1+S2) | hero is S1-only |
 
-**Commit:** _(pending this loop)_
+**Commit:** `9730fd4` — WT import/save, 2D/3D bank views, layout audit
 
 ### Next loop
 
