@@ -84,12 +84,12 @@ Data: `WavetableBank` frame count (256 default), position from `SynthEngine::set
 
 | Element | Size | egui constant |
 |---------|------|---------------|
-| Container | 72px tall (`--piano-h`) | `layout::PIANO_HEIGHT` |
-| White key | 15px wide (`--piano-white-w`) | `layout::PIANO_WHITE_KEY_WIDTH` |
+| Container | 80px tall (`--piano-h`) | `layout::PIANO_HEIGHT` |
+| White key | 18px wide (`--piano-white-w`) | `layout::PIANO_WHITE_KEY_WIDTH` |
 | Black key | 58% of white width, 56% of piano height | `PIANO_BLACK_*_RATIO` |
 | Active | `--accent-ui` gradient | accent fill on key |
 
-14 white keys (2 octaves) centered in piano wrap; fixed key width (not flex-stretch). Toggle via footer `.rs-toggle`.
+14 white keys (2 octaves) centered in piano wrap; fixed key width (not flex-stretch). Total width 252px at 18px/key. Toggle via footer `.rs-toggle`.
 
 ## Mod matrix
 

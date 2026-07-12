@@ -21,8 +21,8 @@ pub const KNOB_LG: f32 = 64.0;
 
 pub const WT_STRIP_HEIGHT: f32 = 72.0;
 
-pub const PIANO_HEIGHT: f32 = 72.0;
-pub const PIANO_WHITE_KEY_WIDTH: f32 = 15.0;
+pub const PIANO_HEIGHT: f32 = 80.0;
+pub const PIANO_WHITE_KEY_WIDTH: f32 = 18.0;
 pub const PIANO_BLACK_WIDTH_RATIO: f32 = 0.58;
 pub const PIANO_BLACK_HEIGHT_RATIO: f32 = 0.56;
 pub const PIANO_OCTAVES: usize = 2;
