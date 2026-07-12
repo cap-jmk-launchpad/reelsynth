@@ -82,14 +82,14 @@ Data: `WavetableBank` frame count (256 default), position from `SynthEngine::set
 
 ## Piano (`.rs-piano`)
 
-| Element | Size | egui |
-|---------|------|------|
-| Container | 88px tall | `ui.horizontal` white keys |
-| White key | flex 1 | `Button` min_size ~40×88 |
-| Black key | 58% width, 56% height | overlay `Area` or absolute positions |
-| Active | `--accent-ui` gradient | `widgets.active.bg_fill` |
+| Element | Size | egui constant |
+|---------|------|---------------|
+| Container | 72px tall (`--piano-h`) | `layout::PIANO_HEIGHT` |
+| White key | 15px wide (`--piano-white-w`) | `layout::PIANO_WHITE_KEY_WIDTH` |
+| Black key | 58% of white width, 56% of piano height | `PIANO_BLACK_*_RATIO` |
+| Active | `--accent-ui` gradient | accent fill on key |
 
-14 white keys shown in full mockup (C–B + octave). Toggle via header/footer `.rs-toggle`.
+14 white keys (2 octaves) centered in piano wrap; fixed key width (not flex-stretch). Toggle via footer `.rs-toggle`.
 
 ## Mod matrix
 

@@ -17,6 +17,10 @@
   --knob-sm: 48px;
   --knob-md: 56px;
   --knob-lg: 64px;
+  --piano-h: 72px;
+  --piano-white-w: 15px;
+  --piano-black-w-ratio: 0.58;
+  --piano-black-h-ratio: 0.56;
 }
 
 *,
@@ -733,8 +737,10 @@ h4,
 
 .rs-piano {
   position: relative;
-  height: 88px;
+  height: var(--piano-h);
   user-select: none;
+  display: flex;
+  justify-content: center;
 }
 
 .rs-piano__white {
@@ -743,7 +749,8 @@ h4,
 }
 
 .rs-piano__white-key {
-  flex: 1;
+  flex: 0 0 var(--piano-white-w);
+  width: var(--piano-white-w);
   background: linear-gradient(180deg, #f4f4f5 0%, #d4d4d8 85%, #a1a1aa 100%);
   border: 1px solid #52525b;
   border-radius: 0 0 4px 4px;
@@ -761,21 +768,22 @@ h4,
 .rs-piano__black-keys {
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
-  height: 56%;
+  left: 50%;
+  transform: translateX(-50%);
+  height: calc(var(--piano-h) * var(--piano-black-h-ratio));
   pointer-events: none;
   display: flex;
 }
 
 .rs-piano__black-slot {
-  flex: 1;
+  flex: 0 0 var(--piano-white-w);
+  width: var(--piano-white-w);
   position: relative;
 }
 
 .rs-piano__black-key {
   position: absolute;
-  width: 58%;
+  width: calc(var(--piano-white-w) * var(--piano-black-w-ratio));
   height: 100%;
   background: linear-gradient(180deg, #3f3f46 0%, #18181b 100%);
   border: 1px solid #09090b;
