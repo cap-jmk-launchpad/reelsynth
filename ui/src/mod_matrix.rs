@@ -17,7 +17,7 @@ pub enum ModPolarity {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModRouteUi {
+pub struct ModSlotUi {
     pub source: &'static str,
     pub target: &'static str,
     pub amount: i32,
@@ -26,7 +26,7 @@ pub struct ModRouteUi {
     pub polarity: ModPolarity,
 }
 
-impl Default for ModRouteUi {
+impl Default for ModSlotUi {
     fn default() -> Self {
         Self {
             source: "LFO 1",
@@ -39,9 +39,9 @@ impl Default for ModRouteUi {
     }
 }
 
-pub fn default_mod_routes() -> Vec<ModRouteUi> {
+pub fn default_mod_slots() -> Vec<ModSlotUi> {
     vec![
-        ModRouteUi {
+        ModSlotUi {
             source: "LFO 1",
             target: "WT Pos",
             amount: 32,
@@ -49,7 +49,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Bipolar,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "Env 2",
             target: "Cutoff",
             amount: 68,
@@ -57,7 +57,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Positive,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "Velo",
             target: "Level",
             amount: 45,
@@ -65,7 +65,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Positive,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "ModWh",
             target: "Res",
             amount: -18,
@@ -73,7 +73,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Negative,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "After",
             target: "Pitch",
             amount: 12,
@@ -81,7 +81,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Bipolar,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "LFO 2",
             target: "Pan",
             amount: 40,
@@ -89,7 +89,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Bipolar,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "Step",
             target: "WT Pos",
             amount: 100,
@@ -97,7 +97,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
             enabled: true,
             polarity: ModPolarity::Positive,
         },
-        ModRouteUi {
+        ModSlotUi {
             source: "Rand",
             target: "Detune",
             amount: 8,
@@ -110,7 +110,7 @@ pub fn default_mod_routes() -> Vec<ModRouteUi> {
 
 pub struct ModMatrixState<'a> {
     pub open: &'a mut bool,
-    pub routes: &'a mut [ModRouteUi],
+    pub routes: &'a mut [ModSlotUi],
     pub total_routes: usize,
 }
 
@@ -159,7 +159,7 @@ pub fn draw_mod_matrix(ui: &mut Ui, rect: Rect, state: ModMatrixState<'_>) -> Mo
 }
 
 /// Map UI rows to engine [`ModSlot`] entries (S6).
-pub fn mod_routes_to_slots(routes: &[ModRouteUi]) -> Vec<ModSlot> {
+pub fn mod_slots_to_patch(routes: &[ModSlotUi]) -> Vec<ModSlot> {
     routes
         .iter()
         .filter_map(|route| {
@@ -177,13 +177,13 @@ pub fn mod_routes_to_slots(routes: &[ModRouteUi]) -> Vec<ModSlot> {
 }
 
 /// Hydrate UI rows from patch mod matrix; pads with defaults when sparse.
-pub fn mod_routes_from_slots(slots: &[ModSlot]) -> Vec<ModRouteUi> {
+pub fn mod_slots_from_patch(slots: &[ModSlot]) -> Vec<ModSlotUi> {
     if slots.is_empty() {
-        return default_mod_routes();
+        return default_mod_slots();
     }
     slots
         .iter()
-        .map(|slot| ModRouteUi {
+        .map(|slot| ModSlotUi {
             source: engine_source_to_ui(&slot.source),
             target: engine_target_to_ui(&slot.target),
             amount: (slot.amount * 100.0).round() as i32,
@@ -278,10 +278,10 @@ mod bridge_tests {
 
     #[test]
     fn round_trip_mod_route() {
-        let routes = default_mod_routes();
-        let slots = mod_routes_to_slots(&routes);
+        let routes = default_mod_slots();
+        let slots = mod_slots_to_patch(&routes);
         assert!(!slots.is_empty());
-        let restored = mod_routes_from_slots(&slots);
+        let restored = mod_slots_from_patch(&slots);
         assert_eq!(restored.len(), routes.len());
         assert_eq!(restored[0].source, routes[0].source);
         assert_eq!(restored[0].target, routes[0].target);
@@ -289,9 +289,9 @@ mod bridge_tests {
 
     #[test]
     fn disabled_routes_persist() {
-        let mut routes = default_mod_routes();
+        let mut routes = default_mod_slots();
         routes[0].enabled = false;
-        let slots = mod_routes_to_slots(&routes);
+        let slots = mod_slots_to_patch(&routes);
         assert!(!slots[0].enabled);
     }
 }
@@ -337,7 +337,7 @@ struct ModRowResult {
     changed: bool,
 }
 
-fn draw_mod_row(ui: &mut Ui, route: &mut ModRouteUi) -> ModRowResult {
+fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi) -> ModRowResult {
     let tokens = Tokens::default();
     let mut changed = false;
     let row_h = MOD_ROW_HEIGHT;
@@ -434,7 +434,7 @@ fn draw_mod_row(ui: &mut Ui, route: &mut ModRouteUi) -> ModRowResult {
     ModRowResult { changed }
 }
 
-fn paint_mod_cell(ui: &mut Ui, rect: Rect, route: &mut ModRouteUi) -> bool {
+fn paint_mod_cell(ui: &mut Ui, rect: Rect, route: &mut ModSlotUi) -> bool {
     let tokens = Tokens::default();
     let (stroke, text_color, fill) = match route.polarity {
         ModPolarity::Positive => (

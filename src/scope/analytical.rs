@@ -3,7 +3,7 @@
 use crate::engine::note_to_freq;
 use crate::fx::FxChain;
 use crate::patch::Patch;
-use crate::scope::SCOPE_DISPLAY_LEN;
+use super::ring_buffer::SCOPE_DISPLAY_LEN;
 use crate::voice::{process_sample_stages, VoiceSampleContext, VoiceState};
 use crate::wavetable::WavetableBank;
 

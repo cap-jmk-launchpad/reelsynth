@@ -91,7 +91,7 @@ pub fn apply_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
 
     if let Some(data) = try_font(include_bytes!("../assets/fonts/Inter-Regular.ttf")) {
-        fonts.font_data.insert("inter".to_owned(), data);
+        fonts.font_data.insert("inter".to_owned(), data.into());
         if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
             family.insert(0, "inter".to_owned());
         }
@@ -100,7 +100,7 @@ pub fn apply_fonts(ctx: &egui::Context) {
     let heading_family = if let Some(data) =
         try_font(include_bytes!("../assets/fonts/IBMPlexSans-SemiBold.ttf"))
     {
-        fonts.font_data.insert("ibm_plex".to_owned(), data);
+        fonts.font_data.insert("ibm_plex".to_owned(), data.into());
         let family = FontFamily::Name("heading".into());
         fonts
             .families
@@ -111,7 +111,7 @@ pub fn apply_fonts(ctx: &egui::Context) {
     };
 
     if let Some(data) = try_font(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")) {
-        fonts.font_data.insert("jetbrains".to_owned(), data);
+        fonts.font_data.insert("jetbrains".to_owned(), data.into());
         if let Some(family) = fonts.families.get_mut(&FontFamily::Monospace) {
             family.insert(0, "jetbrains".to_owned());
         }

@@ -20,6 +20,11 @@ name = "reelsynth-export"
 path = "src/bin/export.rs"
 required-features = []
 
+[[bin]]
+name = "gen_qa_goldens"
+path = "src/bin/gen_qa_goldens.rs"
+required-features = []
+
 [lib]
 name = "reelsynth"
 crate-type = ["cdylib", "rlib"]

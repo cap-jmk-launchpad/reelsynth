@@ -12,7 +12,7 @@ pub const RADIUS_SM: f32 = 10.0;
 pub const RADIUS_MD: f32 = 16.0;
 
 pub const APP_WIDTH: f32 = 1280.0;
-pub const APP_HEIGHT_S1: f32 = 720.0;
+pub const APP_HEIGHT_COMPACT: f32 = 720.0;
 pub const APP_HEIGHT_FULL: f32 = 820.0;
 
 pub const HEADER_HEIGHT: f32 = 48.0;
@@ -42,7 +42,7 @@ pub const SECTION_HEADER_HEIGHT: f32 = 28.0;
 
 /// Layout options for the performance / full shell.
 #[derive(Debug, Clone, Copy)]
-pub struct S1LayoutOptions {
+pub struct ShellLayoutOptions {
     pub piano_visible: bool,
     pub show_osc_column: bool,
     pub show_mod_matrix: bool,
@@ -51,7 +51,7 @@ pub struct S1LayoutOptions {
     pub fx_rack_open: bool,
 }
 
-impl Default for S1LayoutOptions {
+impl Default for ShellLayoutOptions {
     fn default() -> Self {
         Self {
             piano_visible: true,
@@ -66,7 +66,7 @@ impl Default for S1LayoutOptions {
 
 /// Computed rects for the performance shell.
 #[derive(Debug, Clone, Copy)]
-pub struct S1Layout {
+pub struct ShellLayout {
     pub header: Rect,
     pub main: Rect,
     pub osc: Rect,
@@ -78,11 +78,11 @@ pub struct S1Layout {
     pub footer: Rect,
 }
 
-impl S1Layout {
+impl ShellLayout {
     pub fn compute(screen: Rect, piano_visible: bool) -> Self {
         Self::compute_with_options(
             screen,
-            S1LayoutOptions {
+            ShellLayoutOptions {
                 piano_visible,
                 ..Default::default()
             },
@@ -93,7 +93,7 @@ impl S1Layout {
     pub fn compute_with_osc(screen: Rect, piano_visible: bool) -> Self {
         Self::compute_with_options(
             screen,
-            S1LayoutOptions {
+            ShellLayoutOptions {
                 piano_visible,
                 show_osc_column: true,
                 ..Default::default()
@@ -101,7 +101,7 @@ impl S1Layout {
         )
     }
 
-    pub fn compute_with_options(screen: Rect, options: S1LayoutOptions) -> Self {
+    pub fn compute_with_options(screen: Rect, options: ShellLayoutOptions) -> Self {
         let piano_wrap_h = if options.piano_visible {
             GRID_UNIT * 2.0 + PIANO_HEIGHT
         } else {
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn s1_layout_no_osc_column() {
         let screen = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, 720.0));
-        let layout = S1Layout::compute(screen, true);
+        let layout = ShellLayout::compute(screen, true);
         assert!(!layout.osc.is_positive());
         assert_eq!(layout.rail.width(), RAIL_WIDTH);
         assert!((layout.center.width() - (1280.0 - RAIL_WIDTH)).abs() < 0.5);
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn s3_layout_with_osc_column() {
         let screen = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, 720.0));
-        let layout = S1Layout::compute_with_osc(screen, true);
+        let layout = ShellLayout::compute_with_osc(screen, true);
         assert_eq!(layout.osc.width(), OSC_COLUMN_WIDTH);
         assert_eq!(layout.rail.width(), RAIL_WIDTH);
         let used = layout.osc.width() + layout.center.width() + layout.rail.width();
@@ -255,9 +255,9 @@ mod tests {
     #[test]
     fn s4_s5_full_layout_sections() {
         let screen = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, 820.0));
-        let layout = S1Layout::compute_with_options(
+        let layout = ShellLayout::compute_with_options(
             screen,
-            S1LayoutOptions {
+            ShellLayoutOptions {
                 piano_visible: true,
                 show_osc_column: true,
                 show_mod_matrix: true,

@@ -11,7 +11,7 @@ pub const FX_SECTION_HEADER: f32 = 28.0;
 const CPU_WARN_ACTIVE_SLOTS: usize = 4;
 
 #[derive(Debug, Clone)]
-pub struct FxSlotUi {
+pub struct EffectSlotUi {
     pub effect_type: EffectType,
     pub bypassed: bool,
     pub mix: f32,
@@ -29,7 +29,7 @@ pub struct FxSlotUi {
     pub release: f32,
 }
 
-impl FxSlotUi {
+impl EffectSlotUi {
     pub fn from_slot(slot: &EffectSlot) -> Self {
         Self {
             effect_type: slot.effect_type.clone(),
@@ -97,23 +97,23 @@ impl FxSlotUi {
     }
 }
 
-pub fn default_fx_slots() -> Vec<FxSlotUi> {
-    fx_slots_from_effects(&reelsynth::default_effects())
+pub fn default_effect_slots() -> Vec<EffectSlotUi> {
+    effect_slots_from_patch(&reelsynth::default_effects())
 }
 
-pub fn fx_slots_from_effects(effects: &[EffectSlot]) -> Vec<FxSlotUi> {
+pub fn effect_slots_from_patch(effects: &[EffectSlot]) -> Vec<EffectSlotUi> {
     if effects.is_empty() {
-        return default_fx_slots();
+        return default_effect_slots();
     }
-    effects.iter().map(FxSlotUi::from_slot).collect()
+    effects.iter().map(EffectSlotUi::from_slot).collect()
 }
 
-pub fn fx_slots_to_effects(slots: &[FxSlotUi]) -> Vec<EffectSlot> {
-    slots.iter().map(FxSlotUi::to_slot).collect()
+pub fn effect_slots_to_patch(slots: &[EffectSlotUi]) -> Vec<EffectSlot> {
+    slots.iter().map(EffectSlotUi::to_slot).collect()
 }
 
 /// Legacy bridge for old bypass-only API.
-pub fn fx_slots_to_bypass(slots: &[FxSlotUi]) -> reelsynth::FxBypass {
+pub fn effect_slots_to_bypass(slots: &[EffectSlotUi]) -> reelsynth::FxBypass {
     let mut bypass = reelsynth::FxBypass::default();
     for slot in slots {
         match slot.effect_type {
@@ -126,20 +126,20 @@ pub fn fx_slots_to_bypass(slots: &[FxSlotUi]) -> reelsynth::FxBypass {
     bypass
 }
 
-pub fn fx_slots_from_bypass(bypass: &reelsynth::FxBypass) -> Vec<FxSlotUi> {
-    fx_slots_from_effects(&reelsynth::effects_from_bypass(bypass))
+pub fn effect_slots_from_bypass(bypass: &reelsynth::FxBypass) -> Vec<EffectSlotUi> {
+    effect_slots_from_patch(&reelsynth::effects_from_bypass(bypass))
 }
 
-pub struct FxRackState<'a> {
+pub struct EffectRackState<'a> {
     pub open: &'a mut bool,
-    pub slots: &'a mut Vec<FxSlotUi>,
+    pub slots: &'a mut Vec<EffectSlotUi>,
 }
 
 pub struct FxRackResult {
     pub changed: bool,
 }
 
-pub fn draw_fx_rack(ui: &mut Ui, rect: Rect, state: FxRackState<'_>) -> FxRackResult {
+pub fn draw_effect_rack(ui: &mut Ui, rect: Rect, mut state: EffectRackState<'_>) -> FxRackResult {
     let tokens = Tokens::default();
     let mut changed = false;
 
@@ -183,7 +183,7 @@ pub fn draw_fx_rack(ui: &mut Ui, rect: Rect, state: FxRackState<'_>) -> FxRackRe
                                 if draw_add_slot(ui).clicked() {
                                     state
                                         .slots
-                                        .push(FxSlotUi::from_slot(&EffectSlot::chorus()));
+                                        .push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
                                     changed = true;
                                 }
                             });
@@ -241,7 +241,7 @@ struct FxSlotResult {
     changed: bool,
 }
 
-fn draw_fx_slot(ui: &mut Ui, slots: &mut Vec<FxSlotUi>, idx: usize) -> FxSlotResult {
+fn draw_fx_slot(ui: &mut Ui, slots: &mut Vec<EffectSlotUi>, idx: usize) -> FxSlotResult {
     let tokens = Tokens::default();
     let mut changed = false;
     let slot_h = 72.0;
@@ -327,7 +327,7 @@ fn draw_fx_slot(ui: &mut Ui, slots: &mut Vec<FxSlotUi>, idx: usize) -> FxSlotRes
                             {
                                 let bypassed = slots[idx].bypassed;
                                 let mix = slots[idx].mix;
-                                slots[idx] = FxSlotUi::from_slot(&EffectSlot::for_type(ty));
+                                slots[idx] = EffectSlotUi::from_slot(&EffectSlot::for_type(ty));
                                 slots[idx].bypassed = bypassed;
                                 slots[idx].mix = mix;
                                 changed = true;
@@ -360,4 +360,42 @@ fn draw_add_slot(ui: &mut Ui) -> egui::Response {
         );
     }
     response
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+    use reelsynth::fx::{EffectSlot, EffectType, FxBypass};
+
+    #[test]
+    fn fx_slot_ui_roundtrip() {
+        let slot = EffectSlot::delay();
+        let ui = EffectSlotUi::from_slot(&slot);
+        let restored = ui.to_slot();
+        assert_eq!(restored.effect_type, slot.effect_type);
+        assert_eq!(restored.time_ms, slot.time_ms);
+        assert!((restored.mix - slot.mix).abs() < 1e-5);
+    }
+
+    #[test]
+    fn bypass_migration_roundtrip() {
+        let bypass = FxBypass {
+            chorus_bypassed: true,
+            delay_bypassed: false,
+            reverb_bypassed: true,
+        };
+        let slots = effect_slots_from_bypass(&bypass);
+        assert_eq!(slots.len(), 3);
+        assert!(slots[0].bypassed);
+        assert!(!slots[1].bypassed);
+        let back = effect_slots_to_bypass(&slots);
+        assert_eq!(back.chorus_bypassed, bypass.chorus_bypassed);
+        assert_eq!(back.delay_bypassed, bypass.delay_bypassed);
+    }
+
+    #[test]
+    fn effect_type_labels() {
+        let ui = EffectSlotUi::from_slot(&EffectSlot::for_type(EffectType::Distortion));
+        assert!(ui.detail().contains("Drive"));
+    }
 }

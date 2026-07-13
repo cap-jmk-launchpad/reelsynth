@@ -386,3 +386,40 @@ fn param_slider(
     });
     changed
 }
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+
+    #[test]
+    fn osc_type_cycle_roundtrip() {
+        for ty in ["wavetable", "saw", "square", "triangle", "pulse"] {
+            let idx = osc_type_index(ty);
+            assert_eq!(osc_type_from_index(idx), ty);
+        }
+    }
+
+    #[test]
+    fn warp_mode_roundtrip() {
+        for mode in ["none", "sync", "bend"] {
+            let idx = warp_mode_index(mode);
+            assert_eq!(warp_mode_from_index(idx), mode);
+        }
+    }
+
+    #[test]
+    fn fm_algorithm_roundtrip() {
+        for src in ["none", "osc2", "osc3", "osc2_osc3"] {
+            let idx = fm_algorithm_index(src);
+            assert_eq!(fm_source_from_algorithm(idx), src);
+        }
+    }
+
+    #[test]
+    fn fm_source_roundtrip() {
+        for src in ["none", "osc2", "osc3", "osc2_osc3", "feedback"] {
+            let idx = fm_source_index(src);
+            assert_eq!(fm_source_from_index(idx), src);
+        }
+    }
+}

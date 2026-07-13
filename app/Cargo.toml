@@ -6,15 +6,15 @@ description = "ReelSynth standalone playable app"
 license = "MIT"
 
 [[bin]]
-name = "reelsynth-ui"
+name = "reelsynth-app"
 path = "src/main.rs"
 
 [dependencies]
 reelsynth = { path = ".." }
 reelsynth-ui = { path = "../ui" }
 reelsynth-ui-theme = { path = "../ui-theme" }
-eframe = { version = "0.28", default-features = true }
-egui = "0.28"
+eframe = { version = "0.30", default-features = true }
+egui = "0.30"
 cpal = "0.15"
 crossbeam-channel = "0.5"
 rfd = "0.15"

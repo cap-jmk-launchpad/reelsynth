@@ -39,4 +39,4 @@ No plugin required:
 
 - PyO3: `maturin develop --features python`
 - CLI export: `cargo run --bin reelsynth-export -- --help`
-- Standalone UI: `cargo run -p reelsynth-app --bin reelsynth-ui`
+- Standalone UI: `cargo run -p reelsynth-app --bin reelsynth-app`

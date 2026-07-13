@@ -6,10 +6,10 @@ description = "Majico design tokens → egui theme for ReelSynth"
 license = "MIT"
 
 [dependencies]
-egui = "0.28"
+egui = "0.30"
 
 [dev-dependencies]
-eframe = { version = "0.28", default-features = true }
+eframe = { version = "0.30", default-features = true }
 
 [[example]]
 name = "smoke"

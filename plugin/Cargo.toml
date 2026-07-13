@@ -17,5 +17,5 @@ path = "src/bin/editor_host.rs"
 reelsynth = { path = ".." }
 reelsynth-ui = { path = "../ui" }
 reelsynth-ui-theme = { path = "../ui-theme" }
-eframe = { version = "0.28", default-features = true }
-egui = "0.28"
+eframe = { version = "0.30", default-features = true }
+egui = "0.30"

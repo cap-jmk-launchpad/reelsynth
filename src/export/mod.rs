@@ -7,8 +7,13 @@ mod sfz;
 mod vital;
 mod wav;
 
+pub use ableton::export_ableton_map;
+pub use midi::export_midi;
 pub use reelpack::export_reelpack;
+pub use serum::export_serum_wt;
+pub use sfz::export_sfz;
 pub use vital::export_vital;
+pub use wav::write_wav_mono;
 
 use crate::patch::Patch;
 use crate::wavetable::WavetableBank;

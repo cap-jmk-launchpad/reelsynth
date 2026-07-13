@@ -11,8 +11,8 @@ Progress tracker for the UI platform plan (`reelsynth_ui_platform` + `reelsynth_
 | `plugin/` Rust crate (`reelsynth-plugin`) | ✅ |
 | CLAP entry stub (`clap_entry.rs`) | ✅ |
 | egui editor embed spike (`PluginEditorApp`, `reelsynth-plugin-editor`) | ✅ |
-| Mod matrix UI → `Patch::mod_matrix` bridge | ✅ `mod_routes_to_slots` / `from_slots` |
-| FX bypass UI → `FxChain` audio stub | ✅ `fx_slots_to_bypass`, `src/fx.rs` |
+| Mod matrix UI → `Patch::mod_matrix` bridge | ✅ `mod_slots_to_patch` / `from_slots` |
+| FX bypass UI → `FxChain` audio stub | ✅ `effect_slots_to_bypass`, `src/fx.rs` |
 | App audio cmds `SetModMatrix` / `SetFxBypass` | ✅ |
 | `cargo test --no-default-features -j 1` | ✅ |
 | `cargo build -p reelsynth-plugin --release` | ✅ |
@@ -130,7 +130,7 @@ Progress tracker for the UI platform plan (`reelsynth_ui_platform` + `reelsynth_
 | WT position strip (center + rail knob synced) | ✅ |
 | 2D waveform view from current bank frame (`view_2d.rs`) | ✅ |
 | 3D mesh surface from bank slices + rib grid (`view_3d.rs`) | ✅ |
-| Reveal panels via `S1ShellConfig::show_wt_editor` | ✅ app enables |
+| Reveal panels via `ShellConfig::show_wt_editor` | ✅ app enables |
 | Bank hot-swap on preset load | ✅ |
 | WT header menu: Open/Save `.reelwt` + factory banks | ✅ |
 | Save `.reelwt` via `WavetableBank::write_file` | ✅ |

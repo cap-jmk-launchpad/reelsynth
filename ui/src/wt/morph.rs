@@ -118,4 +118,14 @@ mod tests {
         assert!((morph_position(0.0, 255.0, 1.0) - 255.0).abs() < 1e-5);
         assert!((morph_position(100.0, 200.0, 0.5) - 150.0).abs() < 1e-5);
     }
+
+    #[test]
+    fn morph_amount_for_position_roundtrip() {
+        let a = 20.0;
+        let b = 180.0;
+        let amount = 0.35;
+        let pos = morph_position(a, b, amount);
+        let back = morph_amount_for_position(a, b, pos);
+        assert!((back - amount).abs() < 1e-4);
+    }
 }

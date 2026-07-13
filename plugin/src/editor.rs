@@ -3,7 +3,7 @@
 use eframe::egui;
 use reelsynth::Patch;
 use reelsynth_ui::{
-    draw_s1, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State,
+    draw_shell, APP_HEIGHT_FULL, ShellMidiDevices, ShellConfig, UiState,
 };
 
 /// Configuration for the plugin editor surface.
@@ -28,9 +28,9 @@ impl Default for PluginEditorConfig {
     }
 }
 
-/// Minimal egui host embedding the shared `reelsynth-ui` S1 shell.
+/// Minimal egui host embedding the shared `reelsynth-app` S1 shell.
 pub struct PluginEditorApp {
-    pub state: S1State,
+    pub state: UiState,
     pub config: PluginEditorConfig,
     midi_names: Vec<String>,
 }
@@ -38,9 +38,9 @@ pub struct PluginEditorApp {
 impl PluginEditorApp {
     pub fn new(config: PluginEditorConfig) -> Self {
         Self {
-            state: S1State {
+            state: UiState {
                 status: "Plugin editor spike — UI only (no audio I/O)".into(),
-                ..S1State::default()
+                ..UiState::default()
             },
             config,
             midi_names: vec!["None".into()],
@@ -75,18 +75,18 @@ impl eframe::App for PluginEditorApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                let midi = S1MidiDevices {
+                let midi = ShellMidiDevices {
                     names: &self.midi_names,
                     selected: 0,
                 };
-                let shell = S1ShellConfig {
+                let shell = ShellConfig {
                     show_wt_editor: self.config.show_wt_editor,
                     show_osc_column: self.config.show_osc_column,
                     show_mod_matrix: self.config.show_mod_matrix,
                     show_fx_rack: self.config.show_fx_rack,
                 };
                 let preview = Patch::default_mono();
-                let actions = draw_s1(
+                let actions = draw_shell(
                     ui,
                     ui.max_rect(),
                     &mut self.state,

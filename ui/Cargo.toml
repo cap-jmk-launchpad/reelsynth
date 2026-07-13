@@ -16,5 +16,8 @@ path = "src/bin/proto.rs"
 [dependencies]
 reelsynth = { path = ".." }
 reelsynth-ui-theme = { path = "../ui-theme" }
-egui = "0.28"
-eframe = { version = "0.28", default-features = true }
+egui = "0.30"
+eframe = { version = "0.30", default-features = true }
+
+[dev-dependencies]
+egui_kittest = "0.30"

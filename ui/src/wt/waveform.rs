@@ -37,3 +37,37 @@ pub fn peak_point(points: &[Pos2]) -> Option<Pos2> {
         .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap())
         .copied()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::Rect;
+
+    #[test]
+    fn frame_index_clamps() {
+        assert_eq!(frame_index(300.0, 64), 63);
+        assert_eq!(frame_index(0.0, 0), 0);
+    }
+
+    #[test]
+    fn waveform_points_bounds() {
+        let frame: Vec<f32> = (0..256).map(|i| (i as f32 * 0.1).sin()).collect();
+        let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(200.0, 80.0));
+        let pts = waveform_points(&frame, rect, 32, 0.45);
+        assert_eq!(pts.len(), 32);
+        for p in &pts {
+            assert!(p.x >= rect.min.x && p.x <= rect.max.x);
+            assert!(p.y >= rect.min.y && p.y <= rect.max.y);
+        }
+    }
+
+    #[test]
+    fn peak_point_finds_minimum_y() {
+        let pts = vec![
+            Pos2::new(0.0, 10.0),
+            Pos2::new(1.0, 5.0),
+            Pos2::new(2.0, 12.0),
+        ];
+        assert_eq!(peak_point(&pts).unwrap().y, 5.0);
+    }
+}

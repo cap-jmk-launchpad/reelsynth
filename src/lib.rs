@@ -4,7 +4,6 @@ pub mod osc;
 pub mod fm;
 pub mod fx;
 pub mod voice;
-pub mod preview;
 pub mod scope;
 pub mod import;
 pub mod export;
@@ -18,7 +17,10 @@ pub use wavetable::WavetableBank;
 pub use fx::{default_effects, effects_from_bypass, EffectSlot, EffectType, FxBypass, FxChain};
 pub use patch::{Envelope, Macro, ModSlot, Patch};
 pub use voice::{render_note, render_note_single_bank};
-pub use preview::{render_scope_previews, spectrum_magnitudes, ScopePreviews, ScopeTap};
+pub use scope::{
+    render_scope_previews, spectrum_magnitudes, ScopePreviews, ScopeTap, PREVIEW_FIFTH_NOTE,
+    PREVIEW_ROOT_NOTE,
+};
 pub use scope::{ScopeLiveTaps, ScopeMonitor, ScopeRingBuffer, SCOPE_DISPLAY_LEN, SCOPE_RING_LEN};
 pub use engine::{BankSet, MidiEvent, SynthEngine, VoiceMpe};
 pub use export::{

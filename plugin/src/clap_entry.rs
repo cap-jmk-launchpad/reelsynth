@@ -15,11 +15,11 @@ pub const CLAP_PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// CLAP factory entry — returns null until S7 host bindings are wired.
 #[no_mangle]
 pub extern "C" fn clap_entry() -> *const () {
-    clap_entry_stub()
+    clap_entry_pending()
 }
 
 /// Stub entry used by tests and packaging scripts.
-pub fn clap_entry_stub() -> *const () {
+pub fn clap_entry_pending() -> *const () {
     std::ptr::null()
 }
 
@@ -36,6 +36,6 @@ mod tests {
 
     #[test]
     fn entry_stub_is_null() {
-        assert!(clap_entry_stub().is_null());
+        assert!(clap_entry_pending().is_null());
     }
 }

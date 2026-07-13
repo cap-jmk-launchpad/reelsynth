@@ -4,7 +4,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "ReelSynth",
         eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
+            viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([480.0, 320.0])
                 .with_title("ReelSynth — theme preview"),
             ..Default::default()
@@ -25,8 +25,8 @@ struct SmokeApp {
 }
 
 impl eframe::App for SmokeApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        eframe::egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("ReelSynth");
             ui.label("Majico palette:0 · IBM Plex Sans / Inter");
             ui.add_space(12.0);
@@ -37,9 +37,11 @@ impl eframe::App for SmokeApp {
             ui.add_space(16.0);
             ui.separator();
             ui.label("Wavetable position");
-            ui.add(egui::Slider::new(&mut self.wt_position, 0.0..=1.0));
+            ui.add(eframe::egui::Slider::new(&mut self.wt_position, 0.0..=1.0));
             ui.label("Filter cutoff");
-            ui.add(egui::Slider::new(&mut self.filter_cutoff, 20.0..=20000.0).logarithmic(true));
+            ui.add(
+                eframe::egui::Slider::new(&mut self.filter_cutoff, 20.0..=20000.0).logarithmic(true),
+            );
         });
     }
 }

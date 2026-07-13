@@ -1,8 +1,13 @@
 //! Mono voice: wavetable osc(s), ADSR, SVF filter, mod matrix.
 
-mod kernel;
+mod envelope;
+mod filter_svf;
+mod process;
 
-pub use kernel::{process_sample, process_sample_stages, VoiceSampleContext, VoiceStageSample, VoiceState};
+#[cfg(test)]
+mod process_tests;
+
+pub use process::{process_sample, process_sample_stages, VoiceSampleContext, VoiceStageSample, VoiceState};
 
 use crate::patch::Patch;
 use crate::wavetable::WavetableBank;
