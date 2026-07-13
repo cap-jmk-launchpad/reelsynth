@@ -1,6 +1,7 @@
 //! Shared egui editor host for plugin + minimal spike binary (S6).
 
 use eframe::egui;
+use reelsynth::Patch;
 use reelsynth_ui::{
     draw_s1, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State,
 };
@@ -84,11 +85,13 @@ impl eframe::App for PluginEditorApp {
                     show_mod_matrix: self.config.show_mod_matrix,
                     show_fx_rack: self.config.show_fx_rack,
                 };
+                let preview = Patch::default_mono();
                 let actions = draw_s1(
                     ui,
                     ui.max_rect(),
                     &mut self.state,
                     None,
+                    &preview,
                     &midi,
                     &shell,
                 );

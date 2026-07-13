@@ -50,21 +50,29 @@ impl FxChain {
     }
 
     pub fn process_sample(&mut self, input: f32) -> f32 {
-        let mut sample = input;
+        self.process_stereo(input, input)[0]
+    }
+
+    pub fn process_stereo(&mut self, left: f32, right: f32) -> [f32; 2] {
+        let mut l = left;
+        let mut r = right;
 
         if !self.bypass.chorus_bypassed {
-            sample = chorus_stub(sample);
+            l = chorus_stub(l);
+            r = chorus_stub(r);
         }
 
         if !self.bypass.delay_bypassed {
-            sample = self.delay_stub(sample);
+            l = self.delay_stub(l);
+            r = self.delay_stub(r);
         }
 
         if !self.bypass.reverb_bypassed {
-            sample = reverb_stub(sample);
+            l = reverb_stub(l);
+            r = reverb_stub(r);
         }
 
-        sample.clamp(-1.0, 1.0)
+        [l.clamp(-1.0, 1.0), r.clamp(-1.0, 1.0)]
     }
 }
 

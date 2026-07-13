@@ -48,23 +48,25 @@ impl RtVoice {
     }
 
     pub fn is_audible(&self) -> bool {
-        self.active && (self.gate || self.state.env_level > 1e-5)
+        self.active && (self.gate || self.state.amp_env_level > 1e-5)
     }
 
     pub fn process_sample(
         &mut self,
-        bank: &crate::wavetable::WavetableBank,
+        banks: &[crate::wavetable::WavetableBank],
+        bank_for_osc: &dyn Fn(usize) -> usize,
         patch: &Patch,
         global_time: f32,
         dt: f32,
         sr: f32,
-    ) -> f32 {
+    ) -> [f32; 2] {
         if !self.active {
-            return 0.0;
+            return [0.0, 0.0];
         }
 
         let ctx = VoiceSampleContext {
-            bank,
+            banks,
+            bank_for_osc,
             patch,
             freq: self.freq,
             gate: self.gate,
@@ -77,7 +79,7 @@ impl RtVoice {
         let sample = process_sample(&mut self.state, &ctx);
         self.sample_counter = self.sample_counter.wrapping_add(1);
 
-        if !self.gate && self.state.env_level <= 1e-6 && self.state.env_stage == 3 {
+        if !self.gate && self.state.amp_env_level <= 1e-6 && self.state.amp_env_stage == 3 {
             self.active = false;
         }
 

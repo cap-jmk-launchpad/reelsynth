@@ -2,6 +2,7 @@
 
 use eframe::egui;
 use reelsynth_ui::widgets::{Knob, KnobSize, KnobStyle, panel};
+use reelsynth::Patch;
 use reelsynth_ui::{draw_s1, S1MidiDevices, S1ShellConfig, S1State};
 use reelsynth_ui_theme;
 
@@ -33,7 +34,8 @@ impl eframe::App for ProtoApp {
                     selected: 0,
                 };
                 let config = S1ShellConfig::default();
-                let actions = draw_s1(ui, screen, &mut self.state, None, &midi, &config);
+                let preview = Patch::default_mono();
+                let actions = draw_s1(ui, screen, &mut self.state, None, &preview, &midi, &config);
 
                 if let Some(n) = actions.note_on {
                     self.state.keys_down.insert(n);

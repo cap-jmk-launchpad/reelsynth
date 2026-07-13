@@ -18,7 +18,9 @@ enum AudioCmd {
     SetFilterCutoff(f32),
     SetFilterResonance(f32),
     SetFilterType(String),
+    SetFilterKeyTracking(f32),
     SetEnvelope(Envelope),
+    SetFilterEnvelope(Envelope),
     SetLfo { rate: f32, depth: f32 },
     SetOsc {
         index: usize,
@@ -26,6 +28,7 @@ enum AudioCmd {
         detune: f32,
         unison: u32,
         position: f32,
+        pan: f32,
     },
     SetSubLevel(f32),
     SetNoiseLevel(f32),
@@ -79,15 +82,30 @@ fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
     let err_fn = |e| eprintln!("audio stream error: {e}");
 
     let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => device.build_output_stream(
-            &config.into(),
-            move |data: &mut [f32], _| {
-                drain_commands(&mut engine, &rx, &bank_for_audio);
-                engine.process(data);
-            },
-            err_fn,
-            None,
-        ),
+        cpal::SampleFormat::F32 => {
+            let channels = config.channels() as usize;
+            if channels >= 2 {
+                device.build_output_stream(
+                    &config.into(),
+                    move |data: &mut [f32], _| {
+                        drain_commands(&mut engine, &rx, &bank_for_audio);
+                        engine.process_stereo(data);
+                    },
+                    err_fn,
+                    None,
+                )
+            } else {
+                device.build_output_stream(
+                    &config.into(),
+                    move |data: &mut [f32], _| {
+                        drain_commands(&mut engine, &rx, &bank_for_audio);
+                        engine.process(data);
+                    },
+                    err_fn,
+                    None,
+                )
+            }
+        }
         cpal::SampleFormat::I16 => device.build_output_stream(
             &config.into(),
             move |data: &mut [i16], _| {
@@ -127,7 +145,9 @@ fn drain_commands(
             Ok(AudioCmd::SetFilterCutoff(c)) => engine.set_filter_cutoff(c),
             Ok(AudioCmd::SetFilterResonance(r)) => engine.set_filter_resonance(r),
             Ok(AudioCmd::SetFilterType(t)) => engine.set_filter_type(&t),
+            Ok(AudioCmd::SetFilterKeyTracking(kt)) => engine.set_filter_key_tracking(kt),
             Ok(AudioCmd::SetEnvelope(e)) => engine.set_envelope(e),
+            Ok(AudioCmd::SetFilterEnvelope(e)) => engine.set_filter_envelope(e),
             Ok(AudioCmd::SetLfo { rate, depth }) => {
                 engine.set_lfo_rate(rate);
                 engine.set_lfo_depth(depth);
@@ -138,11 +158,13 @@ fn drain_commands(
                 detune,
                 unison,
                 position,
+                pan,
             }) => {
                 engine.set_osc_level(index, level);
                 engine.set_osc_detune(index, detune);
                 engine.set_osc_unison(index, unison);
                 engine.set_osc_position(index, position);
+                engine.set_osc_pan(index, pan);
             }
             Ok(AudioCmd::SetSubLevel(l)) => engine.set_sub_level(l),
             Ok(AudioCmd::SetNoiseLevel(l)) => engine.set_noise_level(l),
@@ -198,6 +220,7 @@ fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
     for i in 0..3 {
         if let Some(osc) = patch.oscillators.get(i) {
             state.osc_level[i] = osc.level;
+            state.osc_pan[i] = osc.pan;
             state.osc_coarse[i] = osc.detune;
             state.osc_unison[i] = osc.unison;
             state.osc_position[i] = osc.position;
@@ -207,11 +230,16 @@ fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
     state.noise_level = patch.noise_level;
     state.filter_cutoff = patch.filter.cutoff;
     state.filter_resonance = patch.filter.resonance;
+    state.filter_key_tracking = patch.filter.key_tracking;
     state.filter_mode = filter_mode_from_type(&patch.filter.filter_type);
     state.env_attack = patch.envelope.attack;
     state.env_decay = patch.envelope.decay;
     state.env_sustain = patch.envelope.sustain;
     state.env_release = patch.envelope.release;
+    state.filt_env_attack = patch.filter_envelope.attack;
+    state.filt_env_decay = patch.filter_envelope.decay;
+    state.filt_env_sustain = patch.filter_envelope.sustain;
+    state.filt_env_release = patch.filter_envelope.release;
     state.lfo_rate = patch.lfo.rate;
     state.lfo_depth = patch.lfo.depth;
     state.mod_routes = mod_routes_from_slots(&patch.mod_matrix);
@@ -253,6 +281,7 @@ fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
     for i in 0..3 {
         if let Some(osc) = patch.oscillators.get_mut(i) {
             osc.level = state.osc_level[i];
+            osc.pan = state.osc_pan[i];
             osc.detune = state.osc_coarse[i];
             osc.unison = state.osc_unison[i];
             osc.position = state.osc_position[i];
@@ -260,12 +289,19 @@ fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
     }
     patch.filter.cutoff = state.filter_cutoff;
     patch.filter.resonance = state.filter_resonance;
+    patch.filter.key_tracking = state.filter_key_tracking;
     patch.filter.filter_type = filter_type_from_mode(state.filter_mode).into();
     patch.envelope = Envelope {
         attack: state.env_attack,
         decay: state.env_decay,
         sustain: state.env_sustain,
         release: state.env_release,
+    };
+    patch.filter_envelope = Envelope {
+        attack: state.filt_env_attack,
+        decay: state.filt_env_decay,
+        sustain: state.filt_env_sustain,
+        release: state.filt_env_release,
     };
     patch.lfo.rate = state.lfo_rate;
     patch.lfo.depth = state.lfo_depth;
@@ -381,11 +417,18 @@ impl ReelSynthApp {
             a.send(AudioCmd::SetFilterType(
                 filter_type_from_mode(self.state.filter_mode).into(),
             ));
+            a.send(AudioCmd::SetFilterKeyTracking(self.state.filter_key_tracking));
             a.send(AudioCmd::SetEnvelope(Envelope {
                 attack: self.state.env_attack,
                 decay: self.state.env_decay,
                 sustain: self.state.env_sustain,
                 release: self.state.env_release,
+            }));
+            a.send(AudioCmd::SetFilterEnvelope(Envelope {
+                attack: self.state.filt_env_attack,
+                decay: self.state.filt_env_decay,
+                sustain: self.state.filt_env_sustain,
+                release: self.state.filt_env_release,
             }));
             a.send(AudioCmd::SetLfo {
                 rate: self.state.lfo_rate,
@@ -398,6 +441,7 @@ impl ReelSynthApp {
                     detune: self.state.osc_coarse[i],
                     unison: self.state.osc_unison[i],
                     position: self.state.osc_position[i],
+                    pan: self.state.osc_pan[i],
                 });
             }
             a.send(AudioCmd::SetSubLevel(self.state.sub_level));
@@ -779,6 +823,8 @@ impl eframe::App for ReelSynthApp {
                     show_fx_rack: true,
                 };
 
+                let preview_patch = patch_from_state(&self.state, &self.current_patch);
+
                 let actions = if let Some(audio) = &self.audio {
                     if let Ok(mut bank) = audio.bank().write() {
                         draw_s1(
@@ -786,14 +832,31 @@ impl eframe::App for ReelSynthApp {
                             ui.max_rect(),
                             &mut self.state,
                             Some(&mut *bank),
+                            &preview_patch,
                             &midi,
                             &config,
                         )
                     } else {
-                        draw_s1(ui, ui.max_rect(), &mut self.state, None, &midi, &config)
+                        draw_s1(
+                            ui,
+                            ui.max_rect(),
+                            &mut self.state,
+                            None,
+                            &preview_patch,
+                            &midi,
+                            &config,
+                        )
                     }
                 } else {
-                    draw_s1(ui, ui.max_rect(), &mut self.state, None, &midi, &config)
+                    draw_s1(
+                        ui,
+                        ui.max_rect(),
+                        &mut self.state,
+                        None,
+                        &preview_patch,
+                        &midi,
+                        &config,
+                    )
                 };
 
                 if let Some(n) = actions.note_on {

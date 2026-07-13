@@ -2,7 +2,7 @@
 
 use crate::export::ExportReport;
 use crate::patch::Patch;
-use crate::voice::render_note;
+use crate::voice::render_note_single_bank;
 use crate::wavetable::WavetableBank;
 use std::path::Path;
 
@@ -12,7 +12,7 @@ pub fn export_audio_wav(
     out_path: &Path,
     opts: &crate::export::ExportOptions,
 ) -> ExportReport {
-    let mono = render_note(bank, opts.freq, opts.duration, opts.sample_rate, preset);
+    let mono = render_note_single_bank(bank, opts.freq, opts.duration, opts.sample_rate, preset);
     if mono.is_empty() {
         return ExportReport::fail("audio", "render produced empty buffer");
     }

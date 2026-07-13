@@ -2,7 +2,7 @@
 
 use crate::export::{ExportOptions, ExportReport};
 use crate::patch::Patch;
-use crate::voice::render_note;
+use crate::voice::render_note_single_bank;
 use crate::wavetable::WavetableBank;
 use std::path::Path;
 
@@ -20,7 +20,7 @@ pub fn export_sfz(
 
     let sample_name = format!("{}_{}.wav", sanitize_name(&preset.name), opts.midi_note);
     let sample_path = samples_dir.join(&sample_name);
-    let mono = render_note(bank, opts.freq, opts.duration, opts.sample_rate, preset);
+    let mono = render_note_single_bank(bank, opts.freq, opts.duration, opts.sample_rate, preset);
     if let Err(e) = crate::export::wav::write_wav_mono(&sample_path, &mono, opts.sample_rate) {
         return ExportReport::fail("sfz", e);
     }

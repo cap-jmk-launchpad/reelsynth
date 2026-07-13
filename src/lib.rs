@@ -2,6 +2,7 @@ pub mod wavetable;
 pub mod patch;
 pub mod fx;
 pub mod voice;
+pub mod preview;
 pub mod import;
 pub mod export;
 pub mod engine;
@@ -10,8 +11,9 @@ pub mod ffi;
 pub use wavetable::WavetableBank;
 pub use fx::{FxBypass, FxChain};
 pub use patch::{Envelope, ModSlot, Patch};
-pub use voice::render_note;
-pub use engine::SynthEngine;
+pub use voice::{render_note, render_note_single_bank};
+pub use preview::{render_scope_previews, ScopePreviews, ScopeTap};
+pub use engine::{BankSet, SynthEngine};
 pub use export::{
     export_preset, export_reelpack, export_wavetable, load_preset, parse_targets,
     resolve_bank_for_preset, ExportOptions, ExportReport, ExportTarget,
@@ -60,7 +62,7 @@ fn render_note_py<'py>(
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
     let patch = Patch::from_json(patch_json)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
-    let audio = render_note(&bank, freq, duration, sample_rate, &patch);
+    let audio = render_note_single_bank(&bank, freq, duration, sample_rate, &patch);
     Ok(PyArray1::from_vec_bound(py, audio))
 }
 

@@ -12,3 +12,4 @@ pub use strip::{WtStrip, WtStripResponse};
 pub use toolbar::{WtEditTool, WtToolbar};
 pub use view_2d::{WtView2d, WtView2dResponse};
 pub use view_3d::WtView3d;
+pub use waveform::waveform_points;

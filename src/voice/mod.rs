@@ -8,7 +8,8 @@ use crate::patch::Patch;
 use crate::wavetable::WavetableBank;
 
 pub fn render_note(
-    bank: &WavetableBank,
+    banks: &[WavetableBank],
+    bank_for_osc: impl Fn(usize) -> usize + Copy,
     freq: f32,
     duration: f32,
     sample_rate: u32,
@@ -28,7 +29,8 @@ pub fn render_note(
         let t = i as f32 / sr;
         let gate = i < num_samples.saturating_sub(tail_release);
         let ctx = VoiceSampleContext {
-            bank,
+            banks,
+            bank_for_osc: &bank_for_osc,
             patch,
             freq,
             gate,
@@ -38,15 +40,43 @@ pub fn render_note(
             dt: 1.0 / sr,
             sr,
         };
-        out[i] = process_sample(&mut voice, &ctx);
+        let [l, r] = process_sample(&mut voice, &ctx);
+        out[i] = (l + r) * 0.5;
     }
     out
+}
+
+/// Convenience wrapper when only a single bank is available.
+pub fn render_note_single_bank(
+    bank: &WavetableBank,
+    freq: f32,
+    duration: f32,
+    sample_rate: u32,
+    patch: &Patch,
+) -> Vec<f32> {
+    render_note(
+        std::slice::from_ref(bank),
+        |_| 0,
+        freq,
+        duration,
+        sample_rate,
+        patch,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::patch::{Envelope, Patch};
+
+    fn closed_filter_env() -> Envelope {
+        Envelope {
+            attack: 0.001,
+            decay: 0.001,
+            sustain: 0.0,
+            release: 0.001,
+        }
+    }
 
     #[test]
     fn adsr_attack_rises() {
@@ -58,7 +88,7 @@ mod tests {
             sustain: 0.5,
             release: 0.1,
         };
-        let audio = render_note(&bank, 220.0, 0.2, 44100, &patch);
+        let audio = render_note_single_bank(&bank, 220.0, 0.2, 44100, &patch);
         assert!(audio[100].abs() > audio[10].abs());
     }
 
@@ -67,10 +97,12 @@ mod tests {
         let bank = WavetableBank::factory_saw_morph();
         let mut bright = Patch::default_mono();
         bright.filter.cutoff = 8000.0;
+        bright.filter.key_tracking = 0.0;
         let mut dark = Patch::default_mono();
         dark.filter.cutoff = 200.0;
-        let a_bright = render_note(&bank, 440.0, 0.5, 44100, &bright);
-        let a_dark = render_note(&bank, 440.0, 0.5, 44100, &dark);
+        dark.filter.key_tracking = 0.0;
+        let a_bright = render_note_single_bank(&bank, 440.0, 0.5, 44100, &bright);
+        let a_dark = render_note_single_bank(&bank, 440.0, 0.5, 44100, &dark);
         let zc_bright = zero_crossings(&a_bright[4410..]);
         let zc_dark = zero_crossings(&a_dark[4410..]);
         assert!(zc_bright > zc_dark, "bright={zc_bright} dark={zc_dark}");
@@ -81,12 +113,16 @@ mod tests {
         let bank = WavetableBank::factory_saw_morph();
         let mut lp = Patch::default_mono();
         lp.filter.cutoff = 200.0;
+        lp.filter.key_tracking = 0.0;
         lp.filter.filter_type = "lowpass".into();
+        lp.filter_envelope = closed_filter_env();
         let mut hp = Patch::default_mono();
         hp.filter.cutoff = 200.0;
+        hp.filter.key_tracking = 0.0;
         hp.filter.filter_type = "highpass".into();
-        let a_lp = render_note(&bank, 440.0, 0.5, 44100, &lp);
-        let a_hp = render_note(&bank, 440.0, 0.5, 44100, &hp);
+        hp.filter_envelope = closed_filter_env();
+        let a_lp = render_note_single_bank(&bank, 440.0, 0.5, 44100, &lp);
+        let a_hp = render_note_single_bank(&bank, 440.0, 0.5, 44100, &hp);
         let rms_lp = rms(&a_lp[4410..]);
         let rms_hp = rms(&a_hp[4410..]);
         assert!(rms_hp > rms_lp * 1.2, "hp={rms_hp} lp={rms_lp}");
@@ -108,7 +144,7 @@ mod tests {
     fn default_mono_has_signal() {
         let bank = WavetableBank::factory_saw_morph();
         let patch = Patch::default_mono();
-        let audio = render_note(&bank, 220.0, 0.2, 44100, &patch);
+        let audio = render_note_single_bank(&bank, 220.0, 0.2, 44100, &patch);
         let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(peak > 0.01, "default_mono peak was {peak}");
     }
@@ -119,8 +155,32 @@ mod tests {
         let json = r#"{"oscillators":[{"type":"wavetable","level":1.0,"position":0.0}],"filter":{"type":"lowpass","cutoff":1200,"resonance":0.3},"envelope":{"attack":0.01,"decay":0.2,"sustain":0.6,"release":0.4}}"#;
         let patch = Patch::from_json(json).unwrap();
         assert!(!patch.oscillators.is_empty(), "oscillators empty");
-        let audio = render_note(&bank, 220.0, 0.2, 44100, &patch);
+        let audio = render_note_single_bank(&bank, 220.0, 0.2, 44100, &patch);
         let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(peak > 0.01, "peak was {peak}");
+    }
+
+    #[test]
+    fn filter_envelope_opens_cutoff() {
+        let bank = WavetableBank::factory_saw_morph();
+        let mut patch = Patch::default_mono();
+        patch.filter.cutoff = 200.0;
+        patch.filter.key_tracking = 0.0;
+        patch.envelope = Envelope {
+            attack: 0.001,
+            decay: 0.001,
+            sustain: 1.0,
+            release: 0.001,
+        };
+        patch.filter_envelope = Envelope {
+            attack: 0.001,
+            decay: 0.001,
+            sustain: 1.0,
+            release: 0.001,
+        };
+        let audio = render_note_single_bank(&bank, 440.0, 0.15, 44100, &patch);
+        let early = zero_crossings(&audio[50..200]);
+        let late = zero_crossings(&audio[4000..6500]);
+        assert!(late > early, "early zc={early} late zc={late}");
     }
 }

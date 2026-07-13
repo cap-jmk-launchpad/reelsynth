@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use egui::{Color32, FontId, Pos2, Rect, Shape, Ui};
-use reelsynth::WavetableBank;
+use egui::{Color32, FontId, Rect, Ui};
+use reelsynth::{Patch, WavetableBank};
 use reelsynth_ui_theme::{heading_font, Tokens};
 
 use crate::layout::{
-    S1Layout, S1LayoutOptions, GRID_UNIT, RADIUS_MD, SPACE_MD, SPACE_SM, WT_MORPH_HEIGHT,
+    S1Layout, S1LayoutOptions, GRID_UNIT, SPACE_SM, WT_MORPH_HEIGHT,
     WT_STRIP_HEIGHT, WT_VIEW_MIN_HEIGHT,
 };
 use crate::fx_rack::{draw_fx_rack, default_fx_slots, FxRackState, FxSlotUi};
@@ -15,6 +15,7 @@ use crate::widgets::{
     adsr_graph, format_depth, format_env_time, format_lfo_rate, format_sustain, tab_bar, Knob,
     KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled,
 };
+use crate::scope::{draw_scope_strip, SCOPE_STRIP_HEIGHT};
 use crate::wt::{morph_amount_for_position, WtEditTool, WtMorph, WtStrip, WtView2d, WtView3d, FACTORY_BANKS};
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -69,11 +70,16 @@ pub struct S1State {
     pub macro_values: [f32; 4],
     pub filter_cutoff: f32,
     pub filter_resonance: f32,
+    pub filter_key_tracking: f32,
     pub filter_mode: usize,
     pub env_attack: f32,
     pub env_decay: f32,
     pub env_sustain: f32,
     pub env_release: f32,
+    pub filt_env_attack: f32,
+    pub filt_env_decay: f32,
+    pub filt_env_sustain: f32,
+    pub filt_env_release: f32,
     pub lfo_rate: f32,
     pub lfo_depth: f32,
     pub mod_matrix_open: bool,
@@ -109,11 +115,16 @@ impl Default for S1State {
             macro_values: [0.5; 4],
             filter_cutoff: 1200.0,
             filter_resonance: 0.3,
+            filter_key_tracking: 0.5,
             filter_mode: 0,
             env_attack: 0.012,
             env_decay: 0.22,
             env_sustain: 0.6,
             env_release: 0.4,
+            filt_env_attack: 0.005,
+            filt_env_decay: 0.35,
+            filt_env_sustain: 0.2,
+            filt_env_release: 0.5,
             lfo_rate: 2.4,
             lfo_depth: 0.0,
             mod_matrix_open: true,
@@ -136,6 +147,7 @@ pub fn draw_s1(
     screen: Rect,
     state: &mut S1State,
     bank: Option<&mut WavetableBank>,
+    preview_patch: &Patch,
     midi: &S1MidiDevices<'_>,
     config: &S1ShellConfig,
 ) -> S1Actions {
@@ -204,7 +216,7 @@ pub fn draw_s1(
     if layout.osc.is_positive() {
         draw_osc(ui, layout.osc, state, &mut actions);
     }
-    draw_center(ui, layout.center, state, bank, config, &mut actions);
+    draw_center(ui, layout.center, state, bank, preview_patch, config, &mut actions);
     draw_rail(ui, layout.rail, state, config, &mut actions);
 
     if layout.mod_matrix.is_positive() {
@@ -471,6 +483,7 @@ fn draw_center(
     rect: Rect,
     state: &mut S1State,
     mut bank: Option<&mut WavetableBank>,
+    preview_patch: &Patch,
     config: &S1ShellConfig,
     actions: &mut S1Actions,
 ) {
@@ -486,10 +499,16 @@ fn draw_center(
         0.0
     };
 
-    let (hero_rect, strip_rect, morph_rect, views_rect) = if config.show_osc_column {
+    let scope_rect = Rect::from_min_max(
+        inner.min,
+        egui::pos2(inner.max.x, inner.min.y + SCOPE_STRIP_HEIGHT),
+    );
+    let content_top = scope_rect.max.y + GRID_UNIT;
+
+    let (strip_rect, morph_rect, views_rect) = if config.show_osc_column {
         let strip_rect = Rect::from_min_max(
-            inner.min,
-            egui::pos2(inner.max.x, inner.min.y + WT_STRIP_HEIGHT),
+            egui::pos2(inner.min.x, content_top),
+            egui::pos2(inner.max.x, content_top + WT_STRIP_HEIGHT),
         );
         let morph_rect = if config.show_wt_editor {
             Rect::from_min_max(
@@ -512,7 +531,7 @@ fn draw_center(
         } else {
             Rect::NOTHING
         };
-        (Rect::NOTHING, strip_rect, morph_rect, views_rect)
+        (strip_rect, morph_rect, views_rect)
     } else {
         let views_rect = if config.show_wt_editor {
             Rect::from_min_max(
@@ -539,17 +558,17 @@ fn draw_center(
             egui::pos2(inner.min.x, strip_bottom - WT_STRIP_HEIGHT),
             egui::pos2(inner.max.x, strip_bottom),
         );
-        let hero_rect = Rect::from_min_max(
-            inner.min,
-            egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT),
-        );
-        (hero_rect, strip_rect, morph_rect, views_rect)
+        (strip_rect, morph_rect, views_rect)
     };
 
     let bank_name = state.wt_bank_name.clone();
 
-    if hero_rect.is_positive() {
-        draw_spectrum_hero(ui, hero_rect, state);
+    if scope_rect.is_positive() {
+        ui.allocate_ui_at_rect(scope_rect, |ui| {
+            if let Some(b) = bank.as_deref() {
+                draw_scope_strip(ui, scope_rect, preview_patch, std::slice::from_ref(b), |_| 0);
+            }
+        });
     }
 
     if config.show_wt_editor && morph_rect.is_positive() {
@@ -615,76 +634,6 @@ fn draw_center(
                 morph_amount_for_position(state.wt_morph_a, state.wt_morph_b, state.wt_position);
             actions.params_changed = true;
         }
-    });
-}
-
-fn draw_spectrum_hero(ui: &mut Ui, area: Rect, state: &S1State) {
-    let tokens = Tokens::default();
-    let inner = area.shrink(SPACE_MD);
-    ui.allocate_ui_at_rect(inner, |ui| {
-        ui.with_layout(
-            egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
-            |ui| {
-                ui.set_min_height(inner.height());
-                ui.spacing_mut().item_spacing.y = SPACE_SM;
-                ui.label(
-                    egui::RichText::new(&state.preset_name)
-                        .font(heading_font(28.0))
-                        .color(tokens.text),
-                );
-                ui.label(
-                    egui::RichText::new(&state.preset_category)
-                        .size(12.0)
-                        .color(tokens.text_muted),
-                );
-
-                let viz_w = inner.width().min(520.0);
-                let viz_h = (inner.height() * 0.55).clamp(80.0, 180.0);
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(viz_w, viz_h),
-                    egui::Sense::hover(),
-                );
-                let painter = ui.painter_at(rect);
-                painter.rect_filled(rect, RADIUS_MD, tokens.surface2);
-                painter.rect_stroke(
-                    rect,
-                    RADIUS_MD,
-                    egui::Stroke::new(1.0_f32, tokens.border),
-                );
-
-                let bar_heights: [f32; 32] = [
-                    58.0, 76.0, 100.0, 120.0, 130.0, 136.0, 140.0, 142.0, 138.0, 132.0, 124.0,
-                    114.0, 104.0, 96.0, 90.0, 84.0, 78.0, 72.0, 66.0, 60.0, 56.0, 52.0, 48.0, 44.0,
-                    40.0, 36.0, 32.0, 28.0, 24.0, 20.0, 16.0, 12.0,
-                ];
-                let viz_inner = rect.shrink(GRID_UNIT);
-                let bar_w = 8.0;
-                let gap = 4.0;
-                for (i, h) in bar_heights.iter().enumerate() {
-                    let x = viz_inner.min.x + i as f32 * (bar_w + gap);
-                    let bar_h = h * (viz_inner.height() / 160.0);
-                    let bar_rect = Rect::from_min_max(
-                        Pos2::new(x, viz_inner.max.y - bar_h),
-                        Pos2::new(x + bar_w, viz_inner.max.y),
-                    );
-                    painter.rect_filled(bar_rect, 1.0, tokens.accent.gamma_multiply(0.85));
-                }
-
-                let wave: Vec<Pos2> = (0..=64)
-                    .map(|i| {
-                        let t = i as f32 / 64.0;
-                        let x = egui::lerp(viz_inner.min.x..=viz_inner.max.x, t);
-                        let y = viz_inner.center().y
-                            - (t * std::f32::consts::TAU * 2.0).sin() * viz_inner.height() * 0.25;
-                        Pos2::new(x, y)
-                    })
-                    .collect();
-                painter.add(Shape::line(
-                    wave,
-                    egui::Stroke::new(1.5_f32, tokens.accent_on.gamma_multiply(0.6)),
-                ));
-            },
-        );
     });
 }
 
@@ -765,7 +714,62 @@ fn draw_rail(
                             actions.params_changed = true;
                         }
                     });
+                    if config.show_osc_column {
+                        ui.add_space(GRID_UNIT);
+                        let kt_text = format!("{:.0}%", state.filter_key_tracking * 100.0);
+                        let r3 = Knob::new(&mut state.filter_key_tracking, 0.0..=1.0, "Key")
+                            .size(KnobSize::Sm)
+                            .style(KnobStyle::Wired)
+                            .value_text(kt_text)
+                            .show(ui);
+                        if r3.changed {
+                            actions.params_changed = true;
+                        }
+                    }
                 });
+
+                if config.show_osc_column {
+                    panel(ui, "Filter Envelope", |ui| {
+                        adsr_graph(
+                            ui,
+                            state.filt_env_attack,
+                            state.filt_env_decay,
+                            state.filt_env_sustain,
+                            state.filt_env_release,
+                        );
+                        ui.add_space(GRID_UNIT);
+                        ui.horizontal_centered(|ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_SM;
+                            let attack_text = format_env_time(state.filt_env_attack);
+                            let decay_text = format_env_time(state.filt_env_decay);
+                            let sustain_text = format_sustain(state.filt_env_sustain);
+                            let release_text = format_env_time(state.filt_env_release);
+                            let r_a = Knob::new(&mut state.filt_env_attack, 0.001..=2.0, "A")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(attack_text)
+                                .show(ui);
+                            let r_d = Knob::new(&mut state.filt_env_decay, 0.001..=2.0, "D")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(decay_text)
+                                .show(ui);
+                            let r_s = Knob::new(&mut state.filt_env_sustain, 0.0..=1.0, "S")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(sustain_text)
+                                .show(ui);
+                            let r_r = Knob::new(&mut state.filt_env_release, 0.001..=3.0, "R")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(release_text)
+                                .show(ui);
+                            if r_a.changed || r_d.changed || r_s.changed || r_r.changed {
+                                actions.params_changed = true;
+                            }
+                        });
+                    });
+                }
 
                 if config.show_osc_column {
                     panel(ui, "Amp Envelope", |ui| {

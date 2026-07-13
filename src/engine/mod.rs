@@ -1,10 +1,12 @@
 //! Block-based realtime synthesizer engine (S0).
 
+mod bank_set;
 mod midi;
 mod params;
 mod voice_pool;
 mod voice_rt;
 
+pub use bank_set::BankSet;
 pub use midi::{note_to_freq, MidiEvent};
 pub use params::{EngineParams, Smoother};
 pub use voice_pool::{VoicePool, MAX_VOICES};
@@ -15,9 +17,12 @@ use crate::patch::Patch;
 use crate::voice::render_note;
 use crate::wavetable::WavetableBank;
 
+/// Internal block size for voice summing (64–128 samples).
+pub const BLOCK_SIZE: usize = 64;
+
 /// Polyphonic wavetable synth engine with shared offline/realtime DSP.
 pub struct SynthEngine {
-    bank: WavetableBank,
+    banks: BankSet,
     patch: Patch,
     pool: VoicePool,
     params: EngineParams,
@@ -31,8 +36,9 @@ impl SynthEngine {
         let params = EngineParams::new(&patch, sample_rate as f32);
         let pool = VoicePool::new(&patch);
         let fx = FxChain::new(sample_rate);
+        let banks = BankSet::from_primary(bank, &patch);
         Self {
-            bank,
+            banks,
             patch,
             pool,
             params,
@@ -54,16 +60,21 @@ impl SynthEngine {
         self.params.sync_from_patch(&patch);
         self.pool.reset_patch(&patch);
         self.fx.set_bypass(patch.fx_bypass.clone());
+        self.banks = BankSet::from_primary(self.banks.primary().clone(), &patch);
         self.patch = patch;
     }
 
     pub fn bank(&self) -> &WavetableBank {
-        &self.bank
+        self.banks.primary()
+    }
+
+    pub fn banks(&self) -> &[WavetableBank] {
+        self.banks.banks()
     }
 
     /// Hot-swap wavetable bank and patch (preset load).
     pub fn load_preset(&mut self, bank: WavetableBank, patch: Patch) {
-        self.bank = bank;
+        self.banks = BankSet::from_primary(bank, &patch);
         self.set_patch(patch);
     }
 
@@ -86,8 +97,16 @@ impl SynthEngine {
         self.patch.filter.filter_type = filter_type.to_string();
     }
 
+    pub fn set_filter_key_tracking(&mut self, key_tracking: f32) {
+        self.patch.filter.key_tracking = key_tracking.clamp(0.0, 1.0);
+    }
+
     pub fn set_envelope(&mut self, envelope: crate::patch::Envelope) {
         self.patch.envelope = envelope;
+    }
+
+    pub fn set_filter_envelope(&mut self, envelope: crate::patch::Envelope) {
+        self.patch.filter_envelope = envelope;
     }
 
     pub fn set_lfo_rate(&mut self, rate: f32) {
@@ -102,6 +121,13 @@ impl SynthEngine {
         self.patch.ensure_oscillators(index + 1);
         if let Some(osc) = self.patch.oscillators.get_mut(index) {
             osc.level = level.clamp(0.0, 1.0);
+        }
+    }
+
+    pub fn set_osc_pan(&mut self, index: usize, pan: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.pan = pan.clamp(-1.0, 1.0);
         }
     }
 
@@ -160,31 +186,96 @@ impl SynthEngine {
         }
     }
 
-    /// Render one block of mono audio into `out`.
+    /// Render one block of mono audio into `out` (L+R average).
     pub fn process(&mut self, out: &mut [f32]) {
+        for chunk in out.chunks_mut(BLOCK_SIZE) {
+            self.process_block_mono(chunk);
+        }
+    }
+
+    /// Render interleaved stereo `[L,R,L,R,…]`.
+    pub fn process_stereo(&mut self, out: &mut [f32]) {
+        let frames = out.len() / 2;
+        for chunk_start in (0..frames).step_by(BLOCK_SIZE) {
+            let chunk_frames = (frames - chunk_start).min(BLOCK_SIZE);
+            self.process_block_stereo(&mut out[chunk_start * 2..(chunk_start + chunk_frames) * 2]);
+        }
+    }
+
+    fn process_block_mono(&mut self, out: &mut [f32]) {
         let sr = self.sample_rate as f32;
         let dt = 1.0 / sr;
-        let mut patch = self.patch.clone();
-        patch.filter.cutoff = self.params.filter_cutoff.current();
+        let bank_slice = self.banks.banks().to_vec();
 
         for sample in out.iter_mut() {
             self.params.filter_cutoff.process();
             self.params.master_gain.process();
+            let mut patch = self.patch.clone();
             patch.filter.cutoff = self.params.filter_cutoff.current();
+            let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&patch, oi);
 
-            let mut acc = 0.0f32;
+            let mut acc_l = 0.0f32;
+            let mut acc_r = 0.0f32;
             for voice in self.pool.voices_mut() {
-                acc += voice.process_sample(&self.bank, &patch, self.global_time, dt, sr);
+                let [l, r] = voice.process_sample(
+                    &bank_slice,
+                    &bank_for_osc,
+                    &patch,
+                    self.global_time,
+                    dt,
+                    sr,
+                );
+                acc_l += l;
+                acc_r += r;
             }
-            *sample = self.fx.process_sample(acc * self.params.master_gain.current());
+            let gain = self.params.master_gain.current();
+            let mono = self.fx.process_sample((acc_l + acc_r) * 0.5 * gain);
+            *sample = mono;
+            self.global_time += dt;
+        }
+    }
+
+    fn process_block_stereo(&mut self, out: &mut [f32]) {
+        let sr = self.sample_rate as f32;
+        let dt = 1.0 / sr;
+        let frames = out.len() / 2;
+        let bank_slice = self.banks.banks().to_vec();
+
+        for frame in 0..frames {
+            self.params.filter_cutoff.process();
+            self.params.master_gain.process();
+            let mut patch = self.patch.clone();
+            patch.filter.cutoff = self.params.filter_cutoff.current();
+            let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&patch, oi);
+
+            let mut acc_l = 0.0f32;
+            let mut acc_r = 0.0f32;
+            for voice in self.pool.voices_mut() {
+                let [l, r] = voice.process_sample(
+                    &bank_slice,
+                    &bank_for_osc,
+                    &patch,
+                    self.global_time,
+                    dt,
+                    sr,
+                );
+                acc_l += l;
+                acc_r += r;
+            }
+            let gain = self.params.master_gain.current();
+            let [l, r] = self.fx.process_stereo(acc_l * gain, acc_r * gain);
+            out[frame * 2] = l;
+            out[frame * 2 + 1] = r;
             self.global_time += dt;
         }
     }
 
     /// Offline reference render using the same patch/bank (for golden tests).
     pub fn render_offline(&self, freq: f32, duration: f32) -> Vec<f32> {
+        let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&self.patch, oi);
         let mut audio = render_note(
-            &self.bank,
+            self.banks.banks(),
+            bank_for_osc,
             freq,
             duration,
             self.sample_rate,

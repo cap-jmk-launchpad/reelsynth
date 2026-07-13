@@ -2,6 +2,7 @@ mod fx_rack;
 mod layout;
 mod mod_matrix;
 mod osc;
+mod scope;
 mod s1;
 pub mod widgets;
 pub mod wt;
@@ -16,5 +17,6 @@ pub use mod_matrix::{
     ModMatrixState, ModPolarity, ModRouteUi,
 };
 pub use osc::{draw_osc_column, OscColumnResult, OscColumnState};
+pub use scope::{draw_scope_strip, SCOPE_STRIP_HEIGHT};
 pub use s1::{draw_s1, S1Actions, S1MidiDevices, S1ShellConfig, S1State};
 pub use wt::{factory_bank, factory_label, FactoryBankEntry, FACTORY_BANKS};
