@@ -8,8 +8,8 @@ pub mod widgets;
 pub mod wt;
 
 pub use fx_rack::{
-    default_fx_slots, draw_fx_rack, fx_slots_from_bypass, fx_slots_to_bypass, FxRackState,
-    FxSlotUi,
+    default_fx_slots, draw_fx_rack, fx_slots_from_bypass, fx_slots_from_effects,
+    fx_slots_to_bypass, fx_slots_to_effects, FxRackState, FxSlotUi,
 };
 pub use layout::*;
 pub use mod_matrix::{

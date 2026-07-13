@@ -45,7 +45,7 @@ pub fn render_scope_previews(
 
     let mut voice = VoiceState::new(patch);
     let mut fx = FxChain::new(PREVIEW_SR as u32);
-    fx.set_bypass(patch.fx_bypass.clone());
+    fx.set_effects(patch.effects.clone());
 
     for i in 0..count {
         let t = i as f32 / PREVIEW_SR;

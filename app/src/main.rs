@@ -7,7 +7,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
 use midi_input::{MidiDevices, MidiInputHandle};
 use reelsynth::{import::{import_serum_fxp, import_vital, import_wav_folder}, load_preset, resolve_bank_for_preset, Envelope, ModSlot, Patch, SynthEngine, WavetableBank};
-use reelsynth_ui::{draw_s1, factory_bank, factory_label, fm_algorithm_index, fm_source_from_index, fm_source_index, fx_slots_from_bypass, fx_slots_to_bypass, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
+use reelsynth_ui::{draw_s1, factory_bank, factory_label, fm_algorithm_index, fm_source_from_index, fm_source_index, fx_slots_from_effects, fx_slots_to_effects, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -57,7 +57,7 @@ enum AudioCmd {
     SetSubLevel(f32),
     SetNoiseLevel(f32),
     SetModMatrix(Vec<ModSlot>),
-    SetFxBypass(reelsynth::FxBypass),
+    SetEffects(Vec<reelsynth::EffectSlot>),
     LoadPreset {
         patch: Patch,
         bank: WavetableBank,
@@ -227,7 +227,7 @@ fn drain_commands(
             Ok(AudioCmd::SetSubLevel(l)) => engine.set_sub_level(l),
             Ok(AudioCmd::SetNoiseLevel(l)) => engine.set_noise_level(l),
             Ok(AudioCmd::SetModMatrix(slots)) => engine.set_mod_matrix(slots),
-            Ok(AudioCmd::SetFxBypass(bypass)) => engine.set_fx_bypass(bypass),
+            Ok(AudioCmd::SetEffects(effects)) => engine.set_effects(effects),
             Ok(AudioCmd::LoadPreset { patch, bank }) => {
                 engine.load_preset(bank.clone(), patch);
                 if let Ok(mut g) = bank_shared.write() {
@@ -327,7 +327,7 @@ fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
     state.lfo_depth = patch.lfo.depth;
     state.mod_routes = mod_routes_from_slots(&patch.mod_matrix);
     state.mod_route_total = state.mod_routes.len().max(24);
-    state.fx_slots = fx_slots_from_bypass(&patch.fx_bypass);
+    state.fx_slots = fx_slots_from_effects(&patch.effects);
 }
 
 fn filter_mode_from_type(filter_type: &str) -> usize {
@@ -411,7 +411,7 @@ fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
     patch.sub_level = state.sub_level;
     patch.noise_level = state.noise_level;
     patch.mod_matrix = mod_routes_to_slots(&state.mod_routes);
-    patch.fx_bypass = fx_slots_to_bypass(&state.fx_slots);
+    patch.effects = fx_slots_to_effects(&state.fx_slots);
     patch
 }
 
@@ -481,7 +481,7 @@ impl ReelSynthApp {
         let mut current_patch = Patch::default_mono();
         sync_state_from_patch(&mut state, &current_patch);
         current_patch.mod_matrix = mod_routes_to_slots(&state.mod_routes);
-        current_patch.fx_bypass = fx_slots_to_bypass(&state.fx_slots);
+        current_patch.effects = fx_slots_to_effects(&state.fx_slots);
         Self {
             audio,
             state,
@@ -574,7 +574,7 @@ impl ReelSynthApp {
             a.send(AudioCmd::SetSubLevel(self.state.sub_level));
             a.send(AudioCmd::SetNoiseLevel(self.state.noise_level));
             a.send(AudioCmd::SetModMatrix(mod_routes_to_slots(&self.state.mod_routes)));
-            a.send(AudioCmd::SetFxBypass(fx_slots_to_bypass(&self.state.fx_slots)));
+            a.send(AudioCmd::SetEffects(fx_slots_to_effects(&self.state.fx_slots)));
         }
         self.current_patch = patch_from_state(&self.state, &self.current_patch);
     }

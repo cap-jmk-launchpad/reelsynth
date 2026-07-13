@@ -11,7 +11,7 @@ pub mod engine;
 pub mod ffi;
 
 pub use wavetable::WavetableBank;
-pub use fx::{FxBypass, FxChain};
+pub use fx::{default_effects, effects_from_bypass, EffectSlot, EffectType, FxBypass, FxChain};
 pub use patch::{Envelope, ModSlot, Patch};
 pub use voice::{render_note, render_note_single_bank};
 pub use preview::{render_scope_previews, ScopePreviews, ScopeTap};

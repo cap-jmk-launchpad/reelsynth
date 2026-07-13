@@ -236,6 +236,9 @@ pub struct Patch {
     #[serde(default)]
     pub mod_matrix: Vec<ModSlot>,
     #[serde(default)]
+    pub effects: Vec<crate::fx::EffectSlot>,
+    /// Legacy field — migrated into `effects` on load.
+    #[serde(default, skip_serializing)]
     pub fx_bypass: crate::fx::FxBypass,
     #[serde(default)]
     pub sub_level: f32,
@@ -301,6 +304,7 @@ impl Patch {
         if patch.schema.is_empty() || patch.schema == SCHEMA_V1 {
             patch.schema = SCHEMA_V2.into();
         }
+        migrate_fx_bypass(&mut patch);
         Ok(patch)
     }
 
@@ -339,6 +343,7 @@ impl Patch {
             filter_envelope: default_filter_envelope(),
             lfo: Lfo::default(),
             mod_matrix: vec![],
+            effects: crate::fx::default_effects(),
             fx_bypass: crate::fx::FxBypass::default(),
             sub_level: 0.0,
             noise_level: 0.0,
@@ -637,6 +642,12 @@ impl Patch {
     }
 }
 
+fn migrate_fx_bypass(patch: &mut Patch) {
+    if patch.effects.is_empty() {
+        patch.effects = crate::fx::effects_from_bypass(&patch.fx_bypass);
+    }
+}
+
 fn migrate_v1_to_v2(v: &mut Value) {
     let obj = match v.as_object_mut() {
         Some(o) => o,
@@ -767,6 +778,24 @@ mod tests {
         let p = Patch::factory_fm_pluck();
         assert_eq!(p.oscillators[0].fm_source, "osc2_osc3");
         assert!(p.envelope.sustain < 0.01);
+    }
+
+    #[test]
+    fn effects_default_has_three_slots() {
+        let p = Patch::default_mono();
+        assert_eq!(p.effects.len(), 3);
+        assert_eq!(p.effects[0].effect_type, crate::fx::EffectType::Chorus);
+        assert_eq!(p.effects[1].effect_type, crate::fx::EffectType::Delay);
+        assert!(p.effects[2].bypassed);
+    }
+
+    #[test]
+    fn legacy_fx_bypass_migrates_to_effects() {
+        let json = r#"{"fx_bypass":{"chorus_bypassed":true,"delay_bypassed":false,"reverb_bypassed":true}}"#;
+        let p = Patch::from_json(json).unwrap();
+        assert_eq!(p.effects.len(), 3);
+        assert!(p.effects[0].bypassed);
+        assert!(!p.effects[1].bypassed);
     }
 
     #[test]

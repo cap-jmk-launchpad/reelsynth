@@ -59,7 +59,7 @@ impl SynthEngine {
     pub fn set_patch(&mut self, patch: Patch) {
         self.params.sync_from_patch(&patch);
         self.pool.reset_patch(&patch);
-        self.fx.set_bypass(patch.fx_bypass.clone());
+        self.fx.set_effects(patch.effects.clone());
         self.banks = BankSet::from_primary(self.banks.primary().clone(), &patch);
         self.patch = patch;
     }
@@ -237,9 +237,14 @@ impl SynthEngine {
         self.patch.mod_matrix = slots;
     }
 
+    pub fn set_effects(&mut self, effects: Vec<crate::fx::EffectSlot>) {
+        self.patch.effects = effects.clone();
+        self.fx.set_effects(effects);
+    }
+
+    /// Legacy API — maps fixed chorus/delay/reverb bypass flags.
     pub fn set_fx_bypass(&mut self, bypass: crate::fx::FxBypass) {
-        self.patch.fx_bypass = bypass.clone();
-        self.fx.set_bypass(bypass);
+        self.set_effects(crate::fx::effects_from_bypass(&bypass));
     }
 
     pub fn note_on(&mut self, note: u8, velocity: f32) {
@@ -355,7 +360,7 @@ impl SynthEngine {
             &self.patch,
         );
         let mut fx = FxChain::new(self.sample_rate);
-        fx.set_bypass(self.patch.fx_bypass.clone());
+        fx.set_effects(self.patch.effects.clone());
         for sample in audio.iter_mut() {
             *sample = fx.process_sample(*sample);
         }
