@@ -2,6 +2,29 @@
 
 Progress tracker for the UI platform plan (`reelsynth_ui_platform` + `reelsynth_ui_redesign`).
 
+## 2026-07-13 — Naming refactor closure ✅
+
+### Migration (`refactor/naming-and-structure` → `main`)
+
+| Item | Status |
+|------|--------|
+| `src/patch/`, `src/fx/`, `src/scope/`, `src/voice/process.rs` | ✅ modularized |
+| `ui/src/shell/` split from `s1.rs` | ✅ |
+| `ui/src/osc_column.rs`, `scope_strip.rs`, `state_sync.rs` | ✅ renamed |
+| `app/src/audio_host.rs`, `audio_commands.rs`, `midi_host.rs` | ✅ extracted |
+| `tests/qa/` domain names (was `phaseN.rs`) | ✅ |
+| `docs/NAMING.md`, `docs/MIGRATION_REFACTOR.md` | ✅ |
+| `cargo test --workspace --no-default-features -j 1` | ✅ |
+| `cargo build -p reelsynth-plugin --release` | ✅ |
+
+**Commits:** `3f26a90` (refactor), `a35b55b` (post-refactor test fixes)
+
+### Next loop
+
+1. S7: real CLAP/VST3 host bindings (nih-plug or clap-sys)
+2. Macro knobs → mod matrix destinations
+3. UI audit vs `index.html` landmarks (<1px gate)
+
 ## 2026-07-13 — Loop iteration 4 (S6 complete)
 
 ### S6 — Plugin shell + mod/FX wiring ✅
