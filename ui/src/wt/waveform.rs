@@ -32,5 +32,8 @@ pub fn waveform_points(frame: &[f32], inner: Rect, sample_count: usize, amp: f32
 }
 
 pub fn peak_point(points: &[Pos2]) -> Option<Pos2> {
-    points.iter().min_by(|a, b| a.y.partial_cmp(&b.y).unwrap())
+    points
+        .iter()
+        .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap())
+        .copied()
 }

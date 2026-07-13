@@ -7,7 +7,7 @@ pub mod engine;
 pub mod ffi;
 
 pub use wavetable::WavetableBank;
-pub use patch::Patch;
+pub use patch::{Envelope, Patch};
 pub use voice::render_note;
 pub use engine::SynthEngine;
 pub use export::{

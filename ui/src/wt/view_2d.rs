@@ -2,18 +2,24 @@ use egui::{Color32, Pos2, Rect, Sense, Shape, Ui, Vec2};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::Tokens;
 
-use crate::layout::{RADIUS_SM, WT_VIEW_MIN_HEIGHT};
+use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT, WT_VIEW_MIN_HEIGHT};
 
+use super::toolbar::{WtEditTool, WtToolbar};
 use super::waveform::{frame_index, peak_point, waveform_points};
+
+pub struct WtView2dResponse {
+    pub frame_edited: bool,
+}
 
 pub struct WtView2d<'a> {
     pub position: f32,
-    pub bank: Option<&'a WavetableBank>,
+    pub bank: Option<&'a mut WavetableBank>,
     pub bank_name: Option<&'a str>,
+    pub tool: &'a mut WtEditTool,
 }
 
 impl WtView2d<'_> {
-    pub fn show(self, ui: &mut Ui) -> Rect {
+    pub fn show(self, ui: &mut Ui) -> WtView2dResponse {
         let tokens = Tokens::default();
         let accent_ui = Color32::from_rgb(0x2a, 0x6b, 0x8a);
         let (rect, _) = ui.allocate_exact_size(
@@ -22,7 +28,9 @@ impl WtView2d<'_> {
         );
 
         if !ui.is_rect_visible(rect) {
-            return rect;
+            return WtView2dResponse {
+                frame_edited: false,
+            };
         }
 
         let painter = ui.painter_at(rect);
@@ -35,29 +43,28 @@ impl WtView2d<'_> {
 
         let frame_idx = self
             .bank
+            .as_ref()
             .map(|b| frame_index(self.position, b.num_frames))
             .unwrap_or(0);
-        let label = if let Some(name) = self.bank_name {
-            format!("2D Waveform · {name} · frame {frame_idx}")
-        } else {
-            format!("2D Waveform · frame {frame_idx}")
-        };
-        painter.text(
-            Pos2::new(rect.min.x + 8.0, rect.min.y + 6.0),
-            egui::Align2::LEFT_TOP,
-            label,
-            egui::FontId::proportional(10.0),
-            tokens.text_muted,
+
+        let mut frame_edited = false;
+        let plot_top = rect.min.y + WT_TOOLBAR_HEIGHT;
+        let plot_rect = Rect::from_min_max(
+            egui::pos2(rect.min.x, plot_top),
+            rect.max,
         );
 
-        let inner = rect.shrink2(egui::vec2(8.0, 20.0));
+        ui.allocate_ui_at_rect(
+            Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top)),
+            |ui| {
+                WtToolbar::show(ui, self.tool);
+            },
+        );
+
+        let inner = plot_rect.shrink2(egui::vec2(8.0, 12.0));
         let mid_y = inner.center().y;
-        painter.line_segment(
-            [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
-            egui::Stroke::new(1.0_f32, tokens.border),
-        );
 
-        let wave = if let Some(bank) = self.bank {
+        let wave = if let Some(bank) = self.bank.as_ref() {
             let frame = bank.frame(frame_idx);
             waveform_points(frame, inner, 256, 0.42)
         } else {
@@ -84,8 +91,48 @@ impl WtView2d<'_> {
             }
         }
 
-        rect
+        painter.line_segment(
+            [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
+            egui::Stroke::new(1.0_f32, tokens.border),
+        );
+
+        let label = if let Some(name) = self.bank_name {
+            format!("2D Waveform · {name} · frame {frame_idx}")
+        } else {
+            format!("2D Waveform · frame {frame_idx}")
+        };
+        painter.text(
+            Pos2::new(plot_rect.min.x + 8.0, plot_rect.min.y + 4.0),
+            egui::Align2::LEFT_TOP,
+            label,
+            egui::FontId::proportional(10.0),
+            tokens.text_muted,
+        );
+
+        if *self.tool == WtEditTool::Pencil {
+            if let Some(bank) = self.bank {
+                let sense = Sense::click_and_drag();
+                let response = ui.allocate_rect(inner, sense);
+                if response.dragged() || response.drag_started() {
+                    if let Some(curr) = response.interact_pointer_pos() {
+                        let prev = curr - response.drag_delta();
+                        let (cx, cy) = view_coords(inner, curr);
+                        let (px, py) = view_coords(inner, prev);
+                        bank.apply_pencil_segment(frame_idx, px, py, cx, cy);
+                        frame_edited = true;
+                    }
+                }
+            }
+        }
+
+        WtView2dResponse { frame_edited }
     }
+}
+
+fn view_coords(inner: Rect, pos: Pos2) -> (f32, f32) {
+    let x = ((pos.x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
+    let y = ((pos.y - inner.min.y) / inner.height()).clamp(0.0, 1.0);
+    (x, y)
 }
 
 fn placeholder_wave(inner: Rect, mid_y: f32) -> Vec<Pos2> {

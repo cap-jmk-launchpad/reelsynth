@@ -2,7 +2,7 @@
 
 use approx::relative_eq;
 use reelsynth::engine::SynthEngine;
-use reelsynth::patch::Patch;
+use reelsynth::patch::{Envelope, Patch};
 use reelsynth::wavetable::WavetableBank;
 
 fn rms(samples: &[f32]) -> f32 {
@@ -46,6 +46,36 @@ fn offline_vs_realtime_rms_match_single_note() {
         relative_eq!(offline_rms, rt_rms, max_relative = 0.02),
         "offline_rms={offline_rms} rt_rms={rt_rms}"
     );
+}
+
+#[test]
+fn engine_s3_param_setters() {
+    let bank = WavetableBank::factory_saw_morph();
+    let mut patch = Patch::default_mono();
+    patch.ensure_oscillators(3);
+    let mut engine = SynthEngine::new(bank, patch, 44100);
+
+    engine.set_envelope(Envelope {
+        attack: 0.05,
+        decay: 0.1,
+        sustain: 0.4,
+        release: 0.2,
+    });
+    assert_eq!(engine.patch().envelope.attack, 0.05);
+
+    engine.set_lfo_rate(3.5);
+    engine.set_lfo_depth(0.25);
+    assert_eq!(engine.patch().lfo.rate, 3.5);
+    assert_eq!(engine.patch().lfo.depth, 0.25);
+
+    engine.set_osc_level(1, 0.5);
+    engine.set_osc_detune(2, 100.0);
+    engine.set_sub_level(0.3);
+    engine.set_noise_level(0.1);
+    assert_eq!(engine.patch().oscillators[1].level, 0.5);
+    assert_eq!(engine.patch().oscillators[2].detune, 100.0);
+    assert_eq!(engine.patch().sub_level, 0.3);
+    assert_eq!(engine.patch().noise_level, 0.1);
 }
 
 #[test]

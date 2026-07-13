@@ -2,6 +2,75 @@
 
 Progress tracker for the UI platform plan (`reelsynth_ui_platform` + `reelsynth_ui_redesign`).
 
+## 2026-07-13 — Loop iteration 3 (S3–S5 complete)
+
+### S3 — Osc column + WT tools ✅
+
+| Item | Status |
+|------|--------|
+| 280px osc column (Osc1–3 tabs) | ✅ `osc.rs` |
+| Per-osc level/pan/coarse, WT position + unison sliders | ✅ |
+| Sub / Noise knobs wired to engine | ✅ |
+| Macros panel (disabled stub, S6 routing note) | ✅ |
+| Live ADSR + LFO rail (was disabled in S1) | ✅ |
+| WT morph A→B bar (`wt/morph.rs`) | ✅ |
+| Frame pencil edit + toolbar (`wt/toolbar.rs`, `view_2d.rs`) | ✅ |
+| Import Vital / WAV folder / Serum from WT menu | ✅ `main.rs` |
+| Center layout: strip → morph → 2D/3D (no hero when osc on) | ✅ |
+| `cargo test --no-default-features -j 1` | ✅ |
+
+**Commit:** _(this loop)_
+
+### S4 — Mod matrix ✅
+
+| Item | Status |
+|------|--------|
+| Collapsible section below main (160px expanded) | ✅ `mod_matrix.rs` |
+| 8 mock routes matching `index.html` | ✅ |
+| Amount drag, curve click-cycle, On/Off toggle | ✅ UI stub |
+| Layout stack: main → mod → fx → piano → footer | ✅ `layout.rs` |
+| Viewport 1280×820 when mod/FX enabled | ✅ |
+
+### S5 — FX rack ✅
+
+| Item | Status |
+|------|--------|
+| Collapsible Effects section (120px expanded) | ✅ `fx_rack.rs` |
+| 160px slot cards (Chorus, Delay, Reverb, + Slot) | ✅ |
+| Active border + bypass toggle click | ✅ UI stub |
+| 3 active meta in header | ✅ |
+
+### S2 carry-over (closed this loop)
+
+| Item | Status |
+|------|--------|
+| Frame draw/edit | ✅ S3 |
+| Morph A→B | ✅ S3 |
+| Import Vital/WAV/Serum | ✅ S3 |
+| egui-in-plugin-host spike | ⬜ S6 |
+
+### Next loop
+
+1. S6: minimal CLAP plugin shell + egui embed spike
+2. Wire mod matrix rows to `Patch::mod_matrix` / engine
+3. FX slot bypass → audio FX chain (stub ok)
+4. Macro knobs → mod matrix destinations
+5. UI audit vs `index.html` landmarks (<1px gate)
+
+### Sprint summary
+
+| Sprint | Status |
+|--------|--------|
+| S-brand | ✅ |
+| S0 | ✅ |
+| S1 | ✅ |
+| S2 | ✅ |
+| S3 | ✅ |
+| S4 | ✅ |
+| S5 | ✅ |
+| S6 | ⬜ |
+| S7 | roadmap |
+
 ## 2026-07-12 — Loop iteration 2 (S2 complete)
 
 ### S1 — Standalone shell ✅
@@ -29,42 +98,5 @@ Progress tracker for the UI platform plan (`reelsynth_ui_platform` + `reelsynth_
 | WT header menu: Open/Save `.reelwt` + factory banks | ✅ |
 | Save `.reelwt` via `WavetableBank::write_file` | ✅ |
 | Center layout: hero → strip → 2D/3D views (COMPONENT_SPEC) | ✅ |
-| Frame draw/edit | ⬜ S3 |
-| Morph A→B | ⬜ S3 |
-| Import Vital/WAV/Serum | ⬜ S3 |
-| egui-in-plugin-host spike | ⬜ end of S2 / S3 |
-
-**WT center audit vs `index.html`:**
-
-| Landmark | Mockup | egui | Delta |
-|----------|--------|------|-------|
-| WT strip height | 72px | 72px (`WT_STRIP_HEIGHT`) | 0 |
-| 2D/3D view min height | 140px | 140px (`WT_VIEW_MIN_HEIGHT`) | 0 |
-| Views split | 50/50 grid | `horizontal` half-width panels | 0 |
-| Strip label | `Saw Morph · 256 frames` | `{bank} · {n} frames · pos {i}` | +pos (S1 sync) |
-| 2D fill + stroke | accent fill 35%, accent-ui 2px | convex fill + 2px line | match |
-| 3D mesh | CSS gradient placeholder | slice polylines + depth ribs from bank | data-driven |
-| Center column order | strip → views | hero → strip → views (S1+S2) | hero is S1-only |
 
 **Commit:** `9730fd4` — WT import/save, 2D/3D bank views, layout audit
-
-### Next loop
-
-1. Frame draw/edit stub or minimal pencil tool
-2. Morph controls (position-only stub ok if engine supports)
-3. Import Vital/WAV/Serum from WT menu
-4. S2 end spike: minimal CLAP + egui embed
-
-### Sprint summary
-
-| Sprint | Status |
-|--------|--------|
-| S-brand | ✅ |
-| S0 | ✅ |
-| S1 | ✅ |
-| S2 | ✅ |
-| S3 | ⬜ |
-| S4 | ⬜ |
-| S5 | ⬜ |
-| S6 | ⬜ |
-| S7 | roadmap |

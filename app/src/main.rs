@@ -6,8 +6,8 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
 use midi_input::{MidiDevices, MidiInputHandle};
-use reelsynth::{load_preset, resolve_bank_for_preset, Patch, SynthEngine, WavetableBank};
-use reelsynth_ui::{draw_s1, factory_bank, factory_label, S1MidiDevices, S1ShellConfig, S1State};
+use reelsynth::{import::{import_serum_fxp, import_vital, import_wav_folder}, load_preset, resolve_bank_for_preset, Envelope, Patch, SynthEngine, WavetableBank};
+use reelsynth_ui::{draw_s1, factory_bank, factory_label, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -17,10 +17,23 @@ enum AudioCmd {
     SetWtPosition(f32),
     SetFilterCutoff(f32),
     SetFilterResonance(f32),
+    SetFilterType(String),
+    SetEnvelope(Envelope),
+    SetLfo { rate: f32, depth: f32 },
+    SetOsc {
+        index: usize,
+        level: f32,
+        detune: f32,
+        unison: u32,
+        position: f32,
+    },
+    SetSubLevel(f32),
+    SetNoiseLevel(f32),
     LoadPreset {
         patch: Patch,
         bank: WavetableBank,
     },
+    UpdateBank(WavetableBank),
 }
 
 struct AudioHandle {
@@ -111,10 +124,37 @@ fn drain_commands(
             Ok(AudioCmd::SetWtPosition(p)) => engine.set_wt_position(p),
             Ok(AudioCmd::SetFilterCutoff(c)) => engine.set_filter_cutoff(c),
             Ok(AudioCmd::SetFilterResonance(r)) => engine.set_filter_resonance(r),
+            Ok(AudioCmd::SetFilterType(t)) => engine.set_filter_type(&t),
+            Ok(AudioCmd::SetEnvelope(e)) => engine.set_envelope(e),
+            Ok(AudioCmd::SetLfo { rate, depth }) => {
+                engine.set_lfo_rate(rate);
+                engine.set_lfo_depth(depth);
+            }
+            Ok(AudioCmd::SetOsc {
+                index,
+                level,
+                detune,
+                unison,
+                position,
+            }) => {
+                engine.set_osc_level(index, level);
+                engine.set_osc_detune(index, detune);
+                engine.set_osc_unison(index, unison);
+                engine.set_osc_position(index, position);
+            }
+            Ok(AudioCmd::SetSubLevel(l)) => engine.set_sub_level(l),
+            Ok(AudioCmd::SetNoiseLevel(l)) => engine.set_noise_level(l),
             Ok(AudioCmd::LoadPreset { patch, bank }) => {
                 engine.load_preset(bank.clone(), patch);
                 if let Ok(mut g) = bank_shared.write() {
                     *g = engine.bank().clone();
+                }
+            }
+            Ok(AudioCmd::UpdateBank(bank)) => {
+                let patch = engine.patch().clone();
+                engine.load_preset(bank.clone(), patch);
+                if let Ok(mut g) = bank_shared.write() {
+                    *g = bank;
                 }
             }
             Err(TryRecvError::Empty) => break,
@@ -151,8 +191,43 @@ fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
         .first()
         .map(|o| o.position)
         .unwrap_or(0.0);
+    for i in 0..3 {
+        if let Some(osc) = patch.oscillators.get(i) {
+            state.osc_level[i] = osc.level;
+            state.osc_coarse[i] = osc.detune;
+            state.osc_unison[i] = osc.unison;
+            state.osc_position[i] = osc.position;
+        }
+    }
+    state.sub_level = patch.sub_level;
+    state.noise_level = patch.noise_level;
     state.filter_cutoff = patch.filter.cutoff;
     state.filter_resonance = patch.filter.resonance;
+    state.filter_mode = filter_mode_from_type(&patch.filter.filter_type);
+    state.env_attack = patch.envelope.attack;
+    state.env_decay = patch.envelope.decay;
+    state.env_sustain = patch.envelope.sustain;
+    state.env_release = patch.envelope.release;
+    state.lfo_rate = patch.lfo.rate;
+    state.lfo_depth = patch.lfo.depth;
+}
+
+fn filter_mode_from_type(filter_type: &str) -> usize {
+    match filter_type.to_ascii_lowercase().as_str() {
+        "highpass" | "hp" => 1,
+        "bandpass" | "bp" => 2,
+        "notch" => 3,
+        _ => 0,
+    }
+}
+
+fn filter_type_from_mode(mode: usize) -> &'static str {
+    match mode {
+        1 => "highpass",
+        2 => "bandpass",
+        3 => "notch",
+        _ => "lowpass",
+    }
 }
 
 fn preset_category_label(patch: &Patch) -> String {
@@ -167,11 +242,28 @@ fn preset_category_label(patch: &Patch) -> String {
 fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
     let mut patch = base.clone();
     patch.name = state.preset_name.clone();
-    if let Some(osc) = patch.oscillators.get_mut(0) {
-        osc.position = state.wt_position;
+    patch.ensure_oscillators(3);
+    for i in 0..3 {
+        if let Some(osc) = patch.oscillators.get_mut(i) {
+            osc.level = state.osc_level[i];
+            osc.detune = state.osc_coarse[i];
+            osc.unison = state.osc_unison[i];
+            osc.position = state.osc_position[i];
+        }
     }
     patch.filter.cutoff = state.filter_cutoff;
     patch.filter.resonance = state.filter_resonance;
+    patch.filter.filter_type = filter_type_from_mode(state.filter_mode).into();
+    patch.envelope = Envelope {
+        attack: state.env_attack,
+        decay: state.env_decay,
+        sustain: state.env_sustain,
+        release: state.env_release,
+    };
+    patch.lfo.rate = state.lfo_rate;
+    patch.lfo.depth = state.lfo_depth;
+    patch.sub_level = state.sub_level;
+    patch.noise_level = state.noise_level;
     patch
 }
 
@@ -191,7 +283,7 @@ fn main() -> eframe::Result<()> {
         "ReelSynth",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1280.0, 720.0])
+                .with_inner_size([1280.0, APP_HEIGHT_FULL])
                 .with_min_inner_size([1024.0, 640.0])
                 .with_title("ReelSynth"),
             ..Default::default()
@@ -234,13 +326,16 @@ impl ReelSynthApp {
             "No audio — UI only".into()
         };
         let midi_handle = MidiInputHandle::disconnected();
+        let mut state = S1State {
+            status,
+            ..S1State::default()
+        };
+        let current_patch = Patch::default_mono();
+        sync_state_from_patch(&mut state, &current_patch);
         Self {
             audio,
-            state: S1State {
-                status,
-                ..S1State::default()
-            },
-            current_patch: Patch::default_mono(),
+            state,
+            current_patch,
             preset_path: None,
             wt_path: None,
             midi_devices,
@@ -272,6 +367,30 @@ impl ReelSynthApp {
             a.send(AudioCmd::SetWtPosition(self.state.wt_position));
             a.send(AudioCmd::SetFilterCutoff(self.state.filter_cutoff));
             a.send(AudioCmd::SetFilterResonance(self.state.filter_resonance));
+            a.send(AudioCmd::SetFilterType(
+                filter_type_from_mode(self.state.filter_mode).into(),
+            ));
+            a.send(AudioCmd::SetEnvelope(Envelope {
+                attack: self.state.env_attack,
+                decay: self.state.env_decay,
+                sustain: self.state.env_sustain,
+                release: self.state.env_release,
+            }));
+            a.send(AudioCmd::SetLfo {
+                rate: self.state.lfo_rate,
+                depth: self.state.lfo_depth,
+            });
+            for i in 0..3 {
+                a.send(AudioCmd::SetOsc {
+                    index: i,
+                    level: self.state.osc_level[i],
+                    detune: self.state.osc_coarse[i],
+                    unison: self.state.osc_unison[i],
+                    position: self.state.osc_position[i],
+                });
+            }
+            a.send(AudioCmd::SetSubLevel(self.state.sub_level));
+            a.send(AudioCmd::SetNoiseLevel(self.state.noise_level));
         }
         self.current_patch = patch_from_state(&self.state, &self.current_patch);
     }
@@ -441,6 +560,92 @@ impl ReelSynthApp {
         self.state.status = format!("Loaded factory WT: {id}");
     }
 
+    fn import_vital_wt(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Vital Wavetable", &["vitaltable", "json"])
+            .pick_file()
+        else {
+            return;
+        };
+        match import_vital(path.to_str().unwrap_or_default()) {
+            Ok(bank) => {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Vital")
+                    .replace('_', " ");
+                self.wt_path = None;
+                self.load_bank(bank, name, None);
+                self.state.status = format!(
+                    "Imported Vital {}",
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("wavetable")
+                );
+            }
+            Err(e) => self.state.status = format!("Vital import failed: {e}"),
+        }
+    }
+
+    fn import_wav_folder(&mut self) {
+        let Some(path) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        match import_wav_folder(path.to_str().unwrap_or_default()) {
+            Ok(bank) => {
+                let name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("WAV")
+                    .replace('_', " ");
+                self.wt_path = None;
+                self.load_bank(bank, name, None);
+                self.state.status = format!(
+                    "Imported WAV folder {}",
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("cycles")
+                );
+            }
+            Err(e) => self.state.status = format!("WAV import failed: {e}"),
+        }
+    }
+
+    fn import_serum_fxp(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Serum Preset", &["fxp"])
+            .pick_file()
+        else {
+            return;
+        };
+        match import_serum_fxp(path.to_str().unwrap_or_default()) {
+            Ok(bank) => {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Serum")
+                    .replace('_', " ");
+                self.wt_path = None;
+                self.load_bank(bank, name, None);
+                self.state.status = format!(
+                    "Imported Serum {}",
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("patch")
+                );
+            }
+            Err(e) => self.state.status = format!("Serum import failed: {e}"),
+        }
+    }
+
+    fn sync_bank_edit(&mut self) {
+        if let Some(a) = &self.audio {
+            if let Ok(bank) = a.bank().read() {
+                a.send(AudioCmd::UpdateBank((*bank).clone()));
+            }
+        }
+    }
+
     fn save_wt_file(&mut self) {
         let bank = match self.bank_for_ui() {
             Some(b) => b,
@@ -550,16 +755,33 @@ impl eframe::App for ReelSynthApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                let bank = self.bank_for_ui();
-                let bank_ref = bank.as_ref();
                 let midi = S1MidiDevices {
                     names: &self.midi_devices.names,
                     selected: self.midi_selected,
                 };
                 let config = S1ShellConfig {
                     show_wt_editor: true,
+                    show_osc_column: true,
+                    show_mod_matrix: true,
+                    show_fx_rack: true,
                 };
-                let actions = draw_s1(ui, ui.max_rect(), &mut self.state, bank_ref, &midi, &config);
+
+                let actions = if let Some(audio) = &self.audio {
+                    if let Ok(mut bank) = audio.bank().write() {
+                        draw_s1(
+                            ui,
+                            ui.max_rect(),
+                            &mut self.state,
+                            Some(&mut *bank),
+                            &midi,
+                            &config,
+                        )
+                    } else {
+                        draw_s1(ui, ui.max_rect(), &mut self.state, None, &midi, &config)
+                    }
+                } else {
+                    draw_s1(ui, ui.max_rect(), &mut self.state, None, &midi, &config)
+                };
 
                 if let Some(n) = actions.note_on {
                     self.note_on(n, 0.9);
@@ -569,6 +791,9 @@ impl eframe::App for ReelSynthApp {
                 }
                 if actions.params_changed {
                     self.sync_params();
+                }
+                if actions.frame_edited {
+                    self.sync_bank_edit();
                 }
                 if actions.open_preset {
                     self.open_preset();
@@ -584,6 +809,15 @@ impl eframe::App for ReelSynthApp {
                 }
                 if let Some(id) = actions.import_factory_wt {
                     self.import_factory_wt(&id);
+                }
+                if actions.import_vital_wt {
+                    self.import_vital_wt();
+                }
+                if actions.import_wav_folder {
+                    self.import_wav_folder();
+                }
+                if actions.import_serum_fxp {
+                    self.import_serum_fxp();
                 }
                 if let Some(idx) = actions.midi_device_selected {
                     if idx != self.midi_selected {

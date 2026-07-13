@@ -5,6 +5,22 @@ pub const DEFAULT_FRAME_SIZE: usize = 2048;
 pub const REELWT_MAGIC: &[u8; 6] = b"REELWT";
 pub const REELWT_VERSION: u16 = 1;
 
+/// Map normalized view coordinates to a frame sample value.
+#[inline]
+pub fn sample_from_view_coords(y_norm: f32) -> f32 {
+    (0.5 - y_norm).clamp(-1.0, 1.0) * 2.0
+}
+
+/// Map normalized view x (0..1) to frame sample index.
+#[inline]
+pub fn sample_index_from_phase(frame_size: usize, phase: f32) -> usize {
+    if frame_size == 0 {
+        return 0;
+    }
+    let idx = (phase.clamp(0.0, 1.0) * frame_size as f32).floor() as usize;
+    idx.min(frame_size.saturating_sub(1))
+}
+
 #[derive(Clone, Debug)]
 pub struct WavetableBank {
     pub num_frames: usize,
@@ -137,6 +153,31 @@ impl WavetableBank {
         }
     }
 
+    /// Paint a pencil segment onto one frame (phase and amplitude in 0..1 view space).
+    pub fn apply_pencil_segment(
+        &mut self,
+        frame_idx: usize,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+    ) {
+        if frame_idx >= self.num_frames || self.frame_size == 0 {
+            return;
+        }
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+        let steps = ((dx.max(dy) * self.frame_size as f32) as usize).max(1);
+        for step in 0..=steps {
+            let t = step as f32 / steps as f32;
+            let x = x0 + (x1 - x0) * t;
+            let y = y0 + (y1 - y0) * t;
+            let idx = sample_index_from_phase(self.frame_size, x);
+            let value = sample_from_view_coords(y);
+            self.frame_mut(frame_idx)[idx] = value;
+        }
+    }
+
     pub fn factory_saw_morph() -> Self {
         let mut bank = Self::new(DEFAULT_NUM_FRAMES, DEFAULT_FRAME_SIZE);
         let frame_size = bank.frame_size;
@@ -226,6 +267,15 @@ fn linear_crossfade(a: f32, b: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pencil_segment_writes_samples() {
+        let mut bank = WavetableBank::factory_sine();
+        let before = bank.frame(0)[64];
+        bank.apply_pencil_segment(0, 0.03, 0.2, 0.05, 0.8);
+        let after = bank.frame(0)[64];
+        assert!((after - before).abs() > 0.01);
+    }
 
     #[test]
     fn morph_continuity() {

@@ -203,6 +203,25 @@ impl Patch {
             noise_level: 0.0,
         }
     }
+
+    /// Ensure at least `count` wavetable oscillators (S3 tri-osc UI).
+    pub fn ensure_oscillators(&mut self, count: usize) {
+        while self.oscillators.len() < count {
+            self.oscillators.push(Oscillator {
+                osc_type: "wavetable".into(),
+                level: 0.0,
+                position: 0.0,
+                detune: 0.0,
+                unison: 1,
+                wavetable_id: None,
+            });
+        }
+        if let Some(first) = self.oscillators.first_mut() {
+            if first.level <= 0.0 {
+                first.level = 1.0;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

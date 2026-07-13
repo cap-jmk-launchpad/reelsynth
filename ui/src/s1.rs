@@ -4,14 +4,29 @@ use egui::{Color32, FontId, Pos2, Rect, Shape, Ui};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{heading_font, Tokens};
 
-use crate::layout::{S1Layout, GRID_UNIT, RADIUS_MD, SPACE_MD, SPACE_SM, WT_STRIP_HEIGHT, WT_VIEW_MIN_HEIGHT};
-use crate::widgets::{Knob, KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled};
-use crate::wt::{WtStrip, WtView2d, WtView3d, FACTORY_BANKS};
+use crate::layout::{
+    S1Layout, S1LayoutOptions, GRID_UNIT, RADIUS_MD, SPACE_MD, SPACE_SM, WT_MORPH_HEIGHT,
+    WT_STRIP_HEIGHT, WT_VIEW_MIN_HEIGHT,
+};
+use crate::fx_rack::{draw_fx_rack, default_fx_slots, FxRackState, FxSlotUi};
+use crate::mod_matrix::{draw_mod_matrix, default_mod_routes, ModMatrixState, ModRouteUi};
+use crate::osc::{draw_osc_column, OscColumnState};
+use crate::widgets::{
+    adsr_graph, format_depth, format_env_time, format_lfo_rate, format_sustain, tab_bar, Knob,
+    KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled,
+};
+use crate::wt::{morph_amount_for_position, WtEditTool, WtMorph, WtStrip, WtView2d, WtView3d, FACTORY_BANKS};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct S1ShellConfig {
     /// S2+: show 2D waveform + 3D mesh panels in center column.
     pub show_wt_editor: bool,
+    /// S3+: reveal 280px osc column (Osc1–3) and live ADSR/LFO rail.
+    pub show_osc_column: bool,
+    /// S4+: modulation matrix section below main columns.
+    pub show_mod_matrix: bool,
+    /// S5+: FX rack section below mod matrix.
+    pub show_fx_rack: bool,
 }
 
 #[derive(Default)]
@@ -24,6 +39,10 @@ pub struct S1Actions {
     pub import_wt_file: bool,
     pub save_wt_file: bool,
     pub import_factory_wt: Option<String>,
+    pub import_vital_wt: bool,
+    pub import_wav_folder: bool,
+    pub import_serum_fxp: bool,
+    pub frame_edited: bool,
     pub midi_device_selected: Option<usize>,
 }
 
@@ -34,9 +53,34 @@ pub struct S1MidiDevices<'a> {
 
 pub struct S1State {
     pub wt_position: f32,
+    pub osc_position: [f32; 3],
     pub wt_bank_name: String,
+    pub wt_edit_tool: WtEditTool,
+    pub wt_morph_a: f32,
+    pub wt_morph_b: f32,
+    pub wt_morph_amount: f32,
+    pub osc_tab: usize,
+    pub osc_level: [f32; 3],
+    pub osc_pan: [f32; 3],
+    pub osc_coarse: [f32; 3],
+    pub osc_unison: [u32; 3],
+    pub sub_level: f32,
+    pub noise_level: f32,
+    pub macro_values: [f32; 4],
     pub filter_cutoff: f32,
     pub filter_resonance: f32,
+    pub filter_mode: usize,
+    pub env_attack: f32,
+    pub env_decay: f32,
+    pub env_sustain: f32,
+    pub env_release: f32,
+    pub lfo_rate: f32,
+    pub lfo_depth: f32,
+    pub mod_matrix_open: bool,
+    pub fx_rack_open: bool,
+    pub mod_routes: Vec<ModRouteUi>,
+    pub fx_slots: Vec<FxSlotUi>,
+    pub mod_route_total: usize,
     pub keys_down: HashSet<u8>,
     pub piano_visible: bool,
     pub preset_name: String,
@@ -49,9 +93,34 @@ impl Default for S1State {
     fn default() -> Self {
         Self {
             wt_position: 108.0,
+            osc_position: [108.0, 0.0, 0.0],
             wt_bank_name: "Saw Morph".into(),
+            wt_edit_tool: WtEditTool::Select,
+            wt_morph_a: 0.0,
+            wt_morph_b: 255.0,
+            wt_morph_amount: morph_amount_for_position(0.0, 255.0, 108.0),
+            osc_tab: 0,
+            osc_level: [0.85, 0.0, 0.0],
+            osc_pan: [0.0, 0.0, 0.0],
+            osc_coarse: [0.0, 0.0, 0.0],
+            osc_unison: [3, 1, 1],
+            sub_level: 0.0,
+            noise_level: 0.0,
+            macro_values: [0.5; 4],
             filter_cutoff: 1200.0,
             filter_resonance: 0.3,
+            filter_mode: 0,
+            env_attack: 0.012,
+            env_decay: 0.22,
+            env_sustain: 0.6,
+            env_release: 0.4,
+            lfo_rate: 2.4,
+            lfo_depth: 0.0,
+            mod_matrix_open: true,
+            fx_rack_open: true,
+            mod_routes: default_mod_routes(),
+            fx_slots: default_fx_slots(),
+            mod_route_total: 24,
             keys_down: HashSet::new(),
             piano_visible: true,
             preset_name: "Factory Lead".into(),
@@ -66,11 +135,21 @@ pub fn draw_s1(
     ui: &mut Ui,
     screen: Rect,
     state: &mut S1State,
-    bank: Option<&WavetableBank>,
+    bank: Option<&mut WavetableBank>,
     midi: &S1MidiDevices<'_>,
     config: &S1ShellConfig,
 ) -> S1Actions {
-    let layout = S1Layout::compute(screen, state.piano_visible);
+    let layout = S1Layout::compute_with_options(
+        screen,
+        S1LayoutOptions {
+            piano_visible: state.piano_visible,
+            show_osc_column: config.show_osc_column,
+            show_mod_matrix: config.show_mod_matrix,
+            mod_matrix_open: state.mod_matrix_open,
+            show_fx_rack: config.show_fx_rack,
+            fx_rack_open: state.fx_rack_open,
+        },
+    );
     let tokens = Tokens::default();
     let mut actions = S1Actions::default();
 
@@ -82,11 +161,32 @@ pub fn draw_s1(
         border,
     );
     painter.rect_filled(layout.main, 0.0, tokens.bg);
+    if layout.osc.is_positive() {
+        painter.rect_filled(layout.osc, 0.0, tokens.bg);
+        painter.line_segment(
+            [layout.osc.right_top(), layout.osc.right_bottom()],
+            border,
+        );
+    }
     painter.rect_filled(layout.rail, 0.0, tokens.bg);
-    painter.line_segment(
-        [layout.rail.left_top(), layout.rail.left_bottom()],
-        border,
-    );
+    if layout.rail.is_positive() {
+        painter.line_segment(
+            [layout.rail.left_top(), layout.rail.left_bottom()],
+            border,
+        );
+    }
+    if layout.mod_matrix.is_positive() {
+        painter.line_segment(
+            [layout.mod_matrix.left_top(), layout.mod_matrix.right_top()],
+            border,
+        );
+    }
+    if layout.fx_rack.is_positive() {
+        painter.line_segment(
+            [layout.fx_rack.left_top(), layout.fx_rack.right_top()],
+            border,
+        );
+    }
     if state.piano_visible && layout.piano_wrap.is_positive() {
         painter.rect_filled(layout.piano_wrap, 0.0, tokens.surface2);
         painter.line_segment(
@@ -101,8 +201,40 @@ pub fn draw_s1(
     );
 
     draw_header(ui, layout.header, state, midi, &mut actions);
+    if layout.osc.is_positive() {
+        draw_osc(ui, layout.osc, state, &mut actions);
+    }
     draw_center(ui, layout.center, state, bank, config, &mut actions);
-    draw_rail(ui, layout.rail, state, &mut actions);
+    draw_rail(ui, layout.rail, state, config, &mut actions);
+
+    if layout.mod_matrix.is_positive() {
+        let result = draw_mod_matrix(
+            ui,
+            layout.mod_matrix,
+            ModMatrixState {
+                open: &mut state.mod_matrix_open,
+                routes: &mut state.mod_routes,
+                total_routes: state.mod_route_total,
+            },
+        );
+        if result.changed {
+            actions.params_changed = true;
+        }
+    }
+
+    if layout.fx_rack.is_positive() {
+        let result = draw_fx_rack(
+            ui,
+            layout.fx_rack,
+            FxRackState {
+                open: &mut state.fx_rack_open,
+                slots: &mut state.fx_slots,
+            },
+        );
+        if result.changed {
+            actions.params_changed = true;
+        }
+    }
 
     if state.piano_visible && layout.piano_wrap.is_positive() {
         draw_piano_wrap(ui, layout.piano_wrap, state, &mut actions);
@@ -166,6 +298,24 @@ fn draw_header(
                                 actions.import_factory_wt = Some(entry.id.to_string());
                                 ui.close_menu();
                             }
+                        }
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new("Import")
+                                .size(10.0)
+                                .color(tokens.text_muted),
+                        );
+                        if ui.button("Vital (.vitaltable)…").clicked() {
+                            actions.import_vital_wt = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("WAV folder…").clicked() {
+                            actions.import_wav_folder = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Serum (.fxp)…").clicked() {
+                            actions.import_serum_fxp = true;
+                            ui.close_menu();
                         }
                     });
 
@@ -274,49 +424,147 @@ fn header_menu_label(label: &str) -> egui::WidgetText {
     egui::RichText::new(label).size(11.0).into()
 }
 
+fn sync_wt_position_from_osc(state: &mut S1State) {
+    let idx = state.osc_tab.min(2);
+    state.wt_position = state.osc_position[idx];
+}
+
+fn sync_osc_position_from_wt(state: &mut S1State) {
+    let idx = state.osc_tab.min(2);
+    state.osc_position[idx] = state.wt_position;
+}
+
+fn draw_osc(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S1Actions) {
+    ui.allocate_ui_at_rect(rect, |ui| {
+        let prev_tab = state.osc_tab;
+        let result = draw_osc_column(
+            ui,
+            OscColumnState {
+                osc_tab: &mut state.osc_tab,
+                osc_level: &mut state.osc_level,
+                osc_pan: &mut state.osc_pan,
+                osc_coarse: &mut state.osc_coarse,
+                osc_unison: &mut state.osc_unison,
+                osc_position: &mut state.osc_position,
+                sub_level: &mut state.sub_level,
+                noise_level: &mut state.noise_level,
+                macro_values: &mut state.macro_values,
+            },
+        );
+        if state.osc_tab != prev_tab {
+            sync_wt_position_from_osc(state);
+        }
+        if result.changed {
+            sync_wt_position_from_osc(state);
+            state.wt_morph_amount = morph_amount_for_position(
+                state.wt_morph_a,
+                state.wt_morph_b,
+                state.wt_position,
+            );
+            actions.params_changed = true;
+        }
+    });
+}
+
 fn draw_center(
     ui: &mut Ui,
     rect: Rect,
     state: &mut S1State,
-    bank: Option<&WavetableBank>,
+    mut bank: Option<&mut WavetableBank>,
     config: &S1ShellConfig,
     actions: &mut S1Actions,
 ) {
     let inner = rect.shrink(SPACE_SM);
+    let morph_h = if config.show_wt_editor {
+        WT_MORPH_HEIGHT + GRID_UNIT
+    } else {
+        0.0
+    };
     let views_h = if config.show_wt_editor {
         WT_VIEW_MIN_HEIGHT + GRID_UNIT
     } else {
         0.0
     };
 
-    let views_rect = if config.show_wt_editor {
-        Rect::from_min_max(
-            egui::pos2(inner.min.x, inner.max.y - views_h),
-            inner.max,
-        )
+    let (hero_rect, strip_rect, morph_rect, views_rect) = if config.show_osc_column {
+        let strip_rect = Rect::from_min_max(
+            inner.min,
+            egui::pos2(inner.max.x, inner.min.y + WT_STRIP_HEIGHT),
+        );
+        let morph_rect = if config.show_wt_editor {
+            Rect::from_min_max(
+                egui::pos2(inner.min.x, strip_rect.max.y + GRID_UNIT),
+                egui::pos2(inner.max.x, strip_rect.max.y + GRID_UNIT + WT_MORPH_HEIGHT),
+            )
+        } else {
+            Rect::NOTHING
+        };
+        let views_top = if config.show_wt_editor {
+            morph_rect.max.y + GRID_UNIT
+        } else {
+            strip_rect.max.y + GRID_UNIT
+        };
+        let views_rect = if config.show_wt_editor {
+            Rect::from_min_max(
+                egui::pos2(inner.min.x, views_top),
+                inner.max,
+            )
+        } else {
+            Rect::NOTHING
+        };
+        (Rect::NOTHING, strip_rect, morph_rect, views_rect)
     } else {
-        Rect::NOTHING
+        let views_rect = if config.show_wt_editor {
+            Rect::from_min_max(
+                egui::pos2(inner.min.x, inner.max.y - views_h),
+                inner.max,
+            )
+        } else {
+            Rect::NOTHING
+        };
+        let morph_rect = if config.show_wt_editor {
+            Rect::from_min_max(
+                egui::pos2(inner.min.x, views_rect.min.y - morph_h),
+                egui::pos2(inner.max.x, views_rect.min.y - GRID_UNIT),
+            )
+        } else {
+            Rect::NOTHING
+        };
+        let strip_bottom = if config.show_wt_editor {
+            morph_rect.min.y - GRID_UNIT
+        } else {
+            inner.max.y
+        };
+        let strip_rect = Rect::from_min_max(
+            egui::pos2(inner.min.x, strip_bottom - WT_STRIP_HEIGHT),
+            egui::pos2(inner.max.x, strip_bottom),
+        );
+        let hero_rect = Rect::from_min_max(
+            inner.min,
+            egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT),
+        );
+        (hero_rect, strip_rect, morph_rect, views_rect)
     };
 
-    let strip_bottom = if config.show_wt_editor {
-        views_rect.min.y - GRID_UNIT
-    } else {
-        inner.max.y
-    };
-    let strip_rect = Rect::from_min_max(
-        egui::pos2(inner.min.x, strip_bottom - WT_STRIP_HEIGHT),
-        egui::pos2(inner.max.x, strip_bottom),
-    );
-
-    let hero_rect = Rect::from_min_max(
-        inner.min,
-        egui::pos2(inner.max.x, strip_rect.min.y - GRID_UNIT),
-    );
-
-    let bank_name = state.wt_bank_name.as_str();
+    let bank_name = state.wt_bank_name.clone();
 
     if hero_rect.is_positive() {
         draw_spectrum_hero(ui, hero_rect, state);
+    }
+
+    if config.show_wt_editor && morph_rect.is_positive() {
+        ui.allocate_ui_at_rect(morph_rect, |ui| {
+            let morph = WtMorph {
+                frame_a: &mut state.wt_morph_a,
+                frame_b: &mut state.wt_morph_b,
+                amount: &mut state.wt_morph_amount,
+                position: &mut state.wt_position,
+            };
+            if morph.show(ui).changed {
+                sync_osc_position_from_wt(state);
+                actions.params_changed = true;
+            }
+        });
     }
 
     if config.show_wt_editor && views_rect.is_positive() {
@@ -328,12 +576,15 @@ fn draw_center(
                     egui::vec2(half_w, WT_VIEW_MIN_HEIGHT),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        WtView2d {
+                        let view = WtView2d {
                             position: state.wt_position,
-                            bank,
-                            bank_name: Some(bank_name),
+                            bank: bank.as_deref_mut(),
+                            bank_name: Some(bank_name.as_str()),
+                            tool: &mut state.wt_edit_tool,
+                        };
+                        if view.show(ui).frame_edited {
+                            actions.frame_edited = true;
                         }
-                        .show(ui);
                     },
                 );
                 ui.allocate_ui_with_layout(
@@ -342,7 +593,7 @@ fn draw_center(
                     |ui| {
                         WtView3d {
                             position: state.wt_position,
-                            bank,
+                            bank: bank.as_deref(),
                         }
                         .show(ui);
                     },
@@ -354,11 +605,14 @@ fn draw_center(
     ui.allocate_ui_at_rect(strip_rect, |ui| {
         let strip = WtStrip {
             position: &mut state.wt_position,
-            bank,
-            bank_name: Some(bank_name),
+            bank: bank.as_deref(),
+            bank_name: Some(bank_name.as_str()),
             visible_frames: 16,
         };
         if strip.show(ui).changed {
+            sync_osc_position_from_wt(state);
+            state.wt_morph_amount =
+                morph_amount_for_position(state.wt_morph_a, state.wt_morph_b, state.wt_position);
             actions.params_changed = true;
         }
     });
@@ -434,7 +688,13 @@ fn draw_spectrum_hero(ui: &mut Ui, area: Rect, state: &S1State) {
     });
 }
 
-fn draw_rail(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S1Actions) {
+fn draw_rail(
+    ui: &mut Ui,
+    rect: Rect,
+    state: &mut S1State,
+    config: &S1ShellConfig,
+    actions: &mut S1Actions,
+) {
     ui.allocate_ui_at_rect(rect, |ui| {
         egui::Frame::none()
             .inner_margin(egui::Margin::same(SPACE_SM))
@@ -442,33 +702,62 @@ fn draw_rail(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S1Actio
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = SPACE_SM;
 
-                panel(ui, "Performance", |ui| {
-                    ui.horizontal_centered(|ui| {
-                        let wt_frame = state.wt_position.round() as i32;
-                        let r = Knob::new(&mut state.wt_position, 0.0..=255.0, "WT Position")
-                            .size(KnobSize::Lg)
-                            .style(KnobStyle::Wired)
-                            .value_text(format!("{wt_frame}"))
-                            .show(ui);
-                        if r.changed {
-                            actions.params_changed = true;
-                        }
+                if !config.show_osc_column {
+                    panel(ui, "Performance", |ui| {
+                        ui.horizontal_centered(|ui| {
+                            let wt_frame = state.wt_position.round() as i32;
+                            let r = Knob::new(&mut state.wt_position, 0.0..=255.0, "WT Position")
+                                .size(KnobSize::Lg)
+                                .style(KnobStyle::Wired)
+                                .value_text(format!("{wt_frame}"))
+                                .show(ui);
+                            if r.changed {
+                                sync_osc_position_from_wt(state);
+                                state.wt_morph_amount = morph_amount_for_position(
+                                    state.wt_morph_a,
+                                    state.wt_morph_b,
+                                    state.wt_position,
+                                );
+                                actions.params_changed = true;
+                            }
+                        });
                     });
-                });
+                }
 
                 panel(ui, "Filter", |ui| {
+                    if config.show_osc_column {
+                        let prev = state.filter_mode;
+                        tab_bar(ui, &["LP", "HP", "BP", "Notch"], &mut state.filter_mode);
+                        if prev != state.filter_mode {
+                            actions.params_changed = true;
+                        }
+                        ui.add_space(GRID_UNIT);
+                    }
                     ui.horizontal_centered(|ui| {
                         ui.spacing_mut().item_spacing.x = SPACE_SM;
                         let cutoff_text = format_cutoff(state.filter_cutoff);
                         let r1 = Knob::new(&mut state.filter_cutoff, 40.0..=12000.0, "Cutoff")
-                            .size(KnobSize::Lg)
+                            .size(if config.show_osc_column {
+                                KnobSize::Md
+                            } else {
+                                KnobSize::Lg
+                            })
                             .style(KnobStyle::Wired)
                             .logarithmic(true)
                             .value_text(cutoff_text)
                             .show(ui);
+                        let res_label = if config.show_osc_column {
+                            "Res"
+                        } else {
+                            "Resonance"
+                        };
                         let res_text = format!("{:.2}", state.filter_resonance);
-                        let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, "Resonance")
-                            .size(KnobSize::Lg)
+                        let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, res_label)
+                            .size(if config.show_osc_column {
+                                KnobSize::Md
+                            } else {
+                                KnobSize::Lg
+                            })
                             .style(KnobStyle::Wired)
                             .value_text(res_text)
                             .show(ui);
@@ -478,35 +767,121 @@ fn draw_rail(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S1Actio
                     });
                 });
 
-                panel_disabled(ui, "Amp Envelope", |ui| {
-                    ui.horizontal_centered(|ui| {
-                        ui.spacing_mut().item_spacing.x = SPACE_SM;
-                        for label in ["A", "D", "S", "R"] {
-                            let mut v = 0.0_f32;
-                            Knob::new(&mut v, 0.0..=1.0, label)
+                if config.show_osc_column {
+                    panel(ui, "Amp Envelope", |ui| {
+                        adsr_graph(
+                            ui,
+                            state.env_attack,
+                            state.env_decay,
+                            state.env_sustain,
+                            state.env_release,
+                        );
+                        ui.add_space(GRID_UNIT);
+                        ui.horizontal_centered(|ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_SM;
+                            let attack_text = format_env_time(state.env_attack);
+                            let decay_text = format_env_time(state.env_decay);
+                            let sustain_text = format_sustain(state.env_sustain);
+                            let release_text = format_env_time(state.env_release);
+                            let r_a = Knob::new(&mut state.env_attack, 0.001..=2.0, "A")
                                 .size(KnobSize::Sm)
-                                .style(KnobStyle::Disabled)
-                                .value_text("—")
+                                .style(KnobStyle::Wired)
+                                .value_text(attack_text)
                                 .show(ui);
-                        }
+                            let r_d = Knob::new(&mut state.env_decay, 0.001..=2.0, "D")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(decay_text)
+                                .show(ui);
+                            let r_s = Knob::new(&mut state.env_sustain, 0.0..=1.0, "S")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(sustain_text)
+                                .show(ui);
+                            let r_r = Knob::new(&mut state.env_release, 0.001..=3.0, "R")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(release_text)
+                                .show(ui);
+                            if r_a.changed || r_d.changed || r_s.changed || r_r.changed {
+                                actions.params_changed = true;
+                            }
+                        });
                     });
-                });
 
-                panel_disabled(ui, "LFO", |ui| {
-                    ui.horizontal_centered(|ui| {
-                        ui.spacing_mut().item_spacing.x = SPACE_SM;
-                        for label in ["Rate", "Depth"] {
-                            let mut v = 0.0_f32;
-                            Knob::new(&mut v, 0.0..=1.0, label)
+                    panel(ui, "LFO 1", |ui| {
+                        ui.horizontal_centered(|ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_SM;
+                            let rate_text = format_lfo_rate(state.lfo_rate);
+                            let depth_text = format_depth(state.lfo_depth);
+                            let r1 = Knob::new(&mut state.lfo_rate, 0.05..=20.0, "Rate")
                                 .size(KnobSize::Sm)
-                                .style(KnobStyle::Disabled)
-                                .value_text("—")
+                                .style(KnobStyle::Wired)
+                                .value_text(rate_text)
                                 .show(ui);
-                        }
+                            let r2 = Knob::new(&mut state.lfo_depth, 0.0..=1.0, "Depth")
+                                .size(KnobSize::Sm)
+                                .style(KnobStyle::Wired)
+                                .value_text(depth_text)
+                                .show(ui);
+                            if r1.changed || r2.changed {
+                                actions.params_changed = true;
+                            }
+                        });
                     });
-                });
+
+                    draw_meter_stub(ui);
+                } else {
+                    panel_disabled(ui, "Amp Envelope", |ui| {
+                        ui.horizontal_centered(|ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_SM;
+                            for label in ["A", "D", "S", "R"] {
+                                let mut v = 0.0_f32;
+                                Knob::new(&mut v, 0.0..=1.0, label)
+                                    .size(KnobSize::Sm)
+                                    .style(KnobStyle::Disabled)
+                                    .value_text("—")
+                                    .show(ui);
+                            }
+                        });
+                    });
+
+                    panel_disabled(ui, "LFO", |ui| {
+                        ui.horizontal_centered(|ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_SM;
+                            for label in ["Rate", "Depth"] {
+                                let mut v = 0.0_f32;
+                                Knob::new(&mut v, 0.0..=1.0, label)
+                                    .size(KnobSize::Sm)
+                                    .style(KnobStyle::Disabled)
+                                    .value_text("—")
+                                    .show(ui);
+                            }
+                        });
+                    });
+                }
             });
     });
+}
+
+fn draw_meter_stub(ui: &mut Ui) {
+    let tokens = Tokens::default();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter_at(rect);
+        let bar_w = 10.0;
+        let gap = 6.0;
+        let cx = rect.center().x;
+        for (i, &level) in [0.62_f32, 0.48_f32].iter().enumerate() {
+            let x = cx + (i as f32 - 0.5) * (bar_w + gap);
+            let bar_h = rect.height() * level;
+            let bar = egui::Rect::from_min_max(
+                egui::pos2(x - bar_w * 0.5, rect.max.y - bar_h),
+                egui::pos2(x + bar_w * 0.5, rect.max.y),
+            );
+            painter.rect_filled(bar, 2.0, tokens.accent.gamma_multiply(0.85));
+        }
+    }
 }
 
 fn draw_piano_wrap(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S1Actions) {

@@ -77,6 +77,58 @@ impl SynthEngine {
         self.patch.filter.resonance = resonance.clamp(0.0, 0.95);
     }
 
+    pub fn set_filter_type(&mut self, filter_type: &str) {
+        self.patch.filter.filter_type = filter_type.to_string();
+    }
+
+    pub fn set_envelope(&mut self, envelope: crate::patch::Envelope) {
+        self.patch.envelope = envelope;
+    }
+
+    pub fn set_lfo_rate(&mut self, rate: f32) {
+        self.patch.lfo.rate = rate.max(0.0);
+    }
+
+    pub fn set_lfo_depth(&mut self, depth: f32) {
+        self.patch.lfo.depth = depth.clamp(0.0, 1.0);
+    }
+
+    pub fn set_osc_level(&mut self, index: usize, level: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.level = level.clamp(0.0, 1.0);
+        }
+    }
+
+    pub fn set_osc_detune(&mut self, index: usize, detune: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.detune = detune.clamp(-2400.0, 2400.0);
+        }
+    }
+
+    pub fn set_osc_unison(&mut self, index: usize, unison: u32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.unison = unison.clamp(1, 8);
+        }
+    }
+
+    pub fn set_osc_position(&mut self, index: usize, position: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.position = position.clamp(0.0, 255.0);
+        }
+    }
+
+    pub fn set_sub_level(&mut self, level: f32) {
+        self.patch.sub_level = level.clamp(0.0, 1.0);
+    }
+
+    pub fn set_noise_level(&mut self, level: f32) {
+        self.patch.noise_level = level.clamp(0.0, 1.0);
+    }
+
     pub fn note_on(&mut self, note: u8, velocity: f32) {
         let freq = note_to_freq(note);
         self.pool
