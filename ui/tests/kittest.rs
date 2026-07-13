@@ -8,7 +8,11 @@ use reelsynth::Patch;
 use reelsynth_ui::{
     audit_center, audit_shell, compute_center_regions, default_effect_slots, draw_shell,
     embed_mod_fx_in_center, osc_type_index, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
-    rail_used_rect_id, ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH, SPACE_SM,
+    center_fx_used_rect_id, center_mod_used_rect_id, center_morph_used_rect_id,
+    center_scope_used_rect_id, center_strip_used_rect_id, center_used_rect_id,
+    center_views_used_rect_id, footer_used_rect_id, fx_strip_used_rect_id, header_used_rect_id,
+    mod_strip_used_rect_id, osc_used_rect_id, piano_used_rect_id, rail_used_rect_id, ShellConfig,
+    UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH, SPACE_SM,
 };
 use reelsynth_ui::widgets::{Knob, KnobSize, PianoKeyboard};
 use reelsynth_ui_theme;
@@ -260,4 +264,145 @@ fn rail_widgets_within_rail_bounds_min_window() {
         used.max.y,
         rail_bounds.max.y,
     );
+}
+
+fn get_used(ctx: &egui::Context, id: egui::Id, label: &str) -> egui::Rect {
+    ctx.data(|d| d.get_temp::<egui::Rect>(id))
+        .unwrap_or_else(|| panic!("{label} used rect not stored"))
+}
+
+fn fits_max_slack(outer: egui::Rect, inner: egui::Rect, slack: f32) -> bool {
+    if !inner.is_positive() {
+        return true;
+    }
+    inner.max.x <= outer.max.x + slack && inner.max.y <= outer.max.y + slack
+}
+
+#[test]
+fn interface_used_rects_within_allocated_min_window() {
+    struct ShellTest {
+        fonts_applied: bool,
+        state: UiState,
+    }
+
+    let config = ShellConfig {
+        show_wt_editor: true,
+        show_osc_column: true,
+        show_mod_matrix: true,
+        show_fx_rack: true,
+    };
+    let options = ShellLayoutOptions {
+        piano_visible: true,
+        show_osc_column: true,
+        show_mod_matrix: true,
+        mod_matrix_open: true,
+        show_fx_rack: true,
+        fx_rack_open: true,
+    };
+    let screen = Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(APP_MIN_WIDTH, APP_HEIGHT_FULL),
+    );
+    let layout = ShellLayout::compute_with_options(screen, options);
+    audit_shell(&layout, screen, options);
+
+    let scale = layout.scale.ui();
+    let center_inner = layout.center.shrink(SPACE_SM * scale);
+    let center_regions = compute_center_regions(
+        center_inner,
+        &config,
+        scale,
+        embed_mod_fx_in_center(options),
+    );
+    audit_center(layout.center, &center_regions, scale);
+
+    let midi = ShellMidiDevices {
+        names: &["None".to_string()],
+        selected: 0,
+    };
+    let preview = Patch::default_mono();
+
+    let mut harness = Harness::builder()
+        .with_size([APP_MIN_WIDTH, APP_HEIGHT_FULL])
+        .build_state(
+            |ctx, test| {
+                if !test.fonts_applied {
+                    reelsynth_ui_theme::apply(ctx);
+                    test.fonts_applied = true;
+                    return;
+                }
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let screen = ui.max_rect();
+                    let _actions = draw_shell(
+                        ui,
+                        screen,
+                        &mut test.state,
+                        None,
+                        &preview,
+                        &midi,
+                        &config,
+                        None,
+                    );
+                });
+            },
+            ShellTest {
+                fonts_applied: false,
+                state: UiState::default(),
+            },
+        );
+    harness.run();
+
+    // Top-level regions
+    let header_used = get_used(&harness.ctx, header_used_rect_id(), "header");
+    assert!(
+        fits_max_slack(layout.header, header_used, 12.0),
+        "header used rect out of bounds: used={header_used:?} header={:?}",
+        layout.header
+    );
+
+    let osc_used = get_used(&harness.ctx, osc_used_rect_id(), "osc");
+    assert!(
+        fits_max_slack(layout.osc, osc_used, 12.0),
+        "osc used rect out of bounds: used={osc_used:?} osc={:?}",
+        layout.osc
+    );
+
+    let rail_used = get_used(&harness.ctx, rail_used_rect_id(), "rail");
+    assert!(rail_used.max.y <= layout.rail.max.y + 0.5);
+
+    let piano_used = get_used(&harness.ctx, piano_used_rect_id(), "piano");
+    assert!(
+        fits_max_slack(layout.piano_wrap, piano_used, 12.0),
+        "piano used rect out of bounds: used={piano_used:?} piano={:?}",
+        layout.piano_wrap
+    );
+
+    let footer_used = get_used(&harness.ctx, footer_used_rect_id(), "footer");
+    assert!(fits_max_slack(layout.footer, footer_used, 12.0));
+
+    let center_used = get_used(&harness.ctx, center_used_rect_id(), "center");
+    assert!(fits_max_slack(layout.center, center_used, 12.0));
+
+    // Center subregions
+    let scope_used = get_used(&harness.ctx, center_scope_used_rect_id(), "center scope");
+    assert!(fits_max_slack(center_regions.scope, scope_used, 12.0));
+
+    let strip_used = get_used(&harness.ctx, center_strip_used_rect_id(), "center strip");
+    assert!(fits_max_slack(center_regions.wt_strip, strip_used, 12.0));
+
+    let morph_used = get_used(&harness.ctx, center_morph_used_rect_id(), "center morph");
+    assert!(fits_max_slack(center_regions.morph, morph_used, 12.0));
+
+    let views_used = get_used(&harness.ctx, center_views_used_rect_id(), "center views");
+    assert!(fits_max_slack(center_regions.wt_views, views_used, 12.0));
+
+    let mod_used = get_used(&harness.ctx, center_mod_used_rect_id(), "center mod");
+    assert!(fits_max_slack(center_regions.mod_matrix, mod_used, 12.0));
+
+    let fx_used = get_used(&harness.ctx, center_fx_used_rect_id(), "center fx");
+    assert!(fits_max_slack(center_regions.fx_rack, fx_used, 12.0));
+
+    // Bottom strips only exist when not embedded; should be absent here.
+    assert!(harness.ctx.data(|d| d.get_temp::<egui::Rect>(mod_strip_used_rect_id())).is_none());
+    assert!(harness.ctx.data(|d| d.get_temp::<egui::Rect>(fx_strip_used_rect_id())).is_none());
 }

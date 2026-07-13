@@ -3,6 +3,7 @@ use reelsynth_ui_theme::Tokens;
 
 use super::*;
 use crate::layout::UiScale;
+use crate::layout_audit::{footer_used_rect_id, piano_used_rect_id};
 use crate::region::region;
 
 pub(super) fn draw_level_meter(ui: &mut Ui) {
@@ -45,6 +46,9 @@ pub(super) fn draw_piano_wrap(
                     actions.note_off = Some(n);
                 }
             });
+        let used = ui.min_rect();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(piano_used_rect_id(), used));
     });
 }
 
@@ -79,6 +83,9 @@ pub(super) fn draw_footer(ui: &mut Ui, rect: Rect, state: &UiState) {
                     });
                 });
             });
+        let used = ui.min_rect();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(footer_used_rect_id(), used));
     });
 }
 

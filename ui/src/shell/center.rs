@@ -7,6 +7,11 @@ use crate::ambient::paint_ambient_waves;
 use crate::center_layout::compute_center_regions;
 use crate::fx_rack::{draw_effect_rack, EffectRackState};
 use crate::layout::{embed_mod_fx_in_center, UiScale};
+use crate::layout_audit::{
+    center_fx_used_rect_id, center_mod_used_rect_id, center_morph_used_rect_id,
+    center_scope_used_rect_id, center_strip_used_rect_id, center_used_rect_id,
+    center_views_used_rect_id,
+};
 use crate::mod_matrix::{draw_mod_matrix, ModMatrixState};
 use crate::region::region;
 
@@ -21,30 +26,31 @@ pub(super) fn draw_center(
     actions: &mut ShellActions,
     scale: UiScale,
 ) {
-    let s = scale.ui();
-    let inner = rect.shrink(SPACE_SM * s);
-    let embedded = embed_mod_fx_in_center(ShellLayoutOptions {
-        piano_visible: state.piano_visible,
-        show_osc_column: config.show_osc_column,
-        show_mod_matrix: config.show_mod_matrix,
-        mod_matrix_open: state.mod_matrix_open,
-        show_fx_rack: config.show_fx_rack,
-        fx_rack_open: state.fx_rack_open,
-    });
+    region(ui, rect, |ui| {
+        let s = scale.ui();
+        let inner = rect.shrink(SPACE_SM * s);
+        let embedded = embed_mod_fx_in_center(ShellLayoutOptions {
+            piano_visible: state.piano_visible,
+            show_osc_column: config.show_osc_column,
+            show_mod_matrix: config.show_mod_matrix,
+            mod_matrix_open: state.mod_matrix_open,
+            show_fx_rack: config.show_fx_rack,
+            fx_rack_open: state.fx_rack_open,
+        });
 
-    let time = ui.input(|i| i.time);
-    let regions = compute_center_regions(inner, config, s, embedded);
-    let scope_rect = regions.scope;
-    let strip_rect = regions.wt_strip;
-    let morph_rect = regions.morph;
-    let mod_rect = regions.mod_matrix;
-    let fx_rect = regions.fx_rack;
-    let views_rect = regions.wt_views;
+        let time = ui.input(|i| i.time);
+        let regions = compute_center_regions(inner, config, s, embedded);
+        let scope_rect = regions.scope;
+        let strip_rect = regions.wt_strip;
+        let morph_rect = regions.morph;
+        let mod_rect = regions.mod_matrix;
+        let fx_rect = regions.fx_rack;
+        let views_rect = regions.wt_views;
 
-    let bank_name = state.wt_bank_name.clone();
+        let bank_name = state.wt_bank_name.clone();
 
-    if scope_rect.is_positive() {
-        region(ui, scope_rect, |ui| {
+        if scope_rect.is_positive() {
+            region(ui, scope_rect, |ui| {
             if let Some(ctx) = scope {
                 draw_scope_strip(
                     ui,
@@ -76,11 +82,14 @@ pub(super) fn draw_center(
                     },
                 );
             }
-        });
-    }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_scope_used_rect_id(), used));
+            });
+        }
 
-    if config.show_wt_editor && morph_rect.is_positive() {
-        region(ui, morph_rect, |ui| {
+        if config.show_wt_editor && morph_rect.is_positive() {
+            region(ui, morph_rect, |ui| {
             let morph = WtMorph {
                 frame_a: &mut state.wt_morph_a,
                 frame_b: &mut state.wt_morph_b,
@@ -92,13 +101,16 @@ pub(super) fn draw_center(
                 sync_morph_from_active_tab(state);
                 actions.params_changed = true;
             }
-        });
-    }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_morph_used_rect_id(), used));
+            });
+        }
 
-    // Compact animated WT preview when mod/FX are embedded in center.
-    if config.show_wt_editor && views_rect.is_positive() && embedded {
-        let views_h = views_rect.height();
-        region(ui, views_rect, |ui| {
+        // Compact animated WT preview when mod/FX are embedded in center.
+        if config.show_wt_editor && views_rect.is_positive() && embedded {
+            let views_h = views_rect.height();
+            region(ui, views_rect, |ui| {
             ui.painter().rect_filled(views_rect, 8.0, Tokens::default().bg);
             paint_ambient_waves(ui.painter(), views_rect, time);
             ui.horizontal(|ui| {
@@ -134,10 +146,13 @@ pub(super) fn draw_center(
                     },
                 );
             });
-        });
-    } else if config.show_wt_editor && views_rect.is_positive() {
-        let views_h = views_rect.height().max(WT_VIEW_MIN_HEIGHT * s * 0.5);
-        region(ui, views_rect, |ui| {
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_views_used_rect_id(), used));
+            });
+        } else if config.show_wt_editor && views_rect.is_positive() {
+            let views_h = views_rect.height().max(WT_VIEW_MIN_HEIGHT * s * 0.5);
+            region(ui, views_rect, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = GRID_UNIT;
                 let half_w = (ui.available_width() - GRID_UNIT) * 0.5;
@@ -171,11 +186,14 @@ pub(super) fn draw_center(
                     },
                 );
             });
-        });
-    }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_views_used_rect_id(), used));
+            });
+        }
 
-    if embedded && mod_rect.is_positive() && config.show_mod_matrix {
-        region(ui, mod_rect, |ui| {
+        if embedded && mod_rect.is_positive() && config.show_mod_matrix {
+            region(ui, mod_rect, |ui| {
             paint_ambient_waves(ui.painter(), mod_rect, time);
             let result = draw_mod_matrix(
                 ui,
@@ -190,11 +208,14 @@ pub(super) fn draw_center(
             if result.changed {
                 actions.params_changed = true;
             }
-        });
-    }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_mod_used_rect_id(), used));
+            });
+        }
 
-    if embedded && fx_rect.is_positive() && config.show_fx_rack {
-        region(ui, fx_rect, |ui| {
+        if embedded && fx_rect.is_positive() && config.show_fx_rack {
+            region(ui, fx_rect, |ui| {
             paint_ambient_waves(ui.painter(), fx_rect, time + 1.5);
             let result = draw_effect_rack(
                 ui,
@@ -208,11 +229,14 @@ pub(super) fn draw_center(
             if result.changed {
                 actions.params_changed = true;
             }
-        });
-    }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_fx_used_rect_id(), used));
+            });
+        }
 
-    if strip_rect.is_positive() {
-        region(ui, strip_rect, |ui| {
+        if strip_rect.is_positive() {
+            region(ui, strip_rect, |ui| {
             let strip = WtStrip {
                 position: &mut state.wt_position,
                 bank: bank.as_deref(),
@@ -226,10 +250,19 @@ pub(super) fn draw_center(
                 sync_morph_from_active_tab(state);
                 actions.params_changed = true;
             }
-        });
-    }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(center_strip_used_rect_id(), used));
+            });
+        }
 
-    if embedded || config.show_wt_editor {
-        ui.ctx().request_repaint();
-    }
+        // Whole-center used rect (after subpanels).
+        let used = ui.min_rect();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(center_used_rect_id(), used));
+
+        if embedded || config.show_wt_editor {
+            ui.ctx().request_repaint();
+        }
+    });
 }

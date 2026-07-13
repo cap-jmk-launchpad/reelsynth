@@ -117,6 +117,7 @@ pub struct OscColumnResult {
 pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> OscColumnResult {
     let mut changed = false;
     let gap = SPACE_SM * scale;
+    let min_section_h = 92.0 * scale;
 
     egui::Frame::none()
         .inner_margin(egui::Margin::same(SPACE_SM * scale))
@@ -227,93 +228,101 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
                 }
 
                 ui.add_space(GRID_UNIT);
-                panel(ui, "FM", |ui| {
-                    let algo_label =
-                        FM_ALGORITHMS[state.osc_fm_algorithm[idx].min(FM_ALGORITHMS.len() - 1)];
-                    if labeled_cycle(ui, "Algo", algo_label).clicked() {
-                        state.osc_fm_algorithm[idx] =
-                            (state.osc_fm_algorithm[idx] + 1) % FM_ALGORITHMS.len();
-                        if state.osc_fm_algorithm[idx] == 0 {
-                            state.osc_fm_source[idx] = 0;
-                        } else {
-                            state.osc_fm_source[idx] = state.osc_fm_algorithm[idx];
+                // Avoid clipping at minimum window: show FM only when there is room.
+                if ui.available_height() > min_section_h * 2.2 {
+                    panel(ui, "FM", |ui| {
+                        let algo_label = FM_ALGORITHMS
+                            [state.osc_fm_algorithm[idx].min(FM_ALGORITHMS.len() - 1)];
+                        if labeled_cycle(ui, "Algo", algo_label).clicked() {
+                            state.osc_fm_algorithm[idx] =
+                                (state.osc_fm_algorithm[idx] + 1) % FM_ALGORITHMS.len();
+                            if state.osc_fm_algorithm[idx] == 0 {
+                                state.osc_fm_source[idx] = 0;
+                            } else {
+                                state.osc_fm_source[idx] = state.osc_fm_algorithm[idx];
+                            }
+                            changed = true;
                         }
-                        changed = true;
-                    }
 
-                    let src_label = FM_SOURCES[state.osc_fm_source[idx].min(FM_SOURCES.len() - 1)];
-                    if labeled_cycle(ui, "Source", src_label).clicked() {
-                        state.osc_fm_source[idx] =
-                            (state.osc_fm_source[idx] + 1) % FM_SOURCES.len();
-                        state.osc_fm_algorithm[idx] = fm_algorithm_index(fm_source_from_index(
-                            state.osc_fm_source[idx],
-                        ));
-                        changed = true;
-                    }
+                        let src_label =
+                            FM_SOURCES[state.osc_fm_source[idx].min(FM_SOURCES.len() - 1)];
+                        if labeled_cycle(ui, "Source", src_label).clicked() {
+                            state.osc_fm_source[idx] =
+                                (state.osc_fm_source[idx] + 1) % FM_SOURCES.len();
+                            state.osc_fm_algorithm[idx] = fm_algorithm_index(fm_source_from_index(
+                                state.osc_fm_source[idx],
+                            ));
+                            changed = true;
+                        }
 
+                        ui.horizontal_centered(|ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_SM;
+                            let ratio_text = format!("{:.2}", state.osc_fm_ratio[idx]);
+                            let r1 = Knob::new(&mut state.osc_fm_ratio[idx], 0.5..=16.0, "Ratio")
+                                .size(KnobSize::Sm)
+                                .scale(scale)
+                                .style(KnobStyle::Wired)
+                                .value_text(ratio_text)
+                                .show(ui);
+                            let index_text = format!("{:.1}", state.osc_fm_index[idx]);
+                            let r2 = Knob::new(&mut state.osc_fm_index[idx], 0.0..=10.0, "Index")
+                                .size(KnobSize::Sm)
+                                .scale(scale)
+                                .style(KnobStyle::Normal)
+                                .value_text(index_text)
+                                .show(ui);
+                            if r1.changed || r2.changed {
+                                changed = true;
+                            }
+                        });
+                    });
+                }
+            });
+
+            if ui.available_height() > min_section_h * 2.0 {
+                panel(ui, "Sub / Noise", |ui| {
                     ui.horizontal_centered(|ui| {
                         ui.spacing_mut().item_spacing.x = SPACE_SM;
-                        let ratio_text = format!("{:.2}", state.osc_fm_ratio[idx]);
-                        let r1 = Knob::new(&mut state.osc_fm_ratio[idx], 0.5..=16.0, "Ratio")
+                        let sub_text = format!("{:.2}", state.sub_level);
+                        let r1 = Knob::new(state.sub_level, 0.0..=1.0, "Sub")
                             .size(KnobSize::Sm)
                             .scale(scale)
                             .style(KnobStyle::Wired)
-                            .value_text(ratio_text)
+                            .value_text(sub_text)
                             .show(ui);
-                        let index_text = format!("{:.1}", state.osc_fm_index[idx]);
-                        let r2 = Knob::new(&mut state.osc_fm_index[idx], 0.0..=10.0, "Index")
+                        let noise_text = format!("{:.2}", state.noise_level);
+                        let r2 = Knob::new(state.noise_level, 0.0..=1.0, "Noise")
                             .size(KnobSize::Sm)
                             .scale(scale)
-                            .style(KnobStyle::Normal)
-                            .value_text(index_text)
+                            .style(KnobStyle::Wired)
+                            .value_text(noise_text)
                             .show(ui);
                         if r1.changed || r2.changed {
                             changed = true;
                         }
                     });
                 });
-            });
+            }
 
-            panel(ui, "Sub / Noise", |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.spacing_mut().item_spacing.x = SPACE_SM;
-                    let sub_text = format!("{:.2}", state.sub_level);
-                    let r1 = Knob::new(state.sub_level, 0.0..=1.0, "Sub")
-                        .size(KnobSize::Sm)
-                        .scale(scale)
-                        .style(KnobStyle::Wired)
-                        .value_text(sub_text)
-                        .show(ui);
-                    let noise_text = format!("{:.2}", state.noise_level);
-                    let r2 = Knob::new(state.noise_level, 0.0..=1.0, "Noise")
-                        .size(KnobSize::Sm)
-                        .scale(scale)
-                        .style(KnobStyle::Wired)
-                        .value_text(noise_text)
-                        .show(ui);
-                    if r1.changed || r2.changed {
-                        changed = true;
-                    }
-                });
-            });
-
-            panel(ui, "Macros", |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = SPACE_SM;
-                    for (i, label) in ["M1", "M2", "M3", "M4"].iter().enumerate() {
-                        let text = format!("{:.0}%", state.macro_values[i] * 100.0);
-                        let r = Knob::new(&mut state.macro_values[i], 0.0..=1.0, label)
-                            .size(KnobSize::Sm)
-                            .scale(scale)
-                            .style(KnobStyle::Wired)
-                            .value_text(text)
-                            .show(ui);
-                        if r.changed {
-                            changed = true;
+            if ui.available_height() > min_section_h * 1.2 {
+                panel(ui, "Macros", |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = SPACE_SM;
+                        for (i, label) in ["M1", "M2", "M3", "M4"].iter().enumerate() {
+                            let text = format!("{:.0}%", state.macro_values[i] * 100.0);
+                            let r = Knob::new(&mut state.macro_values[i], 0.0..=1.0, label)
+                                .size(KnobSize::Sm)
+                                .scale(scale)
+                                .style(KnobStyle::Wired)
+                                .value_text(text)
+                                .show(ui);
+                            if r.changed {
+                                changed = true;
+                            }
                         }
-                    }
+                    });
                 });
-            });
+            }
         });
 
     OscColumnResult { changed }

@@ -3,6 +3,7 @@ use reelsynth_ui_theme::Tokens;
 
 use super::*;
 use crate::layout::UiScale;
+use crate::layout_audit::{header_used_rect_id, osc_used_rect_id};
 use crate::region::region;
 use crate::widgets::{button_ghost, button_toggle};
 pub(super) fn draw_header(
@@ -126,6 +127,9 @@ pub(super) fn draw_header(
                     });
                 });
             });
+        let used = ui.min_rect();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(header_used_rect_id(), used));
     });
 }
 
@@ -214,6 +218,8 @@ pub(super) fn draw_osc(
             state.osc_morph_amount[state.osc_tab.min(2)] = state.wt_morph_amount;
             actions.params_changed = true;
         }
+        let used = ui.min_rect();
+        ui.ctx().data_mut(|d| d.insert_temp(osc_used_rect_id(), used));
     });
 }
 

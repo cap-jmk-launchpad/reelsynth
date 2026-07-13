@@ -12,6 +12,58 @@ pub fn rail_used_rect_id() -> egui::Id {
     egui::Id::new("reelsynth.audit.rail_used_rect")
 }
 
+pub fn header_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.header_used_rect")
+}
+
+pub fn osc_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.osc_used_rect")
+}
+
+pub fn center_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center_used_rect")
+}
+
+pub fn piano_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.piano_used_rect")
+}
+
+pub fn footer_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.footer_used_rect")
+}
+
+pub fn center_scope_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center.scope_used_rect")
+}
+
+pub fn center_strip_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center.strip_used_rect")
+}
+
+pub fn center_morph_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center.morph_used_rect")
+}
+
+pub fn center_views_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center.views_used_rect")
+}
+
+pub fn center_mod_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center.mod_used_rect")
+}
+
+pub fn center_fx_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.center.fx_used_rect")
+}
+
+pub fn mod_strip_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.mod_strip_used_rect")
+}
+
+pub fn fx_strip_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.fx_strip_used_rect")
+}
+
 /// Positive overlap area between two rects (0 if adjacent or disjoint).
 pub fn overlap_area(a: Rect, b: Rect) -> f32 {
     if !a.is_positive() || !b.is_positive() {

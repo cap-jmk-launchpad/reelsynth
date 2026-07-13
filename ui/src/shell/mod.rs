@@ -11,7 +11,9 @@ use reelsynth_ui_theme::Tokens;
 
 use crate::fx_rack::{draw_effect_rack, EffectRackState};
 use crate::layout::{embed_mod_fx_in_center, ShellLayout, ShellLayoutOptions};
+use crate::layout_audit::{fx_strip_used_rect_id, mod_strip_used_rect_id};
 use crate::mod_matrix::{draw_mod_matrix, ModMatrixState};
+use crate::region::region;
 
 pub use crate::state::{
     ScopeStripContext, ShellActions, ShellConfig, ShellMidiDevices, UiState,
@@ -125,34 +127,44 @@ pub fn draw_shell(
     draw_rail(ui, layout.rail, state, config, &mut actions, layout.scale);
 
     if layout.mod_matrix.is_positive() && !embedded_mod_fx {
-        let result = draw_mod_matrix(
-            ui,
-            layout.mod_matrix,
-            ModMatrixState {
-                open: &mut state.mod_matrix_open,
-                routes: &mut state.mod_routes,
-                total_routes: state.mod_route_total,
-            },
-            layout.scale,
-        );
-        if result.changed {
-            actions.params_changed = true;
-        }
+        region(ui, layout.mod_matrix, |ui| {
+            let result = draw_mod_matrix(
+                ui,
+                layout.mod_matrix,
+                ModMatrixState {
+                    open: &mut state.mod_matrix_open,
+                    routes: &mut state.mod_routes,
+                    total_routes: state.mod_route_total,
+                },
+                layout.scale,
+            );
+            if result.changed {
+                actions.params_changed = true;
+            }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(mod_strip_used_rect_id(), used));
+        });
     }
 
     if layout.fx_rack.is_positive() && !embedded_mod_fx {
-        let result = draw_effect_rack(
-            ui,
-            layout.fx_rack,
-            EffectRackState {
-                open: &mut state.fx_rack_open,
-                slots: &mut state.fx_slots,
-            },
-            layout.scale,
-        );
-        if result.changed {
-            actions.params_changed = true;
-        }
+        region(ui, layout.fx_rack, |ui| {
+            let result = draw_effect_rack(
+                ui,
+                layout.fx_rack,
+                EffectRackState {
+                    open: &mut state.fx_rack_open,
+                    slots: &mut state.fx_slots,
+                },
+                layout.scale,
+            );
+            if result.changed {
+                actions.params_changed = true;
+            }
+            let used = ui.min_rect();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(fx_strip_used_rect_id(), used));
+        });
     }
 
     if state.piano_visible && layout.piano_wrap.is_positive() {
