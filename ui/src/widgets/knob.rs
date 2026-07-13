@@ -43,6 +43,7 @@ pub struct Knob<'a> {
     pub style: KnobStyle,
     pub logarithmic: bool,
     pub scale: f32,
+    pub show_wired_badge: bool,
 }
 
 impl<'a> Knob<'a> {
@@ -56,6 +57,7 @@ impl<'a> Knob<'a> {
             style: KnobStyle::Normal,
             logarithmic: false,
             scale: 1.0,
+            show_wired_badge: true,
         }
     }
 
@@ -84,6 +86,11 @@ impl<'a> Knob<'a> {
         self
     }
 
+    pub fn show_wired_badge(mut self, yes: bool) -> Self {
+        self.show_wired_badge = yes;
+        self
+    }
+
     pub fn show(self, ui: &mut Ui) -> KnobResponse {
         let enabled = !matches!(self.style, KnobStyle::Disabled);
         let mut changed = false;
@@ -95,7 +102,7 @@ impl<'a> Knob<'a> {
         let inner = ui.vertical(|ui| {
             ui.set_width(col_w);
 
-            if matches!(self.style, KnobStyle::Wired) {
+            if matches!(self.style, KnobStyle::Wired) && self.show_wired_badge {
                 ui.label(
                     egui::RichText::new("Live")
                         .font(FontId::monospace(9.0))

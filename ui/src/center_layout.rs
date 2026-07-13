@@ -97,8 +97,13 @@ pub fn compute_center_regions(
                 Rect::NOTHING
             };
 
-            let piano = if piano_h > EPS {
-                rect_row(inner, y, piano_h.min((inner.max.y - y).max(0.0)))
+            let piano = if show_piano {
+                let remaining_h = (inner.max.y - y).max(0.0);
+                if remaining_h > EPS {
+                    rect_row(inner, y, remaining_h.max(piano_h))
+                } else {
+                    Rect::NOTHING
+                }
             } else {
                 Rect::NOTHING
             };
@@ -208,13 +213,13 @@ fn embedded_heights(
 
     let mut segments: Vec<(f32, f32)> = Vec::new();
     if show_preview {
-        segments.push((28.0 * scale, 0.18));
+        segments.push((32.0 * scale, 0.38));
     }
     if show_mod {
-        segments.push((56.0 * scale, 0.50));
+        segments.push((48.0 * scale, 0.34));
     }
     if show_fx {
-        segments.push((44.0 * scale, 0.32));
+        segments.push((40.0 * scale, 0.28));
     }
 
     let heights = distribute_heights(budget, &segments);

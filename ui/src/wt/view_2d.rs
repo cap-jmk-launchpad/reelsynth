@@ -3,7 +3,7 @@ use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
 use crate::ambient::{animated_wave_points, peak_glow_color};
-use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT, WT_VIEW_MIN_HEIGHT};
+use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT};
 use crate::region::region;
 
 use super::toolbar::{WtEditTool, WtToolbar};
@@ -26,7 +26,7 @@ impl WtView2d<'_> {
     pub fn show(self, ui: &mut Ui) -> WtView2dResponse {
         let tokens = Tokens::default();
         let accent_ui = ACCENT_UI;
-        let view_h = ui.available_height().max(WT_VIEW_MIN_HEIGHT * 0.5);
+        let view_h = ui.available_height().max(48.0);
         let (rect, _) = ui.allocate_exact_size(
             Vec2::new(ui.available_width(), view_h),
             Sense::hover(),

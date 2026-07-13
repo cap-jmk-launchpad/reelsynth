@@ -200,15 +200,28 @@ pub fn draw_effect_rack(
                     egui::Frame::none()
                         .inner_margin(egui::Margin::symmetric(SPACE_SM * scale.ui(), GRID_UNIT * scale.ui()))
                         .show(ui, |ui| {
+                            let s = scale.ui();
+                            let gap = GRID_UNIT * s;
+                            let slot_count = state.slots.len().max(1);
+                            let add_w = metrics.add_width;
+                            let gaps = gap * slot_count as f32;
+                            let avail = ui.available_width();
+                            let flex_slot_w = ((avail - add_w - gaps) / slot_count as f32)
+                                .clamp(96.0 * s, FX_SLOT_WIDTH * s * 1.35);
+                            let mut flex_metrics = metrics;
+                            flex_metrics.slot_width = flex_slot_w;
+
                             ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = GRID_UNIT * scale.ui();
-                                ui.set_min_height(metrics.column_height);
+                                ui.spacing_mut().item_spacing.x = gap;
+                                ui.set_min_height(flex_metrics.column_height);
                                 for idx in 0..state.slots.len() {
-                                    if draw_fx_slot_column(ui, &mut state.slots, idx, metrics).changed {
+                                    if draw_fx_slot_column(ui, &mut state.slots, idx, flex_metrics)
+                                        .changed
+                                    {
                                         changed = true;
                                     }
                                 }
-                                if draw_add_slot(ui, metrics).clicked() {
+                                if draw_add_slot(ui, flex_metrics).clicked() {
                                     state
                                         .slots
                                         .push(EffectSlotUi::from_slot(&EffectSlot::chorus()));

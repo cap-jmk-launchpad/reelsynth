@@ -362,7 +362,7 @@ fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32) -> ModRowResult 
         }
 
         ui.allocate_ui_at_rect(rect.shrink2(egui::vec2(4.0, 1.0)), |ui| {
-            ui.horizontal_centered(|ui| {
+            ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 ui.label(
                     egui::RichText::new(route.source)
@@ -381,6 +381,7 @@ fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32) -> ModRowResult 
                 );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.set_width(ui.available_width());
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let on_label = if route.enabled { "On" } else { "Off" };
                     if ui

@@ -75,63 +75,18 @@ fn draw_rail_panels(
             if prev != state.filter_mode {
                 actions.params_changed = true;
             }
-            ui.add_space(GRID_UNIT * s);
+            ui.add_space(GRID_UNIT * s * 0.75);
+            draw_filter_knobs_compact(ui, state, actions, s);
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(SPACE_SM * s, SPACE_SM * s);
+                draw_filter_knobs_row(ui, state, config, actions, knob_md, knob_sm, s);
+            });
         }
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(SPACE_SM * s, SPACE_SM * s);
-            let knob_size = if config.show_osc_column { knob_sm } else { knob_md };
-            let cutoff_text = format_cutoff(state.filter_cutoff);
-            let r1 = Knob::new(&mut state.filter_cutoff, 40.0..=12000.0, "Cutoff")
-                .size(knob_size)
-                .scale(s)
-                .style(KnobStyle::Wired)
-                .logarithmic(true)
-                .value_text(cutoff_text)
-                .show(ui);
-            let res_label = if config.show_osc_column { "Res" } else { "Resonance" };
-            let res_text = format!("{:.2}", state.filter_resonance);
-            let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, res_label)
-                .size(knob_size)
-                .scale(s)
-                .style(KnobStyle::Wired)
-                .value_text(res_text)
-                .show(ui);
-            let drive_text = format!("{:.0}%", state.filter_drive * 100.0);
-            let r_drive = Knob::new(&mut state.filter_drive, 0.0..=1.0, "Drive")
-                .size(knob_sm)
-                .scale(s)
-                .style(KnobStyle::Wired)
-                .value_text(drive_text)
-                .show(ui);
-            if config.show_osc_column {
-                let key_text = format!("{:.0}%", state.filter_key_tracking * 100.0);
-                let r3 = Knob::new(&mut state.filter_key_tracking, 0.0..=1.0, "Key")
-                    .size(knob_sm)
-                    .scale(s)
-                    .style(KnobStyle::Wired)
-                    .value_text(key_text)
-                    .show(ui);
-                let f2_text = format_cutoff(state.filter2_cutoff);
-                let r4 = Knob::new(&mut state.filter2_cutoff, 40.0..=12000.0, "F2 Cut")
-                    .size(knob_sm)
-                    .scale(s)
-                    .style(KnobStyle::Wired)
-                    .logarithmic(true)
-                    .value_text(f2_text)
-                    .show(ui);
-                if r3.changed || r4.changed {
-                    actions.params_changed = true;
-                }
-            }
-            if r1.changed || r2.changed || r_drive.changed {
-                actions.params_changed = true;
-            }
-        });
     });
 
     if config.show_osc_column {
-        // Budget panels to avoid clipping at the minimum window size.
-        if ui.available_height() > min_panel_h * 4.6 {
+        if ui.available_height() > min_panel_h * 4.8 {
             panel(ui, "Filter Envelope", |ui| {
                 adsr_graph(
                     ui,
@@ -139,9 +94,9 @@ fn draw_rail_panels(
                     state.filt_env_decay,
                     state.filt_env_sustain,
                     state.filt_env_release,
-                    s,
+                    s * 0.85,
                 );
-                ui.add_space(GRID_UNIT * s);
+                ui.add_space(GRID_UNIT * s * 0.5);
                 env_knobs(
                     ui,
                     &mut state.filt_env_attack,
@@ -154,7 +109,7 @@ fn draw_rail_panels(
             });
         }
 
-        if ui.available_height() > min_panel_h * 3.3 {
+        if ui.available_height() > min_panel_h * 3.6 {
             panel(ui, "Amp Envelope", |ui| {
                 adsr_graph(
                     ui,
@@ -162,9 +117,9 @@ fn draw_rail_panels(
                     state.env_decay,
                     state.env_sustain,
                     state.env_release,
-                    s,
+                    s * 0.85,
                 );
-                ui.add_space(GRID_UNIT * s);
+                ui.add_space(GRID_UNIT * s * 0.5);
                 env_knobs(
                     ui,
                     &mut state.env_attack,
@@ -177,7 +132,7 @@ fn draw_rail_panels(
             });
         }
 
-        if ui.available_height() > min_panel_h * 2.0 {
+        if ui.available_height() > min_panel_h * 2.2 {
             panel(ui, "LFOs", |ui| {
                 ui.spacing_mut().item_spacing.x = SPACE_SM * s;
                 let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
@@ -186,13 +141,9 @@ fn draw_rail_panels(
                         egui::vec2(w, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label(
-                                egui::RichText::new("LFO 1")
-                                    .size(10.0)
-                                    .color(Tokens::default().text_muted),
-                            );
-                            lfo_panel(
+                            lfo_block(
                                 ui,
+                                "LFO 1",
                                 &mut state.lfo_rate,
                                 &mut state.lfo_depth,
                                 &mut state.lfo_shape,
@@ -206,13 +157,9 @@ fn draw_rail_panels(
                         egui::vec2(w, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label(
-                                egui::RichText::new("LFO 2")
-                                    .size(10.0)
-                                    .color(Tokens::default().text_muted),
-                            );
-                            lfo_panel(
+                            lfo_block(
                                 ui,
+                                "LFO 2",
                                 &mut state.lfo2_rate,
                                 &mut state.lfo2_depth,
                                 &mut state.lfo2_shape,
@@ -303,6 +250,132 @@ fn env_knobs(
             actions.params_changed = true;
         }
     });
+}
+
+fn draw_filter_knobs_compact(
+    ui: &mut Ui,
+    state: &mut UiState,
+    actions: &mut ShellActions,
+    scale: f32,
+) {
+    ui.horizontal_centered(|ui| {
+        ui.spacing_mut().item_spacing.x = SPACE_SM * scale * 0.35;
+        let cutoff_text = format_cutoff(state.filter_cutoff);
+        let r1 = Knob::new(&mut state.filter_cutoff, 40.0..=12000.0, "Cutoff")
+            .size(KnobSize::Sm)
+            .scale(scale)
+            .style(KnobStyle::Wired)
+            .show_wired_badge(false)
+            .logarithmic(true)
+            .value_text(cutoff_text)
+            .show(ui);
+        let res_text = format!("{:.2}", state.filter_resonance);
+        let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, "Res")
+            .size(KnobSize::Sm)
+            .scale(scale)
+            .style(KnobStyle::Wired)
+            .show_wired_badge(false)
+            .value_text(res_text)
+            .show(ui);
+        let drive_text = format!("{:.0}%", state.filter_drive * 100.0);
+        let r_drive = Knob::new(&mut state.filter_drive, 0.0..=1.0, "Drive")
+            .size(KnobSize::Sm)
+            .scale(scale)
+            .style(KnobStyle::Wired)
+            .show_wired_badge(false)
+            .value_text(drive_text)
+            .show(ui);
+        let key_text = format!("{:.0}%", state.filter_key_tracking * 100.0);
+        let r3 = Knob::new(&mut state.filter_key_tracking, 0.0..=1.0, "Key")
+            .size(KnobSize::Sm)
+            .scale(scale)
+            .style(KnobStyle::Wired)
+            .show_wired_badge(false)
+            .value_text(key_text)
+            .show(ui);
+        if r1.changed || r2.changed || r_drive.changed || r3.changed {
+            actions.params_changed = true;
+        }
+    });
+}
+
+fn draw_filter_knobs_row(
+    ui: &mut Ui,
+    state: &mut UiState,
+    config: &ShellConfig,
+    actions: &mut ShellActions,
+    knob_md: KnobSize,
+    knob_sm: KnobSize,
+    scale: f32,
+) {
+    let cutoff_text = format_cutoff(state.filter_cutoff);
+    let r1 = Knob::new(&mut state.filter_cutoff, 40.0..=12000.0, "Cutoff")
+        .size(knob_md)
+        .scale(scale)
+        .style(KnobStyle::Wired)
+        .logarithmic(true)
+        .value_text(cutoff_text)
+        .show(ui);
+    let res_label = if config.show_osc_column {
+        "Res"
+    } else {
+        "Resonance"
+    };
+    let res_text = format!("{:.2}", state.filter_resonance);
+    let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, res_label)
+        .size(knob_md)
+        .scale(scale)
+        .style(KnobStyle::Wired)
+        .value_text(res_text)
+        .show(ui);
+    let drive_text = format!("{:.0}%", state.filter_drive * 100.0);
+    let r_drive = Knob::new(&mut state.filter_drive, 0.0..=1.0, "Drive")
+        .size(knob_sm)
+        .scale(scale)
+        .style(KnobStyle::Wired)
+        .value_text(drive_text)
+        .show(ui);
+    if config.show_osc_column {
+        let key_text = format!("{:.0}%", state.filter_key_tracking * 100.0);
+        let r3 = Knob::new(&mut state.filter_key_tracking, 0.0..=1.0, "Key")
+            .size(knob_sm)
+            .scale(scale)
+            .style(KnobStyle::Wired)
+            .value_text(key_text)
+            .show(ui);
+        let f2_text = format_cutoff(state.filter2_cutoff);
+        let r4 = Knob::new(&mut state.filter2_cutoff, 40.0..=12000.0, "F2 Cut")
+            .size(knob_sm)
+            .scale(scale)
+            .style(KnobStyle::Wired)
+            .logarithmic(true)
+            .value_text(f2_text)
+            .show(ui);
+        if r3.changed || r4.changed {
+            actions.params_changed = true;
+        }
+    }
+    if r1.changed || r2.changed || r_drive.changed {
+        actions.params_changed = true;
+    }
+}
+
+fn lfo_block(
+    ui: &mut Ui,
+    title: &str,
+    rate: &mut f32,
+    depth: &mut f32,
+    shape: &mut usize,
+    style: KnobStyle,
+    actions: &mut ShellActions,
+    scale: f32,
+) {
+    ui.label(
+        egui::RichText::new(title)
+            .size(10.0)
+            .color(Tokens::default().text_muted),
+    );
+    lfo_panel(ui, rate, depth, shape, style, actions, scale);
 }
 
 fn lfo_panel(

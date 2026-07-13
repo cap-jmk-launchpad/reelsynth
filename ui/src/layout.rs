@@ -47,11 +47,11 @@ pub const WT_MORPH_HEIGHT: f32 = 20.0;
 pub const WT_TOOLBAR_HEIGHT: f32 = 24.0;
 pub const WT_VIEW_MIN_HEIGHT: f32 = 128.0;
 
-pub const PIANO_HEIGHT: f32 = 52.0;
-pub const PIANO_WHITE_KEY_WIDTH: f32 = 12.0;
+pub const PIANO_HEIGHT: f32 = 64.0;
+pub const PIANO_WHITE_KEY_WIDTH: f32 = 14.0;
 pub const PIANO_BLACK_WIDTH_RATIO: f32 = 0.58;
 pub const PIANO_BLACK_HEIGHT_RATIO: f32 = 0.56;
-pub const PIANO_OCTAVES: usize = 2;
+pub const PIANO_OCTAVES: usize = 3;
 pub const PIANO_START_NOTE: u8 = 48; // C3
 
 pub const MOD_MATRIX_HEIGHT: f32 = 120.0;

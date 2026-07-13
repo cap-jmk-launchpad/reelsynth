@@ -60,19 +60,19 @@ impl<'a> PianoKeyboard<'a> {
         let white_count = self.octaves * 7;
         let pad_x = 4.0;
         let pad_y = 2.0;
+        let avail_w = (area.width() - pad_x * 2.0).max(1.0);
+        let avail_h = (area.height() - pad_y * 2.0).max(1.0);
         let key_w = if self.white_key_width > 0.0 {
             self.white_key_width
         } else {
-            PIANO_WHITE_KEY_WIDTH
+            (avail_w / white_count as f32).clamp(10.0, PIANO_WHITE_KEY_WIDTH * 1.35)
         };
-        let natural_w = white_count as f32 * key_w;
-        let avail_w = natural_w.min((area.width() - pad_x * 2.0).max(1.0));
-        let avail_h = (area.height() - pad_y * 2.0).max(1.0);
+        let keyboard_w = key_w * white_count as f32;
         let key_h = avail_h;
 
-        let size = Vec2::new(avail_w, key_h);
+        let size = Vec2::new(keyboard_w.min(avail_w), key_h);
         let origin = Pos2::new(
-            area.min.x + (area.width() - avail_w) * 0.5,
+            area.min.x + pad_x + (avail_w - size.x) * 0.5,
             area.min.y + pad_y,
         );
         let rect = Rect::from_min_size(origin, size);
