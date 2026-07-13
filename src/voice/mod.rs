@@ -2,7 +2,7 @@
 
 mod kernel;
 
-pub use kernel::{process_sample, VoiceSampleContext, VoiceState};
+pub use kernel::{process_sample, process_sample_stages, VoiceSampleContext, VoiceStageSample, VoiceState};
 
 use crate::patch::Patch;
 use crate::wavetable::WavetableBank;

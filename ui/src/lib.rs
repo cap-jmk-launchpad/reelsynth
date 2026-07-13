@@ -21,6 +21,6 @@ pub use osc::{
     fm_source_index, osc_type_from_index, osc_type_index, warp_mode_from_index,
     warp_mode_index, OscColumnResult, OscColumnState,
 };
-pub use scope::{draw_scope_strip, SCOPE_STRIP_HEIGHT};
-pub use s1::{draw_s1, S1Actions, S1MidiDevices, S1ShellConfig, S1State};
+pub use scope::{draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_STRIP_HEIGHT};
+pub use s1::{draw_s1, S1Actions, S1MidiDevices, S1ShellConfig, S1State, ScopeStripContext};
 pub use wt::{factory_bank, factory_label, FactoryBankEntry, FACTORY_BANKS};

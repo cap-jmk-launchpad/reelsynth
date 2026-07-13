@@ -1,7 +1,7 @@
 //! Realtime voice state wrapping the shared DSP kernel.
 
 use crate::patch::Patch;
-use crate::voice::{process_sample, VoiceSampleContext, VoiceState};
+use crate::voice::VoiceState;
 
 /// One realtime voice with note metadata.
 #[derive(Clone, Debug)]
@@ -60,11 +60,24 @@ impl RtVoice {
         dt: f32,
         sr: f32,
     ) -> [f32; 2] {
+        self.process_sample_stages(banks, bank_for_osc, patch, global_time, dt, sr)
+            .filtered
+    }
+
+    pub fn process_sample_stages(
+        &mut self,
+        banks: &[crate::wavetable::WavetableBank],
+        bank_for_osc: &dyn Fn(usize) -> usize,
+        patch: &Patch,
+        global_time: f32,
+        dt: f32,
+        sr: f32,
+    ) -> crate::voice::VoiceStageSample {
         if !self.active {
-            return [0.0, 0.0];
+            return crate::voice::VoiceStageSample::default();
         }
 
-        let ctx = VoiceSampleContext {
+        let ctx = crate::voice::VoiceSampleContext {
             banks,
             bank_for_osc,
             patch,
@@ -76,7 +89,7 @@ impl RtVoice {
             dt,
             sr,
         };
-        let sample = process_sample(&mut self.state, &ctx);
+        let sample = crate::voice::process_sample_stages(&mut self.state, &ctx);
         self.sample_counter = self.sample_counter.wrapping_add(1);
 
         if !self.gate && self.state.amp_env_level <= 1e-6 && self.state.amp_env_stage == 3 {

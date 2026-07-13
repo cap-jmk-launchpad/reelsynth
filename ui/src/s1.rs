@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use egui::{Color32, FontId, Rect, Ui};
-use reelsynth::{Patch, WavetableBank};
+use reelsynth::{Patch, ScopeLiveTaps, WavetableBank};
 use reelsynth_ui_theme::{heading_font, Tokens};
 
 use crate::layout::{
@@ -15,7 +15,7 @@ use crate::widgets::{
     adsr_graph, format_depth, format_env_time, format_lfo_rate, format_sustain, tab_bar, Knob,
     KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled,
 };
-use crate::scope::{draw_scope_strip, SCOPE_STRIP_HEIGHT};
+use crate::scope::{draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_STRIP_HEIGHT};
 use crate::wt::{morph_amount_for_position, WtEditTool, WtMorph, WtStrip, WtView2d, WtView3d, FACTORY_BANKS};
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -112,6 +112,15 @@ pub struct S1State {
     pub midi_device: String,
 }
 
+pub struct ScopeStripContext<'a> {
+    pub banks: &'a [WavetableBank],
+    pub bank_for_osc: &'a dyn Fn(usize) -> usize,
+    pub live: Option<&'a ScopeLiveTaps>,
+    pub is_playing: bool,
+    pub now_secs: f64,
+    pub state: &'a mut ScopeStripState,
+}
+
 impl Default for S1State {
     fn default() -> Self {
         Self {
@@ -184,6 +193,7 @@ pub fn draw_s1(
     preview_patch: &Patch,
     midi: &S1MidiDevices<'_>,
     config: &S1ShellConfig,
+    scope: Option<ScopeStripContext<'_>>,
 ) -> S1Actions {
     let layout = S1Layout::compute_with_options(
         screen,
@@ -250,7 +260,7 @@ pub fn draw_s1(
     if layout.osc.is_positive() {
         draw_osc(ui, layout.osc, state, &mut actions);
     }
-    draw_center(ui, layout.center, state, bank, preview_patch, config, &mut actions);
+    draw_center(ui, layout.center, state, bank, preview_patch, config, scope, &mut actions);
     draw_rail(ui, layout.rail, state, config, &mut actions);
 
     if layout.mod_matrix.is_positive() {
@@ -546,6 +556,7 @@ fn draw_center(
     mut bank: Option<&mut WavetableBank>,
     preview_patch: &Patch,
     config: &S1ShellConfig,
+    scope: Option<ScopeStripContext<'_>>,
     actions: &mut S1Actions,
 ) {
     let inner = rect.shrink(SPACE_SM);
@@ -626,8 +637,36 @@ fn draw_center(
 
     if scope_rect.is_positive() {
         ui.allocate_ui_at_rect(scope_rect, |ui| {
-            if let Some(b) = bank.as_deref() {
-                draw_scope_strip(ui, scope_rect, preview_patch, std::slice::from_ref(b), |_| 0);
+            if let Some(ctx) = scope {
+                draw_scope_strip(
+                    ui,
+                    scope_rect,
+                    ScopeStripInput {
+                        patch: preview_patch,
+                        banks: ctx.banks,
+                        bank_for_osc: ctx.bank_for_osc,
+                        live: ctx.live,
+                        is_playing: ctx.is_playing,
+                        now_secs: ctx.now_secs,
+                        state: ctx.state,
+                    },
+                );
+            } else if let Some(b) = bank.as_deref() {
+                let bank_for_osc: &dyn Fn(usize) -> usize = &|_| 0;
+                let mut strip_state = ScopeStripState::default();
+                draw_scope_strip(
+                    ui,
+                    scope_rect,
+                    ScopeStripInput {
+                        patch: preview_patch,
+                        banks: std::slice::from_ref(b),
+                        bank_for_osc: &bank_for_osc,
+                        live: None,
+                        is_playing: false,
+                        now_secs: ui.input(|i| i.time),
+                        state: &mut strip_state,
+                    },
+                );
             }
         });
     }

@@ -84,8 +84,22 @@ pub struct VoiceSampleContext<'a> {
     pub sr: f32,
 }
 
+/// Per-voice signal-chain taps before the FX bus.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VoiceStageSample {
+    /// Mono sum of oscillator/sub/noise output before filtering.
+    pub osc_mono: f32,
+    /// Stereo output after SVF filtering.
+    pub filtered: [f32; 2],
+}
+
 /// Process one output frame for a single voice (stereo).
 pub fn process_sample(state: &mut VoiceState, ctx: &VoiceSampleContext<'_>) -> [f32; 2] {
+    process_sample_stages(state, ctx).filtered
+}
+
+/// Like [`process_sample`] but also exposes pre-filter osc and post-filter stereo taps.
+pub fn process_sample_stages(state: &mut VoiceState, ctx: &VoiceSampleContext<'_>) -> VoiceStageSample {
     let amp_env = advance_envelope(
         &mut state.amp_env_level,
         &mut state.amp_env_stage,
@@ -263,10 +277,14 @@ pub fn process_sample(state: &mut VoiceState, ctx: &VoiceSampleContext<'_>) -> [
         ctx.patch.filter2.drive,
     );
 
-    [
-        filtered_l.clamp(-1.0, 1.0),
-        filtered_r.clamp(-1.0, 1.0),
-    ]
+    let osc_mono = (left + right) * 0.5;
+    VoiceStageSample {
+        osc_mono,
+        filtered: [
+            filtered_l.clamp(-1.0, 1.0),
+            filtered_r.clamp(-1.0, 1.0),
+        ],
+    }
 }
 
 fn wt_position(

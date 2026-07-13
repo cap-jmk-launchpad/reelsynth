@@ -6,8 +6,8 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
 use midi_input::{MidiDevices, MidiInputHandle};
-use reelsynth::{import::{import_serum_fxp, import_vital, import_wav_folder}, load_preset, resolve_bank_for_preset, Envelope, ModSlot, Patch, SynthEngine, WavetableBank};
-use reelsynth_ui::{draw_s1, factory_bank, factory_label, fm_algorithm_index, fm_source_from_index, fm_source_index, fx_slots_from_effects, fx_slots_to_effects, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
+use reelsynth::{import::{import_serum_fxp, import_vital, import_wav_folder}, load_preset, resolve_bank_for_preset, Envelope, ModSlot, Patch, ScopeMonitor, SynthEngine, WavetableBank};
+use reelsynth_ui::{draw_s1, factory_bank, factory_label, fm_algorithm_index, fm_source_from_index, fm_source_index, fx_slots_from_effects, fx_slots_to_effects, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State, ScopeStripContext, ScopeStripState};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -69,6 +69,7 @@ struct AudioHandle {
     tx: Sender<AudioCmd>,
     _stream: cpal::Stream,
     bank: Arc<RwLock<WavetableBank>>,
+    scope: ScopeMonitor,
 }
 
 impl AudioHandle {
@@ -78,6 +79,10 @@ impl AudioHandle {
 
     fn bank(&self) -> Arc<RwLock<WavetableBank>> {
         Arc::clone(&self.bank)
+    }
+
+    fn scope(&self) -> ScopeMonitor {
+        self.scope.clone()
     }
 }
 
@@ -101,6 +106,7 @@ fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
     if sr != sample_rate {
         engine = SynthEngine::new(WavetableBank::factory_saw_morph(), Patch::default_mono(), sr);
     }
+    let scope_monitor = engine.scope_monitor().clone();
 
     let mut engine = engine;
     let err_fn = |e| eprintln!("audio stream error: {e}");
@@ -153,6 +159,7 @@ fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
         tx,
         _stream: stream,
         bank: bank_shared,
+        scope: scope_monitor,
     })
 }
 
@@ -459,6 +466,8 @@ struct ReelSynthApp {
     midi_handle: MidiInputHandle,
     midi_note_tx: Sender<(u8, bool, f32)>,
     midi_note_rx: Receiver<(u8, bool, f32)>,
+    scope: ScopeMonitor,
+    scope_strip_state: ScopeStripState,
 }
 
 impl ReelSynthApp {
@@ -482,6 +491,7 @@ impl ReelSynthApp {
         sync_state_from_patch(&mut state, &current_patch);
         current_patch.mod_matrix = mod_routes_to_slots(&state.mod_routes);
         current_patch.effects = fx_slots_to_effects(&state.fx_slots);
+        let scope = audio.as_ref().map(|a| a.scope()).unwrap_or_default();
         Self {
             audio,
             state,
@@ -493,6 +503,8 @@ impl ReelSynthApp {
             midi_handle,
             midi_note_tx,
             midi_note_rx,
+            scope,
+            scope_strip_state: ScopeStripState::default(),
         }
     }
 
@@ -951,9 +963,27 @@ impl eframe::App for ReelSynthApp {
                 };
 
                 let preview_patch = patch_from_state(&self.state, &self.current_patch);
+                let now_secs = ui.input(|i| i.time);
+                let is_playing =
+                    self.scope.is_playing() || !self.state.keys_down.is_empty();
+                let live_snapshot = if is_playing {
+                    Some(self.scope.snapshot())
+                } else {
+                    None
+                };
+                let bank_for_osc: &dyn Fn(usize) -> usize = &|_| 0;
 
                 let actions = if let Some(audio) = &self.audio {
                     if let Ok(mut bank) = audio.bank().write() {
+                        let banks = [(*bank).clone()];
+                        let scope_ctx = ScopeStripContext {
+                            banks: &banks,
+                            bank_for_osc,
+                            live: live_snapshot.as_ref(),
+                            is_playing,
+                            now_secs,
+                            state: &mut self.scope_strip_state,
+                        };
                         draw_s1(
                             ui,
                             ui.max_rect(),
@@ -962,8 +992,17 @@ impl eframe::App for ReelSynthApp {
                             &preview_patch,
                             &midi,
                             &config,
+                            Some(scope_ctx),
                         )
                     } else {
+                        let scope_ctx = ScopeStripContext {
+                            banks: &[],
+                            bank_for_osc,
+                            live: live_snapshot.as_ref(),
+                            is_playing,
+                            now_secs,
+                            state: &mut self.scope_strip_state,
+                        };
                         draw_s1(
                             ui,
                             ui.max_rect(),
@@ -972,9 +1011,18 @@ impl eframe::App for ReelSynthApp {
                             &preview_patch,
                             &midi,
                             &config,
+                            Some(scope_ctx),
                         )
                     }
                 } else {
+                    let scope_ctx = ScopeStripContext {
+                        banks: &[],
+                        bank_for_osc,
+                        live: None,
+                        is_playing: false,
+                        now_secs,
+                        state: &mut self.scope_strip_state,
+                    };
                     draw_s1(
                         ui,
                         ui.max_rect(),
@@ -983,6 +1031,7 @@ impl eframe::App for ReelSynthApp {
                         &preview_patch,
                         &midi,
                         &config,
+                        Some(scope_ctx),
                     )
                 };
 

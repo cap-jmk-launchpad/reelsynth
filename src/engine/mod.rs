@@ -11,6 +11,7 @@ pub use midi::{note_to_freq, MidiEvent};
 pub use params::{EngineParams, Smoother};
 pub use voice_pool::{VoicePool, MAX_VOICES};
 pub use voice_rt::RtVoice;
+pub use crate::scope::ScopeMonitor;
 
 use crate::fx::FxChain;
 use crate::patch::Patch;
@@ -29,6 +30,7 @@ pub struct SynthEngine {
     fx: FxChain,
     sample_rate: u32,
     global_time: f32,
+    scope: ScopeMonitor,
 }
 
 impl SynthEngine {
@@ -45,7 +47,12 @@ impl SynthEngine {
             fx,
             sample_rate,
             global_time: 0.0,
+            scope: ScopeMonitor::new(),
         }
+    }
+
+    pub fn scope_monitor(&self) -> &ScopeMonitor {
+        &self.scope
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -292,10 +299,16 @@ impl SynthEngine {
             patch.filter.cutoff = self.params.filter_cutoff.current();
             let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&patch, oi);
 
+            let mut acc_osc = 0.0f32;
             let mut acc_l = 0.0f32;
             let mut acc_r = 0.0f32;
+            let mut voices_active = false;
             for voice in self.pool.voices_mut() {
-                let [l, r] = voice.process_sample(
+                if !voice.active {
+                    continue;
+                }
+                voices_active = voices_active || voice.is_audible();
+                let stages = voice.process_sample_stages(
                     &bank_slice,
                     &bank_for_osc,
                     &patch,
@@ -303,12 +316,16 @@ impl SynthEngine {
                     dt,
                     sr,
                 );
-                acc_l += l;
-                acc_r += r;
+                acc_osc += stages.osc_mono;
+                acc_l += stages.filtered[0];
+                acc_r += stages.filtered[1];
             }
             let gain = self.params.master_gain.current();
+            let filt_mono = (acc_l + acc_r) * 0.5 * gain;
             let mono = self.fx.process_sample((acc_l + acc_r) * 0.5 * gain);
+            let fx_mono = mono;
             *sample = mono;
+            self.scope.write_frame(acc_osc * gain, filt_mono, fx_mono, mono, voices_active);
             self.global_time += dt;
         }
     }
@@ -326,10 +343,16 @@ impl SynthEngine {
             patch.filter.cutoff = self.params.filter_cutoff.current();
             let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&patch, oi);
 
+            let mut acc_osc = 0.0f32;
             let mut acc_l = 0.0f32;
             let mut acc_r = 0.0f32;
+            let mut voices_active = false;
             for voice in self.pool.voices_mut() {
-                let [l, r] = voice.process_sample(
+                if !voice.active {
+                    continue;
+                }
+                voices_active = voices_active || voice.is_audible();
+                let stages = voice.process_sample_stages(
                     &bank_slice,
                     &bank_for_osc,
                     &patch,
@@ -337,13 +360,24 @@ impl SynthEngine {
                     dt,
                     sr,
                 );
-                acc_l += l;
-                acc_r += r;
+                acc_osc += stages.osc_mono;
+                acc_l += stages.filtered[0];
+                acc_r += stages.filtered[1];
             }
             let gain = self.params.master_gain.current();
+            let filt_mono = (acc_l + acc_r) * 0.5 * gain;
             let [l, r] = self.fx.process_stereo(acc_l * gain, acc_r * gain);
+            let fx_mono = (l + r) * 0.5;
+            let out_mono = fx_mono;
             out[frame * 2] = l;
             out[frame * 2 + 1] = r;
+            self.scope.write_frame(
+                acc_osc * gain,
+                filt_mono,
+                fx_mono,
+                out_mono,
+                voices_active,
+            );
             self.global_time += dt;
         }
     }
