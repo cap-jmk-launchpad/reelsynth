@@ -12,6 +12,8 @@ use crate::widgets::{
 const OSC_TABS: [&str; 3] = ["Osc 1", "Osc 2", "Osc 3"];
 const OSC_TYPES: [&str; 5] = ["Wavetable", "Saw", "Square", "Triangle", "Pulse"];
 const WARP_MODES: [&str; 3] = ["None", "Sync", "Bend"];
+const FM_ALGORITHMS: [&str; 4] = ["Off", "2→1", "3→1", "2+3→1"];
+const FM_SOURCES: [&str; 5] = ["None", "Osc 2", "Osc 3", "2+3→1", "Feedback"];
 
 pub fn osc_type_index(ty: &str) -> usize {
     match ty.to_ascii_lowercase().as_str() {
@@ -49,6 +51,44 @@ pub fn warp_mode_from_index(idx: usize) -> &'static str {
     }
 }
 
+pub fn fm_source_index(source: &str) -> usize {
+    match source.to_ascii_lowercase().as_str() {
+        "osc2" => 1,
+        "osc3" => 2,
+        "osc2_osc3" | "osc2+osc3" => 3,
+        "feedback" => 4,
+        _ => 0,
+    }
+}
+
+pub fn fm_source_from_index(idx: usize) -> &'static str {
+    match idx {
+        1 => "osc2",
+        2 => "osc3",
+        3 => "osc2_osc3",
+        4 => "feedback",
+        _ => "none",
+    }
+}
+
+pub fn fm_algorithm_index(source: &str) -> usize {
+    match source.to_ascii_lowercase().as_str() {
+        "osc2" => 1,
+        "osc3" => 2,
+        "osc2_osc3" | "osc2+osc3" => 3,
+        _ => 0,
+    }
+}
+
+pub fn fm_source_from_algorithm(idx: usize) -> &'static str {
+    match idx {
+        1 => "osc2",
+        2 => "osc3",
+        3 => "osc2_osc3",
+        _ => "none",
+    }
+}
+
 pub struct OscColumnState<'a> {
     pub osc_tab: &'a mut usize,
     pub osc_type: &'a mut [usize; 3],
@@ -60,6 +100,10 @@ pub struct OscColumnState<'a> {
     pub osc_pulse_width: &'a mut [f32; 3],
     pub osc_warp_mode: &'a mut [usize; 3],
     pub osc_warp_amount: &'a mut [f32; 3],
+    pub osc_fm_source: &'a mut [usize; 3],
+    pub osc_fm_algorithm: &'a mut [usize; 3],
+    pub osc_fm_ratio: &'a mut [f32; 3],
+    pub osc_fm_index: &'a mut [f32; 3],
     pub unison_stereo_spread: &'a mut f32,
     pub sub_level: &'a mut f32,
     pub noise_level: &'a mut f32,
@@ -149,12 +193,13 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>) -> OscColumnResul
                             changed = true;
                         }
                     });
+                    let warp_label_pct = state.osc_warp_amount[idx] * 100.0;
                     if param_slider(
                         ui,
                         "Warp Amt",
                         &mut state.osc_warp_amount[idx],
                         0.0..=1.0,
-                        &format!("{:.0}%", state.osc_warp_amount[idx] * 100.0),
+                        &format!("{:.0}%", warp_label_pct),
                     ) {
                         changed = true;
                     }
@@ -162,12 +207,13 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>) -> OscColumnResul
 
                 let is_pulse = matches!(state.osc_type[idx], 2 | 4);
                 if is_pulse {
+                    let pw_pct = state.osc_pulse_width[idx] * 100.0;
                     if param_slider(
                         ui,
                         "Pulse W",
                         &mut state.osc_pulse_width[idx],
                         0.05..=0.95,
-                        &format!("{:.0}%", state.osc_pulse_width[idx] * 100.0),
+                        &format!("{:.0}%", pw_pct),
                     ) {
                         changed = true;
                     }
@@ -189,6 +235,65 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>) -> OscColumnResul
                 ) {
                     changed = true;
                 }
+
+                ui.add_space(GRID_UNIT);
+                panel(ui, "FM", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Algo")
+                                .size(10.0)
+                                .color(Tokens::default().text_muted),
+                        );
+                        let algo_label =
+                            FM_ALGORITHMS[state.osc_fm_algorithm[idx].min(FM_ALGORITHMS.len() - 1)];
+                        if ui.button(algo_label).clicked() {
+                            state.osc_fm_algorithm[idx] =
+                                (state.osc_fm_algorithm[idx] + 1) % FM_ALGORITHMS.len();
+                            if state.osc_fm_algorithm[idx] == 0 {
+                                state.osc_fm_source[idx] = 0;
+                            } else {
+                                state.osc_fm_source[idx] = state.osc_fm_algorithm[idx];
+                            }
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Source")
+                                .size(10.0)
+                                .color(Tokens::default().text_muted),
+                        );
+                        let src_label = FM_SOURCES[state.osc_fm_source[idx].min(FM_SOURCES.len() - 1)];
+                        if ui.button(src_label).clicked() {
+                            state.osc_fm_source[idx] =
+                                (state.osc_fm_source[idx] + 1) % FM_SOURCES.len();
+                            state.osc_fm_algorithm[idx] = fm_algorithm_index(fm_source_from_index(
+                                state.osc_fm_source[idx],
+                            ));
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal_centered(|ui| {
+                        ui.spacing_mut().item_spacing.x = SPACE_SM;
+                        let ratio_text = format!("{:.2}", state.osc_fm_ratio[idx]);
+                        let r1 = Knob::new(&mut state.osc_fm_ratio[idx], 0.5..=16.0, "Ratio")
+                            .size(KnobSize::Sm)
+                            .style(KnobStyle::Wired)
+                            .value_text(ratio_text)
+                            .show(ui);
+                        let index_text = format!("{:.1}", state.osc_fm_index[idx]);
+                        let r2 = Knob::new(&mut state.osc_fm_index[idx], 0.0..=10.0, "Index")
+                            .size(KnobSize::Sm)
+                            .style(KnobStyle::Normal)
+                            .value_text(index_text)
+                            .show(ui);
+                        if r1.changed || r2.changed {
+                            changed = true;
+                        }
+                    });
+                });
             });
 
             panel(ui, "Sub / Noise", |ui| {

@@ -39,6 +39,15 @@ pub struct Oscillator {
     pub warp_mode: String,
     #[serde(default)]
     pub warp_amount: f32,
+    /// FM modulator source: none | osc2 | osc3 | osc2_osc3 | feedback.
+    #[serde(default = "default_fm_none")]
+    pub fm_source: String,
+    /// Modulator frequency ratio relative to carrier (0.5..16).
+    #[serde(default = "default_fm_ratio")]
+    pub fm_ratio: f32,
+    /// FM modulation depth (0..10).
+    #[serde(default)]
+    pub fm_index: f32,
 }
 
 impl Oscillator {
@@ -57,6 +66,9 @@ impl Oscillator {
             morph_amount: 0.0,
             warp_mode: default_warp_none(),
             warp_amount: 0.0,
+            fm_source: default_fm_none(),
+            fm_ratio: default_fm_ratio(),
+            fm_index: 0.0,
         }
     }
 }
@@ -69,6 +81,12 @@ fn default_morph_b() -> f32 {
 }
 fn default_warp_none() -> String {
     "none".into()
+}
+fn default_fm_none() -> String {
+    "none".into()
+}
+fn default_fm_ratio() -> f32 {
+    1.0
 }
 
 fn default_wt_type() -> String {
@@ -311,6 +329,9 @@ impl Patch {
                 morph_amount: 0.0,
                 warp_mode: default_warp_none(),
                 warp_amount: 0.0,
+                fm_source: default_fm_none(),
+                fm_ratio: default_fm_ratio(),
+                fm_index: 0.0,
             }],
             filter: Filter::default(),
             filter2: default_filter2(),
@@ -406,6 +427,9 @@ impl Patch {
                 pan: 0.0,
                 wavetable_id: Some("saw_morph".into()),
                 pulse_width: default_pulse_width(),
+                fm_source: default_fm_none(),
+                fm_ratio: default_fm_ratio(),
+                fm_index: 0.0,
             }],
             filter: Filter {
                 cutoff: 2800.0,
@@ -438,6 +462,133 @@ impl Patch {
         }
     }
 
+    /// FM bell: WT carrier + VA sine modulator (2→1).
+    pub fn factory_fm_bell() -> Self {
+        Self {
+            schema: SCHEMA_V2.into(),
+            name: "FM Bell".into(),
+            wavetable_id: Some("sine".into()),
+            oscillators: vec![
+                Oscillator {
+                    osc_type: "wavetable".into(),
+                    level: 0.9,
+                    position: 32.0,
+                    fm_source: "osc2".into(),
+                    fm_ratio: 3.5,
+                    fm_index: 4.5,
+                    wavetable_id: Some("sine".into()),
+                    ..Oscillator::default_va()
+                },
+                Oscillator {
+                    osc_type: "sine".into(),
+                    level: 0.0,
+                    fm_ratio: 1.0,
+                    ..Oscillator::default_va()
+                },
+                Oscillator {
+                    level: 0.0,
+                    ..Oscillator::default_va()
+                },
+            ],
+            filter: Filter {
+                cutoff: 4200.0,
+                resonance: 0.35,
+                key_tracking: 0.75,
+                ..Filter::default()
+            },
+            filter2: Filter {
+                cutoff: 6800.0,
+                resonance: 0.2,
+                filter_type: "highpass".into(),
+                key_tracking: 0.5,
+                ..Filter::default()
+            },
+            envelope: Envelope {
+                attack: 0.002,
+                decay: 1.2,
+                sustain: 0.05,
+                release: 1.8,
+            },
+            filter_envelope: Envelope {
+                attack: 0.001,
+                decay: 0.8,
+                sustain: 0.1,
+                release: 1.5,
+            },
+            lfo: Lfo {
+                rate: 0.35,
+                depth: 0.15,
+                target: "osc1_fm_index".into(),
+            },
+            mod_matrix: vec![ModSlot {
+                source: "lfo1".into(),
+                target: "osc1_fm_index".into(),
+                amount: 0.35,
+                enabled: true,
+            }],
+            ..Self::default_mono()
+        }
+    }
+
+    /// FM pluck: WT carrier with dual-mod algorithm preset (2+3→1).
+    pub fn factory_fm_pluck() -> Self {
+        Self {
+            schema: SCHEMA_V2.into(),
+            name: "FM Pluck".into(),
+            wavetable_id: Some("metallic".into()),
+            oscillators: vec![
+                Oscillator {
+                    osc_type: "wavetable".into(),
+                    level: 0.85,
+                    position: 48.0,
+                    fm_source: "osc2_osc3".into(),
+                    fm_ratio: 2.0,
+                    fm_index: 3.2,
+                    wavetable_id: Some("metallic".into()),
+                    ..Oscillator::default_va()
+                },
+                Oscillator {
+                    osc_type: "sine".into(),
+                    level: 0.0,
+                    fm_ratio: 1.0,
+                    ..Oscillator::default_va()
+                },
+                Oscillator {
+                    osc_type: "triangle".into(),
+                    level: 0.0,
+                    detune: 7.0,
+                    ..Oscillator::default_va()
+                },
+            ],
+            filter: Filter {
+                cutoff: 3200.0,
+                resonance: 0.5,
+                key_tracking: 0.85,
+                ..Filter::default()
+            },
+            filter2: Filter {
+                cutoff: 5200.0,
+                resonance: 0.3,
+                filter_type: "bandpass".into(),
+                key_tracking: 0.6,
+                ..Filter::default()
+            },
+            envelope: Envelope {
+                attack: 0.001,
+                decay: 0.35,
+                sustain: 0.0,
+                release: 0.45,
+            },
+            filter_envelope: Envelope {
+                attack: 0.001,
+                decay: 0.25,
+                sustain: 0.0,
+                release: 0.35,
+            },
+            ..Self::default_mono()
+        }
+    }
+
     /// Ensure at least `count` wavetable oscillators (S3 tri-osc UI).
     pub fn ensure_oscillators(&mut self, count: usize) {
         while self.oscillators.len() < count {
@@ -455,6 +606,9 @@ impl Patch {
                 morph_amount: 0.0,
                 warp_mode: default_warp_none(),
                 warp_amount: 0.0,
+                fm_source: default_fm_none(),
+                fm_ratio: default_fm_ratio(),
+                fm_index: 0.0,
             });
         }
         if let Some(first) = self.oscillators.first_mut() {
@@ -542,6 +696,11 @@ fn migrate_v1_to_v2(v: &mut Value) {
                 o.entry("warp_mode")
                     .or_insert(Value::String("none".into()));
                 o.entry("warp_amount").or_insert(Value::Number(0.into()));
+                o.entry("fm_source")
+                    .or_insert(Value::String("none".into()));
+                o.entry("fm_ratio")
+                    .or_insert(Value::Number(serde_json::Number::from_f64(1.0).unwrap()));
+                o.entry("fm_index").or_insert(Value::Number(0.into()));
             }
         }
     }
@@ -593,5 +752,28 @@ mod tests {
         assert_eq!(p.oscillators[0].warp_mode, "sync");
         assert!(p.oscillators[0].morph_amount > 0.0);
         assert_eq!(p.oscillators[0].unison, 4);
+    }
+
+    #[test]
+    fn factory_fm_bell_has_routing() {
+        let p = Patch::factory_fm_bell();
+        assert_eq!(p.oscillators[0].fm_source, "osc2");
+        assert!(p.oscillators[0].fm_index > 0.0);
+        assert_eq!(p.oscillators[1].osc_type, "sine");
+    }
+
+    #[test]
+    fn factory_fm_pluck_has_dual_mod() {
+        let p = Patch::factory_fm_pluck();
+        assert_eq!(p.oscillators[0].fm_source, "osc2_osc3");
+        assert!(p.envelope.sustain < 0.01);
+    }
+
+    #[test]
+    fn v1_migration_adds_fm_fields() {
+        let json = r#"{"schema":"reelsynth-preset-v1","oscillators":[{"type":"wavetable","level":1.0}]}"#;
+        let p = Patch::from_json(json).unwrap();
+        assert_eq!(p.oscillators[0].fm_source, "none");
+        assert_eq!(p.oscillators[0].fm_ratio, 1.0);
     }
 }

@@ -201,4 +201,53 @@ mod tests {
         let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(peak > 0.05, "wt lead peak={peak}");
     }
+
+    #[test]
+    fn factory_fm_bell_renders() {
+        let bank = WavetableBank::factory_sine();
+        let patch = Patch::factory_fm_bell();
+        let audio = render_note_single_bank(&bank, 880.0, 0.5, 44100, &patch);
+        let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(peak > 0.02, "fm bell peak={peak}");
+    }
+
+    #[test]
+    fn factory_fm_pluck_renders() {
+        let bank = WavetableBank::factory_metallic();
+        let patch = Patch::factory_fm_pluck();
+        let audio = render_note_single_bank(&bank, 440.0, 0.4, 44100, &patch);
+        let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(peak > 0.01, "fm pluck peak={peak}");
+    }
+
+    #[test]
+    fn fm_bell_differs_from_no_fm() {
+        let bank = WavetableBank::factory_sine();
+        let fm = Patch::factory_fm_bell();
+        let mut no_fm = fm.clone();
+        no_fm.oscillators[0].fm_index = 0.0;
+        no_fm.oscillators[0].fm_source = "none".into();
+        let a_fm = render_note_single_bank(&bank, 880.0, 0.3, 44100, &fm);
+        let a_dry = render_note_single_bank(&bank, 880.0, 0.3, 44100, &no_fm);
+        assert!(a_fm.iter().all(|s| s.is_finite()));
+        let start = 2000.min(a_fm.len());
+        let end = a_fm.len().min(12000);
+        let diff: f32 = a_fm[start..end]
+            .iter()
+            .zip(&a_dry[start..end])
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(diff > 0.5, "fm bell diff sum={diff}");
+    }
+
+    #[test]
+    fn fm_bell_render_finite() {
+        let bank = WavetableBank::factory_sine();
+        let patch = Patch::factory_fm_bell();
+        let audio = render_note_single_bank(&bank, 880.0, 0.5, 44100, &patch);
+        assert!(
+            audio.iter().all(|s| s.is_finite()),
+            "non-finite sample in fm bell render"
+        );
+    }
 }

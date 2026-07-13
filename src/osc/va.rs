@@ -7,6 +7,7 @@ pub enum VaWaveform {
     Square,
     Triangle,
     Pulse,
+    Sine,
 }
 
 impl VaWaveform {
@@ -16,6 +17,7 @@ impl VaWaveform {
             "square" => Some(Self::Square),
             "triangle" => Some(Self::Triangle),
             "pulse" => Some(Self::Pulse),
+            "sine" => Some(Self::Sine),
             _ => None,
         }
     }
@@ -34,6 +36,7 @@ pub fn sample_va(
         VaWaveform::Square => square_blep(phase, phase_inc, 0.5),
         VaWaveform::Pulse => square_blep(phase, phase_inc, pw),
         VaWaveform::Triangle => triangle_blep(phase, phase_inc),
+        VaWaveform::Sine => (phase.fract() * std::f32::consts::TAU).sin(),
     }
 }
 

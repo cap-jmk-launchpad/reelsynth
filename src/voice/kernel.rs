@@ -1,6 +1,7 @@
 //! Shared per-sample voice DSP kernel (offline + realtime).
 
-use crate::osc::{sample_va, VaWaveform, WtWarpMode};
+use crate::fm::{fm_mod_signal, sample_carrier_with_fm, FmSource};
+use crate::osc::{WtWarpMode};
 use crate::patch::{Envelope, Filter, Lfo, ModSlot, Oscillator, Patch};
 use crate::wavetable::WavetableBank;
 
@@ -19,6 +20,8 @@ pub struct VoiceState {
     pub svf2_low: f32,
     pub svf2_band: f32,
     pub noise_seed: u32,
+    /// Previous-sample feedback for self-FM per osc slot.
+    pub fm_feedback: [f32; 3],
 }
 
 impl VoiceState {
@@ -41,6 +44,7 @@ impl VoiceState {
             svf2_low: 0.0,
             svf2_band: 0.0,
             noise_seed: 1,
+            fm_feedback: [0.0; 3],
         }
     }
 
@@ -63,6 +67,7 @@ impl VoiceState {
         self.svf2_low = 0.0;
         self.svf2_band = 0.0;
         self.noise_seed = self.noise_seed.wrapping_add(1);
+        self.fm_feedback = [0.0; 3];
     }
 }
 
@@ -126,15 +131,23 @@ pub fn process_sample(state: &mut VoiceState, ctx: &VoiceSampleContext<'_>) -> [
             .get(&format!("osc{}_position", oi + 1))
             .copied()
             .unwrap_or(0.0);
+        let fm_index_mod = mods
+            .get(&format!("osc{}_fm_index", oi + 1))
+            .copied()
+            .unwrap_or(0.0);
         let wt_pos = wt_position(osc, pos_mod, lfo, &ctx.patch.lfo, bank.num_frames);
         let det_mod = mods
             .get(&format!("osc{}_detune", oi + 1))
             .copied()
             .unwrap_or(0.0);
         let unison = osc.unison.max(1) as usize;
-        let va_wave = VaWaveform::from_osc_type(&osc.osc_type);
         let warp = WtWarpMode::from_str(&osc.warp_mode);
         let warp_amount = osc.warp_amount;
+        let fm_source = FmSource::from_str(&osc.fm_source);
+        let fm_ratio = osc.fm_ratio.clamp(0.5, 16.0);
+        let fm_index = (osc.fm_index + fm_index_mod
+            + lfo_for_target(&ctx.patch.lfo, lfo, &format!("osc{}_fm_index", oi + 1)))
+        .clamp(0.0, 10.0);
 
         for u in 0..unison {
             let det_spread = if unison > 1 {
@@ -156,13 +169,32 @@ pub fn process_sample(state: &mut VoiceState, ctx: &VoiceSampleContext<'_>) -> [
                 *phase -= 1.0;
             }
 
-            let osc_sample = if let Some(wave) = va_wave {
-                sample_va(wave, *phase, phase_inc, osc.pulse_width)
-            } else {
-                bank.sample_warped(wt_pos, *phase, warp, warp_amount)
-            } * osc.level
-                * amplitude
-                / unison as f32;
+            let mod_signal = fm_mod_signal(
+                fm_source,
+                oi,
+                &ctx.patch.oscillators,
+                ctx.banks,
+                ctx.bank_for_osc,
+                *phase,
+                fm_ratio,
+                phase_inc,
+                state.fm_feedback[oi],
+            );
+
+            let raw = sample_carrier_with_fm(
+                osc,
+                bank,
+                *phase,
+                phase_inc,
+                wt_pos,
+                warp,
+                warp_amount,
+                mod_signal,
+                fm_index,
+            );
+            state.fm_feedback[oi] = raw;
+
+            let osc_sample = raw * osc.level * amplitude / unison as f32;
 
             let (pan_l, pan_r) = equal_power_pan(osc.pan + pan_spread);
             left += osc_sample * pan_l;
@@ -354,6 +386,8 @@ fn svf_filter(
     *low += f * *band;
     let high = driven - *low - q * *band;
     *band += f * high;
+    *low = low.clamp(-8.0, 8.0);
+    *band = band.clamp(-8.0, 8.0);
 
     let out = match mode.to_ascii_lowercase().as_str() {
         "highpass" | "hp" => high,
@@ -555,5 +589,72 @@ mod tests {
             wide_diff += (l2 - r2).abs();
         }
         assert!(wide_diff > narrow_diff * 1.2, "narrow={narrow_diff} wide={wide_diff}");
+    }
+
+    #[test]
+    fn fm_index_changes_output() {
+        let bank = WavetableBank::factory_sine();
+        let mut wet_patch = Patch::factory_fm_bell();
+        wet_patch.mod_matrix.clear();
+        wet_patch.lfo.depth = 0.0;
+        let mut dry_patch = wet_patch.clone();
+        dry_patch.oscillators[0].fm_source = "none".into();
+        dry_patch.oscillators[0].fm_index = 0.0;
+
+        let mut dry = VoiceState::new(&dry_patch);
+        let mut wet = VoiceState::new(&wet_patch);
+        let dt = 1.0 / 44100.0;
+        let mut diff = 0.0f32;
+        for i in 0..4410 {
+            let t = i as f32 * dt;
+            let ctx_dry = single_bank_ctx(&bank, &dry_patch, 880.0, true, 1.0, t, dt);
+            let ctx_wet = single_bank_ctx(&bank, &wet_patch, 880.0, true, 1.0, t, dt);
+            let [l_d, _] = process_sample(&mut dry, &ctx_dry);
+            let [l_w, _] = process_sample(&mut wet, &ctx_wet);
+            assert!(l_d.is_finite(), "dry NaN at {i}");
+            assert!(l_w.is_finite(), "wet NaN at {i}");
+            if i > 500 {
+                diff += (l_d - l_w).abs();
+            }
+        }
+        assert!(diff > 0.5, "fm diff={diff}");
+    }
+
+    #[test]
+    fn fm_index_mod_matrix_applies() {
+        let bank = WavetableBank::factory_sine();
+        let mut base = Patch::factory_fm_bell();
+        base.mod_matrix.clear();
+        base.lfo.depth = 0.0;
+        base.lfo.target = "wt_position".into();
+        let mut modded = base.clone();
+        modded.mod_matrix.push(crate::patch::ModSlot {
+            source: "lfo1".into(),
+            target: "osc1_fm_index".into(),
+            amount: 2.0,
+            enabled: true,
+        });
+        modded.lfo.depth = 1.0;
+        modded.lfo.rate = 10.0;
+        modded.lfo.target = "wt_position".into();
+
+        let mut v1 = VoiceState::new(&base);
+        let mut v2 = VoiceState::new(&modded);
+        let dt = 1.0 / 44100.0;
+        let mut diff = 0.0f32;
+        for i in 0..4410 {
+            let t = i as f32 * dt;
+            let [l1, _] = process_sample(
+                &mut v1,
+                &single_bank_ctx(&bank, &base, 660.0, true, 1.0, t, dt),
+            );
+            let [l2, _] = process_sample(
+                &mut v2,
+                &single_bank_ctx(&bank, &modded, 660.0, true, 1.0, t, dt),
+            );
+            assert!(l1.is_finite() && l2.is_finite());
+            diff += (l1 - l2).abs();
+        }
+        assert!(diff > 0.01, "mod fm diff={diff}");
     }
 }

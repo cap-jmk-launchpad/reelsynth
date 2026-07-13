@@ -17,7 +17,8 @@ pub use mod_matrix::{
     ModMatrixState, ModPolarity, ModRouteUi,
 };
 pub use osc::{
-    draw_osc_column, osc_type_from_index, osc_type_index, warp_mode_from_index,
+    draw_osc_column, fm_algorithm_index, fm_source_from_algorithm, fm_source_from_index,
+    fm_source_index, osc_type_from_index, osc_type_index, warp_mode_from_index,
     warp_mode_index, OscColumnResult, OscColumnState,
 };
 pub use scope::{draw_scope_strip, SCOPE_STRIP_HEIGHT};

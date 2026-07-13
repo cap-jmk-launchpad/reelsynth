@@ -7,7 +7,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
 use midi_input::{MidiDevices, MidiInputHandle};
 use reelsynth::{import::{import_serum_fxp, import_vital, import_wav_folder}, load_preset, resolve_bank_for_preset, Envelope, ModSlot, Patch, SynthEngine, WavetableBank};
-use reelsynth_ui::{draw_s1, factory_bank, factory_label, fx_slots_from_bypass, fx_slots_to_bypass, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
+use reelsynth_ui::{draw_s1, factory_bank, factory_label, fm_algorithm_index, fm_source_from_index, fm_source_index, fx_slots_from_bypass, fx_slots_to_bypass, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -36,6 +36,15 @@ enum AudioCmd {
         morph_amount: f32,
         warp_mode: String,
         warp_amount: f32,
+        fm_source: String,
+        fm_ratio: f32,
+        fm_index: f32,
+    },
+    SetOscFm {
+        index: usize,
+        fm_source: String,
+        fm_ratio: f32,
+        fm_index: f32,
     },
     SetFilterDrive(f32),
     SetFilter2 {
@@ -181,6 +190,9 @@ fn drain_commands(
                 morph_amount,
                 warp_mode,
                 warp_amount,
+                fm_source,
+                fm_ratio,
+                fm_index,
             }) => {
                 engine.set_osc_level(index, level);
                 engine.set_osc_detune(index, detune);
@@ -191,7 +203,14 @@ fn drain_commands(
                 engine.set_osc_pulse_width(index, pulse_width);
                 engine.set_osc_morph(index, morph_a, morph_b, morph_amount);
                 engine.set_osc_warp(index, &warp_mode, warp_amount);
+                engine.set_osc_fm(index, &fm_source, fm_ratio, fm_index);
             }
+            Ok(AudioCmd::SetOscFm {
+                index,
+                fm_source,
+                fm_ratio,
+                fm_index,
+            }) => engine.set_osc_fm(index, &fm_source, fm_ratio, fm_index),
             Ok(AudioCmd::SetFilterDrive(d)) => engine.set_filter_drive(d),
             Ok(AudioCmd::SetFilter2 {
                 cutoff,
@@ -267,6 +286,10 @@ fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
             state.osc_pulse_width[i] = osc.pulse_width;
             state.osc_warp_mode[i] = warp_mode_index(&osc.warp_mode);
             state.osc_warp_amount[i] = osc.warp_amount;
+            state.osc_fm_source[i] = fm_source_index(&osc.fm_source);
+            state.osc_fm_algorithm[i] = fm_algorithm_index(&osc.fm_source);
+            state.osc_fm_ratio[i] = osc.fm_ratio;
+            state.osc_fm_index[i] = osc.fm_index;
         }
     }
     state.unison_stereo_spread = patch.unison_stereo_spread;
@@ -352,6 +375,9 @@ fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
             osc.morph_a = state.osc_morph_a[i];
             osc.morph_b = state.osc_morph_b[i];
             osc.morph_amount = state.osc_morph_amount[i];
+            osc.fm_source = fm_source_from_index(state.osc_fm_source[i]).into();
+            osc.fm_ratio = state.osc_fm_ratio[i];
+            osc.fm_index = state.osc_fm_index[i];
             if state.osc_morph_amount[i] > 0.0 {
                 osc.position = state.osc_morph_a[i]
                     + (state.osc_morph_b[i] - state.osc_morph_a[i]) * state.osc_morph_amount[i];
@@ -534,6 +560,15 @@ impl ReelSynthApp {
                     morph_amount: self.state.osc_morph_amount[i],
                     warp_mode: warp_mode_from_index(self.state.osc_warp_mode[i]).into(),
                     warp_amount: self.state.osc_warp_amount[i],
+                    fm_source: fm_source_from_index(self.state.osc_fm_source[i]).into(),
+                    fm_ratio: self.state.osc_fm_ratio[i],
+                    fm_index: self.state.osc_fm_index[i],
+                });
+                a.send(AudioCmd::SetOscFm {
+                    index: i,
+                    fm_source: fm_source_from_index(self.state.osc_fm_source[i]).into(),
+                    fm_ratio: self.state.osc_fm_ratio[i],
+                    fm_index: self.state.osc_fm_index[i],
                 });
             }
             a.send(AudioCmd::SetSubLevel(self.state.sub_level));

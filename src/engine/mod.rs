@@ -159,6 +159,21 @@ impl SynthEngine {
         }
     }
 
+    pub fn set_osc_fm(
+        &mut self,
+        index: usize,
+        fm_source: &str,
+        fm_ratio: f32,
+        fm_index: f32,
+    ) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.fm_source = fm_source.to_string();
+            osc.fm_ratio = fm_ratio.clamp(0.5, 16.0);
+            osc.fm_index = fm_index.clamp(0.0, 10.0);
+        }
+    }
+
     pub fn set_envelope(&mut self, envelope: crate::patch::Envelope) {
         self.patch.envelope = envelope;
     }
