@@ -216,7 +216,7 @@ pub(super) fn draw_center(
             if result.changed {
                 actions.params_changed = true;
             }
-            let used = ui.min_rect();
+            let used = ui.min_rect().intersect(mod_rect);
             ui.ctx()
                 .data_mut(|d| d.insert_temp(center_mod_used_rect_id(), used));
             });

@@ -1,11 +1,16 @@
 use egui::{Rect, Ui};
+use reelsynth::Patch;
 use reelsynth_ui_theme::Tokens;
 
 use super::*;
 use crate::layout::UiScale;
 use crate::layout_audit::{header_used_rect_id, osc_used_rect_id};
+use crate::osc_column::{draw_osc_column, OscColumnInput, OscColumnState};
 use crate::region::region;
-use crate::widgets::{button_ghost, button_toggle};
+use crate::widgets::{button_ghost, button_toggle, menu_action, menu_divider, menu_section_label, menu_selectable, reel_combo, select_value_text, styled_menu_body};
+use crate::state::OscStripContext;
+use crate::wt::morph_amount_for_position;
+
 pub(super) fn draw_header(
     ui: &mut Ui,
     rect: Rect,
@@ -40,44 +45,38 @@ pub(super) fn draw_header(
                     }
 
                     ui.menu_button(header_menu_label("WT"), |ui| {
-                        if ui.button("Open .reelwt…").clicked() {
+                        styled_menu_body(ui, |ui| {
+                        if menu_action(ui, "Open .reelwt…").clicked() {
                             actions.import_wt_file = true;
                             ui.close_menu();
                         }
-                        if ui.button("Save .reelwt…").clicked() {
+                        if menu_action(ui, "Save .reelwt…").clicked() {
                             actions.save_wt_file = true;
                             ui.close_menu();
                         }
-                        ui.separator();
-                        ui.label(
-                            egui::RichText::new("Factory banks")
-                                .size(10.0)
-                                .color(tokens.text_muted),
-                        );
+                        menu_divider(ui);
+                        menu_section_label(ui, "Factory banks");
                         for entry in FACTORY_BANKS {
-                            if ui.button(entry.label).clicked() {
+                            if menu_action(ui, entry.label).clicked() {
                                 actions.import_factory_wt = Some(entry.id.to_string());
                                 ui.close_menu();
                             }
                         }
-                        ui.separator();
-                        ui.label(
-                            egui::RichText::new("Import")
-                                .size(10.0)
-                                .color(tokens.text_muted),
-                        );
-                        if ui.button("Vital (.vitaltable)…").clicked() {
+                        menu_divider(ui);
+                        menu_section_label(ui, "Import");
+                        if menu_action(ui, "Vital (.vitaltable)…").clicked() {
                             actions.import_vital_wt = true;
                             ui.close_menu();
                         }
-                        if ui.button("WAV folder…").clicked() {
+                        if menu_action(ui, "WAV folder…").clicked() {
                             actions.import_wav_folder = true;
                             ui.close_menu();
                         }
-                        if ui.button("Serum (.fxp)…").clicked() {
+                        if menu_action(ui, "Serum (.fxp)…").clicked() {
                             actions.import_serum_fxp = true;
                             ui.close_menu();
                         }
+                        });
                     });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -106,24 +105,18 @@ pub(super) fn draw_header(
                             state.piano_visible = !state.piano_visible;
                         }
 
-                        egui::ComboBox::from_id_salt("s1_midi_device")
-                            .selected_text(
-                                midi.names
-                                    .get(midi.selected)
-                                    .map(String::as_str)
-                                    .unwrap_or("MIDI"),
-                            )
-                            .width(140.0)
-                            .show_ui(ui, |ui| {
-                                for (idx, name) in midi.names.iter().enumerate() {
-                                    if ui
-                                        .selectable_label(midi.selected == idx, name)
-                                        .clicked()
-                                    {
-                                        actions.midi_device_selected = Some(idx);
-                                    }
+                        let midi_label = midi
+                            .names
+                            .get(midi.selected)
+                            .map(String::as_str)
+                            .unwrap_or("MIDI");
+                        reel_combo(ui, "s1_midi_device", select_value_text(midi_label), 148.0, |ui| {
+                            for (idx, name) in midi.names.iter().enumerate() {
+                                if menu_selectable(ui, midi.selected == idx, name).clicked() {
+                                    actions.midi_device_selected = Some(idx);
                                 }
-                            });
+                            }
+                        });
                     });
                 });
             });
@@ -146,33 +139,38 @@ fn header_menu_label(label: &str) -> egui::WidgetText {
 }
 
 pub(super) fn sync_morph_to_active_tab(state: &mut UiState) {
-    let idx = state.osc_tab.min(2);
-    state.wt_morph_a = state.osc_morph_a[idx];
-    state.wt_morph_b = state.osc_morph_b[idx];
-    state.wt_morph_amount = state.osc_morph_amount[idx];
+    let active = state.active_osc().clone();
+    state.wt_morph_a = active.morph_a;
+    state.wt_morph_b = active.morph_b;
+    state.wt_morph_amount = active.morph_amount;
 }
 
 pub(super) fn sync_morph_from_active_tab(state: &mut UiState) {
-    let idx = state.osc_tab.min(2);
-    state.osc_morph_a[idx] = state.wt_morph_a;
-    state.osc_morph_b[idx] = state.wt_morph_b;
-    state.osc_morph_amount[idx] = state.wt_morph_amount;
+    let idx = state.active_osc_index();
+    let morph_a = state.wt_morph_a;
+    let morph_b = state.wt_morph_b;
+    let morph_amount = state.wt_morph_amount;
+    state.oscillators[idx].morph_a = morph_a;
+    state.oscillators[idx].morph_b = morph_b;
+    state.oscillators[idx].morph_amount = morph_amount;
 }
 
 pub(super) fn sync_wt_position_from_osc(state: &mut UiState) {
-    let idx = state.osc_tab.min(2);
-    state.wt_position = state.osc_position[idx];
+    let idx = state.active_osc_index();
+    state.wt_position = state.oscillators[idx].position;
 }
 
 pub(super) fn sync_osc_position_from_wt(state: &mut UiState) {
-    let idx = state.osc_tab.min(2);
-    state.osc_position[idx] = state.wt_position;
+    let idx = state.active_osc_index();
+    state.oscillators[idx].position = state.wt_position;
 }
 
 pub(super) fn draw_osc(
     ui: &mut Ui,
     rect: Rect,
     state: &mut UiState,
+    preview_patch: &Patch,
+    osc_preview: Option<OscStripContext<'_>>,
     actions: &mut ShellActions,
     scale: UiScale,
 ) {
@@ -181,24 +179,16 @@ pub(super) fn draw_osc(
         let result = draw_osc_column(
             ui,
             OscColumnState {
+                oscillators: &mut state.oscillators,
                 osc_tab: &mut state.osc_tab,
-                osc_type: &mut state.osc_type,
-                osc_level: &mut state.osc_level,
-                osc_pan: &mut state.osc_pan,
-                osc_coarse: &mut state.osc_coarse,
-                osc_unison: &mut state.osc_unison,
-                osc_position: &mut state.osc_position,
-                osc_pulse_width: &mut state.osc_pulse_width,
-                osc_warp_mode: &mut state.osc_warp_mode,
-                osc_warp_amount: &mut state.osc_warp_amount,
-                osc_fm_source: &mut state.osc_fm_source,
-                osc_fm_algorithm: &mut state.osc_fm_algorithm,
-                osc_fm_ratio: &mut state.osc_fm_ratio,
-                osc_fm_index: &mut state.osc_fm_index,
                 unison_stereo_spread: &mut state.unison_stereo_spread,
                 sub_level: &mut state.sub_level,
                 noise_level: &mut state.noise_level,
                 macro_values: &mut state.macro_values,
+            },
+            OscColumnInput {
+                patch: preview_patch,
+                preview: osc_preview,
             },
             scale.ui(),
         );
@@ -215,11 +205,14 @@ pub(super) fn draw_osc(
                 state.wt_morph_b,
                 state.wt_position,
             );
-            state.osc_morph_amount[state.osc_tab.min(2)] = state.wt_morph_amount;
+            let idx = state.active_osc_index();
+            state.oscillators[idx].morph_amount = state.wt_morph_amount;
             actions.params_changed = true;
         }
-        let used = ui.min_rect();
+        if result.osc_count_changed {
+            actions.params_changed = true;
+        }
+        let used = ui.min_rect().intersect(rect);
         ui.ctx().data_mut(|d| d.insert_temp(osc_used_rect_id(), used));
     });
 }
-

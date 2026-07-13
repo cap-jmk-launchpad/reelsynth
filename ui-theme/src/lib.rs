@@ -58,16 +58,20 @@ pub fn apply_tokens(visuals: &mut Visuals, t: &Tokens) {
     visuals.window_stroke = Stroke::new(1.0_f32, t.border);
     visuals.widgets.noninteractive.bg_fill = t.bg_muted;
     visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, t.text_muted);
-    visuals.widgets.inactive.bg_fill = t.bg_muted;
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, t.text);
+    visuals.widgets.inactive.bg_fill = t.surface2;
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, t.border);
+    visuals.widgets.inactive.rounding = Rounding::same(6.0);
     visuals.widgets.hovered.bg_fill = t.accent_muted;
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.5_f32, t.text);
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, t.accent);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, ACCENT_UI);
+    visuals.widgets.hovered.rounding = Rounding::same(6.0);
     visuals.widgets.active.bg_fill = t.accent;
     visuals.widgets.active.fg_stroke = Stroke::new(1.5_f32, t.accent_on);
     visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, t.accent);
-    visuals.widgets.open.bg_fill = t.accent_muted;
+    visuals.widgets.active.rounding = Rounding::same(6.0);
+    visuals.widgets.open.bg_fill = t.surface2;
+    visuals.widgets.open.bg_stroke = Stroke::new(1.0_f32, ACCENT_UI);
+    visuals.widgets.open.rounding = Rounding::same(6.0);
     visuals.selection.bg_fill = t.accent.gamma_multiply(0.35);
     visuals.selection.stroke = Stroke::new(1.0_f32, t.accent);
     visuals.hyperlink_color = t.accent;
@@ -137,7 +141,10 @@ pub fn apply_fonts(ctx: &egui::Context) {
         FontId::new(10.0, FontFamily::Monospace),
     );
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-    style.spacing.button_padding = egui::vec2(8.0, 4.0);
+    style.spacing.button_padding = egui::vec2(10.0, 5.0);
+    style.spacing.interact_size = egui::vec2(72.0, 26.0);
+    style.spacing.combo_width = 140.0;
+    style.spacing.icon_width = 10.0;
     ctx.set_style(style);
 }
 

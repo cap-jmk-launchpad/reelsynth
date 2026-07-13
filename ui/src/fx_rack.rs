@@ -6,7 +6,7 @@ use reelsynth_ui_theme::{heading_font, Tokens, ACCENT_UI};
 
 use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, SPACE_SM};
 use crate::region::region;
-use crate::widgets::button_icon;
+use crate::widgets::{button_icon, menu_selectable, reel_combo, select_value_text};
 
 pub const FX_SLOT_WIDTH: f32 = 148.0;
 pub const FX_SECTION_HEADER: f32 = 24.0;
@@ -350,28 +350,30 @@ fn draw_fx_slot_column(
                     changed = true;
                     return;
                 }
-                egui::ComboBox::from_id_salt(format!("fx_type_{idx}"))
-                    .selected_text(slots[idx].effect_type.label())
-                    .width(metrics.slot_width - 56.0)
-                    .show_ui(ui, |ui| {
+                reel_combo(
+                    ui,
+                    format!("fx_type_{idx}"),
+                    select_value_text(slots[idx].effect_type.label()),
+                    metrics.slot_width - 56.0,
+                    |ui| {
                         for ty in EffectType::ALL {
-                            if ui
-                                .selectable_value(
-                                    &mut slots[idx].effect_type,
-                                    ty.clone(),
-                                    ty.label(),
-                                )
-                                .clicked()
+                            if menu_selectable(
+                                ui,
+                                slots[idx].effect_type == ty,
+                                ty.label(),
+                            )
+                            .clicked()
                             {
                                 let bypassed = slots[idx].bypassed;
                                 let mix = slots[idx].mix;
-                                slots[idx] = EffectSlotUi::from_slot(&EffectSlot::for_type(ty));
+                                slots[idx] = EffectSlotUi::from_slot(&EffectSlot::for_type(ty.clone()));
                                 slots[idx].bypassed = bypassed;
                                 slots[idx].mix = mix;
                                 changed = true;
                             }
                         }
-                    });
+                    },
+                );
             },
         );
     });

@@ -4,6 +4,7 @@ use reelsynth::{ScopeLiveTaps, WavetableBank};
 
 use crate::fx_rack::{default_effect_slots, EffectSlotUi};
 use crate::mod_matrix::{default_mod_slots, ModSlotUi};
+use crate::oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
 use crate::scope_strip::ScopeStripState;
 use crate::wt::{morph_amount_for_position, WtEditTool};
 
@@ -37,30 +38,31 @@ pub struct ShellMidiDevices<'a> {
     pub selected: usize,
 }
 
+/// Cached waveform previews for the horizontal osc strip.
+#[derive(Clone, Debug, Default)]
+pub struct OscStripPreviewState {
+    pub per_osc: Vec<Vec<f32>>,
+    pub combined: Vec<f32>,
+    pub last_preview_secs: f64,
+    pub osc_count: usize,
+}
+
+pub struct OscStripContext<'a> {
+    pub banks: &'a [WavetableBank],
+    pub bank_for_osc: &'a dyn Fn(usize) -> usize,
+    pub now_secs: f64,
+    pub state: &'a mut OscStripPreviewState,
+}
+
 pub struct UiState {
     pub wt_position: f32,
-    pub osc_position: [f32; 3],
     pub wt_bank_name: String,
     pub wt_edit_tool: WtEditTool,
     pub wt_morph_a: f32,
     pub wt_morph_b: f32,
     pub wt_morph_amount: f32,
-    pub osc_morph_a: [f32; 3],
-    pub osc_morph_b: [f32; 3],
-    pub osc_morph_amount: [f32; 3],
+    pub oscillators: Vec<OscillatorUi>,
     pub osc_tab: usize,
-    pub osc_type: [usize; 3],
-    pub osc_level: [f32; 3],
-    pub osc_pan: [f32; 3],
-    pub osc_coarse: [f32; 3],
-    pub osc_unison: [u32; 3],
-    pub osc_pulse_width: [f32; 3],
-    pub osc_warp_mode: [usize; 3],
-    pub osc_warp_amount: [f32; 3],
-    pub osc_fm_source: [usize; 3],
-    pub osc_fm_algorithm: [usize; 3],
-    pub osc_fm_ratio: [f32; 3],
-    pub osc_fm_index: [f32; 3],
     pub unison_stereo_spread: f32,
     pub sub_level: f32,
     pub noise_level: f32,
@@ -110,32 +112,55 @@ pub struct ScopeStripContext<'a> {
     pub state: &'a mut ScopeStripState,
 }
 
+impl UiState {
+    pub fn active_osc_index(&self) -> usize {
+        self.osc_tab.min(self.oscillators.len().saturating_sub(1))
+    }
+
+    pub fn active_osc(&self) -> &OscillatorUi {
+        &self.oscillators[self.active_osc_index()]
+    }
+
+    pub fn active_osc_mut(&mut self) -> &mut OscillatorUi {
+        let idx = self.active_osc_index();
+        &mut self.oscillators[idx]
+    }
+
+    pub fn add_oscillator(&mut self) {
+        self.oscillators.push(OscillatorUi::new_silent());
+        self.osc_tab = self.oscillators.len().saturating_sub(1);
+    }
+
+    pub fn remove_oscillator(&mut self, index: usize) {
+        if self.oscillators.len() <= MIN_OSCILLATORS {
+            return;
+        }
+        if index < self.oscillators.len() {
+            self.oscillators.remove(index);
+            self.osc_tab = self.osc_tab.min(self.oscillators.len().saturating_sub(1));
+        }
+    }
+
+    fn default_oscillators() -> Vec<OscillatorUi> {
+        vec![
+            OscillatorUi::new_active(),
+            OscillatorUi::new_silent(),
+            OscillatorUi::new_silent(),
+        ]
+    }
+}
+
 impl Default for UiState {
     fn default() -> Self {
         Self {
             wt_position: 108.0,
-            osc_position: [108.0, 0.0, 0.0],
             wt_bank_name: "Saw Morph".into(),
             wt_edit_tool: WtEditTool::Select,
             wt_morph_a: 0.0,
             wt_morph_b: 255.0,
             wt_morph_amount: morph_amount_for_position(0.0, 255.0, 108.0),
-            osc_morph_a: [0.0; 3],
-            osc_morph_b: [255.0; 3],
-            osc_morph_amount: [0.0; 3],
+            oscillators: Self::default_oscillators(),
             osc_tab: 0,
-            osc_type: [0, 0, 0],
-            osc_level: [0.85, 0.0, 0.0],
-            osc_pan: [0.0, 0.0, 0.0],
-            osc_coarse: [0.0, 0.0, 0.0],
-            osc_unison: [3, 1, 1],
-            osc_pulse_width: [0.5, 0.5, 0.5],
-            osc_warp_mode: [0, 0, 0],
-            osc_warp_amount: [0.0, 0.0, 0.0],
-            osc_fm_source: [0, 0, 0],
-            osc_fm_algorithm: [0, 0, 0],
-            osc_fm_ratio: [1.0, 1.0, 1.0],
-            osc_fm_index: [0.0, 0.0, 0.0],
             unison_stereo_spread: 0.7,
             sub_level: 0.0,
             noise_level: 0.0,

@@ -16,7 +16,8 @@ use crate::mod_matrix::{draw_mod_matrix, ModMatrixState};
 use crate::region::region;
 
 pub use crate::state::{
-    ScopeStripContext, ShellActions, ShellConfig, ShellMidiDevices, UiState,
+    OscStripContext, OscStripPreviewState, ScopeStripContext, ShellActions, ShellConfig,
+    ShellMidiDevices, UiState,
 };
 
 // Re-exports for shell submodules (`use super::*`).
@@ -46,6 +47,7 @@ pub fn draw_shell(
     midi: &ShellMidiDevices<'_>,
     config: &ShellConfig,
     scope: Option<ScopeStripContext<'_>>,
+    osc_preview: Option<OscStripContext<'_>>,
 ) -> ShellActions {
     let layout_opts = ShellLayoutOptions {
         piano_visible: state.piano_visible,
@@ -111,7 +113,15 @@ pub fn draw_shell(
 
     draw_header(ui, layout.header, state, midi, &mut actions);
     if layout.osc.is_positive() {
-        draw_osc(ui, layout.osc, state, &mut actions, layout.scale);
+        draw_osc(
+            ui,
+            layout.osc,
+            state,
+            preview_patch,
+            osc_preview,
+            &mut actions,
+            layout.scale,
+        );
     }
     draw_center(
         ui,

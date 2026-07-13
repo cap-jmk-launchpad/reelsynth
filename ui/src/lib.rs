@@ -6,6 +6,7 @@ mod layout;
 mod layout_audit;
 mod mod_matrix;
 mod osc_column;
+mod oscillator_ui;
 mod scope_strip;
 mod shell;
 mod state;
@@ -34,11 +35,15 @@ pub use mod_matrix::{
 pub use osc_column::{
     draw_osc_column, fm_algorithm_index, fm_source_from_algorithm, fm_source_from_index,
     fm_source_index, osc_type_from_index, osc_type_index, warp_mode_from_index,
-    warp_mode_index, OscColumnResult, OscColumnState,
+    warp_mode_index, OscColumnInput, OscColumnResult, OscColumnState,
 };
+pub use oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
 pub use scope_strip::{draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_STRIP_HEIGHT};
 pub use shell::draw_shell;
-pub use state::{ShellActions, ShellMidiDevices, ShellConfig, UiState, ScopeStripContext};
+pub use state::{
+    OscStripContext, OscStripPreviewState, ShellActions, ShellConfig, ShellMidiDevices, UiState,
+    ScopeStripContext,
+};
 pub use wt::{factory_bank, factory_label, FactoryBankEntry, FACTORY_BANKS};
 
 pub use state_sync::{filter_mode_from_type, filter_type_from_mode, lfo_shape_from_index, lfo_shape_index, patch_from_state, sync_state_from_patch};

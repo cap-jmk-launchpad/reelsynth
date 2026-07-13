@@ -64,8 +64,18 @@ fn fx_rack_add_slot() {
 fn osc_tab_switch_follows_state() {
     let mut state = UiState::default();
     state.osc_tab = 1;
-    state.osc_type[1] = osc_type_index("square");
-    assert_eq!(state.osc_type[1], 2);
+    state.oscillators[1].osc_type = osc_type_index("square");
+    assert_eq!(state.oscillators[1].osc_type, 2);
+}
+
+#[test]
+fn add_remove_oscillator_state() {
+    let mut state = UiState::default();
+    let initial = state.oscillators.len();
+    state.add_oscillator();
+    assert_eq!(state.oscillators.len(), initial + 1);
+    state.remove_oscillator(0);
+    assert_eq!(state.oscillators.len(), initial);
 }
 
 #[test]
@@ -105,6 +115,7 @@ fn compact_mode_collapses_sections() {
                         &preview,
                         &midi,
                         &config,
+                        None,
                         None,
                     );
                 });
@@ -177,6 +188,7 @@ fn full_shell_min_window_no_layout_overlap() {
                         &midi,
                         &config,
                         None,
+                        None,
                     );
                 });
             },
@@ -241,6 +253,7 @@ fn rail_widgets_within_rail_bounds_min_window() {
                         &preview,
                         &midi,
                         &config,
+                        None,
                         None,
                     );
                 });
@@ -342,6 +355,7 @@ fn interface_used_rects_within_allocated_min_window() {
                         &preview,
                         &midi,
                         &config,
+                        None,
                         None,
                     );
                 });

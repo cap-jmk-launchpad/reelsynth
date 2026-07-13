@@ -1,10 +1,10 @@
 //! Patch ↔ `UiState` synchronization (extracted for Q&A roundtrip tests).
 
-use reelsynth::patch::{Envelope, Patch};
+use reelsynth::patch::{Envelope, Oscillator, Patch};
 use crate::{
-    effect_slots_from_patch, effect_slots_to_patch, factory_label, fm_algorithm_index,
-    fm_source_from_index, fm_source_index, mod_slots_from_patch, mod_slots_to_patch,
-    osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, UiState,
+    effect_slots_from_patch, effect_slots_to_patch, factory_label, fm_source_from_index,
+    mod_slots_from_patch, mod_slots_to_patch, osc_type_from_index, OscillatorUi, UiState,
+    warp_mode_from_index, warp_mode_index,
 };
 
 pub fn lfo_shape_from_index(idx: usize) -> &'static str {
@@ -52,6 +52,32 @@ fn preset_category_label(patch: &Patch) -> String {
     format!("Preset · Wavetable · {wt}")
 }
 
+fn osc_ui_to_patch(osc: &OscillatorUi) -> Oscillator {
+    let mut out = Oscillator {
+        osc_type: osc_type_from_index(osc.osc_type).into(),
+        level: osc.level,
+        pan: osc.pan,
+        detune: osc.coarse,
+        unison: osc.unison,
+        position: osc.position,
+        pulse_width: osc.pulse_width,
+        morph_a: osc.morph_a,
+        morph_b: osc.morph_b,
+        morph_amount: osc.morph_amount,
+        warp_mode: warp_mode_from_index(osc.warp_mode).into(),
+        warp_amount: osc.warp_amount,
+        fm_source: fm_source_from_index(osc.fm_source).into(),
+        fm_ratio: osc.fm_ratio,
+        fm_index: osc.fm_index,
+        ..Oscillator::default_va()
+    };
+    if osc.morph_amount > 0.0 {
+        out.position =
+            osc.morph_a + (osc.morph_b - osc.morph_a) * osc.morph_amount.clamp(0.0, 1.0);
+    }
+    out
+}
+
 pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
     state.preset_name = patch.name.clone();
     state.preset_category = preset_category_label(patch);
@@ -72,40 +98,31 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
         .first()
         .map(|o| o.position)
         .unwrap_or(0.0);
-    for i in 0..3 {
-        if let Some(osc) = patch.oscillators.get(i) {
-            state.osc_level[i] = osc.level;
-            state.osc_pan[i] = osc.pan;
-            state.osc_coarse[i] = osc.detune;
-            state.osc_unison[i] = osc.unison;
-            state.osc_position[i] = osc.position;
-            state.osc_type[i] = osc_type_index(&osc.osc_type);
-            state.osc_pulse_width[i] = osc.pulse_width;
-            state.osc_warp_mode[i] = warp_mode_index(&osc.warp_mode);
-            state.osc_warp_amount[i] = osc.warp_amount;
-            state.osc_fm_source[i] = fm_source_index(&osc.fm_source);
-            state.osc_fm_algorithm[i] = fm_algorithm_index(&osc.fm_source);
-            state.osc_fm_ratio[i] = osc.fm_ratio;
-            state.osc_fm_index[i] = osc.fm_index;
-        }
+
+    if patch.oscillators.is_empty() {
+        state.oscillators = vec![OscillatorUi::new_active()];
+    } else {
+        state.oscillators = patch
+            .oscillators
+            .iter()
+            .map(OscillatorUi::from_patch)
+            .collect();
     }
+    state.osc_tab = state.osc_tab.min(state.oscillators.len().saturating_sub(1));
+
     state.unison_stereo_spread = patch.unison_stereo_spread;
     state.filter_drive = patch.filter.drive;
     state.filter2_cutoff = patch.filter2.cutoff;
     state.filter2_resonance = patch.filter2.resonance;
     state.filter2_mode = filter_mode_from_type(&patch.filter2.filter_type);
     state.filter2_drive = patch.filter2.drive;
-    for i in 0..3 {
-        if let Some(osc) = patch.oscillators.get(i) {
-            state.osc_morph_a[i] = osc.morph_a;
-            state.osc_morph_b[i] = osc.morph_b;
-            state.osc_morph_amount[i] = osc.morph_amount;
-        }
-    }
-    let idx = state.osc_tab.min(2);
-    state.wt_morph_a = state.osc_morph_a[idx];
-    state.wt_morph_b = state.osc_morph_b[idx];
-    state.wt_morph_amount = state.osc_morph_amount[idx];
+
+    let idx = state.active_osc_index();
+    let active = &state.oscillators[idx];
+    state.wt_morph_a = active.morph_a;
+    state.wt_morph_b = active.morph_b;
+    state.wt_morph_amount = active.morph_amount;
+
     state.sub_level = patch.sub_level;
     state.noise_level = patch.noise_level;
     state.filter_cutoff = patch.filter.cutoff;
@@ -137,29 +154,9 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
 pub fn patch_from_state(state: &UiState, base: &Patch) -> Patch {
     let mut patch = base.clone();
     patch.name = state.preset_name.clone();
-    patch.ensure_oscillators(3);
-    for i in 0..3 {
-        if let Some(osc) = patch.oscillators.get_mut(i) {
-            osc.level = state.osc_level[i];
-            osc.pan = state.osc_pan[i];
-            osc.detune = state.osc_coarse[i];
-            osc.unison = state.osc_unison[i];
-            osc.position = state.osc_position[i];
-            osc.osc_type = osc_type_from_index(state.osc_type[i]).into();
-            osc.pulse_width = state.osc_pulse_width[i];
-            osc.warp_mode = warp_mode_from_index(state.osc_warp_mode[i]).into();
-            osc.warp_amount = state.osc_warp_amount[i];
-            osc.morph_a = state.osc_morph_a[i];
-            osc.morph_b = state.osc_morph_b[i];
-            osc.morph_amount = state.osc_morph_amount[i];
-            osc.fm_source = fm_source_from_index(state.osc_fm_source[i]).into();
-            osc.fm_ratio = state.osc_fm_ratio[i];
-            osc.fm_index = state.osc_fm_index[i];
-            if state.osc_morph_amount[i] > 0.0 {
-                osc.position = state.osc_morph_a[i]
-                    + (state.osc_morph_b[i] - state.osc_morph_a[i]) * state.osc_morph_amount[i];
-            }
-        }
+    patch.oscillators = state.oscillators.iter().map(osc_ui_to_patch).collect();
+    if patch.oscillators.is_empty() {
+        patch.ensure_oscillators(1);
     }
     patch.filter.cutoff = state.filter_cutoff;
     patch.filter.resonance = state.filter_resonance;
@@ -224,6 +221,32 @@ mod tests {
         let restored = patch_from_state(&state, &Patch::default_mono());
         assert_eq!(restored.oscillators[0].fm_source, original.oscillators[0].fm_source);
         assert!((restored.oscillators[0].fm_index - original.oscillators[0].fm_index).abs() < 1e-3);
+    }
+
+    #[test]
+    fn add_oscillator_roundtrip() {
+        let mut state = UiState::default();
+        let before = state.oscillators.len();
+        state.add_oscillator();
+        state.oscillators.last_mut().unwrap().level = 0.5;
+        let patch = patch_from_state(&state, &Patch::default_mono());
+        assert_eq!(patch.oscillators.len(), before + 1);
+        assert!((patch.oscillators.last().unwrap().level - 0.5).abs() < 1e-4);
+
+        let mut restored = UiState::default();
+        sync_state_from_patch(&mut restored, &patch);
+        assert_eq!(restored.oscillators.len(), before + 1);
+    }
+
+    #[test]
+    fn remove_oscillator_roundtrip() {
+        let mut state = UiState::default();
+        state.add_oscillator();
+        state.add_oscillator();
+        let count = state.oscillators.len();
+        state.remove_oscillator(1);
+        let patch = patch_from_state(&state, &Patch::default_mono());
+        assert_eq!(patch.oscillators.len(), count - 1);
     }
 
     #[test]

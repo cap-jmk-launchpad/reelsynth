@@ -7,7 +7,7 @@ use super::header::sync_osc_position_from_wt;
 use crate::layout::{CENTER_GAP, UiScale};
 use crate::layout_audit::rail_used_rect_id;
 use crate::region::region;
-use crate::widgets::{labeled_cycle, tab_bar, Knob, KnobSize, KnobStyle, panel, panel_disabled};
+use crate::widgets::{labeled_select, tab_bar, Knob, KnobSize, KnobStyle, panel, panel_disabled};
 
 pub(super) fn draw_rail(
     ui: &mut Ui,
@@ -408,9 +408,7 @@ fn lfo_panel(
         }
     });
     let shapes = ["Sine", "Tri", "Saw", "S&H"];
-    let label = shapes[(*shape).min(3)];
-    if labeled_cycle(ui, "Shape", label).clicked() {
-        *shape = (*shape + 1) % shapes.len();
+    if labeled_select(ui, "Shape", &shapes, shape) {
         actions.params_changed = true;
     }
 }

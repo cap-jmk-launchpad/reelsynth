@@ -1,19 +1,29 @@
-//! Left oscillator column (S3) — Osc1–3 tabs, sub/noise + macro knobs.
+//! Left oscillator column (S3) — scrollable osc cards + per-osc params.
 
-use egui::Ui;
+use egui::{Color32, Pos2, Shape, Ui};
+use reelsynth::{
+    render_combined_osc_cycle, render_osc_cycle_at_index, Patch, WavetableBank,
+};
 use reelsynth_ui_theme::Tokens;
 
 use crate::layout::{CENTER_GAP, GRID_UNIT, SPACE_SM};
+use crate::oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
+use crate::state::OscStripContext;
 use crate::widgets::{
-    format_coarse, format_pan, format_unison, knob_value_label, labeled_cycle, tab_bar, Knob,
-    KnobSize, KnobStyle, panel,
+    format_coarse, format_pan, format_unison, knob_value_label, labeled_select, Knob, KnobSize,
+    KnobStyle, panel,
 };
+use crate::wt::waveform_points;
 
-const OSC_TABS: [&str; 3] = ["Osc 1", "Osc 2", "Osc 3"];
 const OSC_TYPES: [&str; 5] = ["Wavetable", "Saw", "Square", "Triangle", "Pulse"];
 const WARP_MODES: [&str; 3] = ["None", "Sync", "Bend"];
 const FM_ALGORITHMS: [&str; 4] = ["Off", "2→1", "3→1", "2+3→1"];
 const FM_SOURCES: [&str; 5] = ["None", "Osc 2", "Osc 3", "2+3→1", "Feedback"];
+
+const OSC_CARD_WIDTH: f32 = 76.0;
+const OSC_CARD_HEIGHT: f32 = 56.0;
+const OSC_PREVIEW_SAMPLES: usize = 64;
+const OSC_PREVIEW_INTERVAL_SECS: f64 = 1.0 / 20.0;
 
 pub fn osc_type_index(ty: &str) -> usize {
     match ty.to_ascii_lowercase().as_str() {
@@ -90,34 +100,36 @@ pub fn fm_source_from_algorithm(idx: usize) -> &'static str {
 }
 
 pub struct OscColumnState<'a> {
+    pub oscillators: &'a mut Vec<OscillatorUi>,
     pub osc_tab: &'a mut usize,
-    pub osc_type: &'a mut [usize; 3],
-    pub osc_level: &'a mut [f32; 3],
-    pub osc_pan: &'a mut [f32; 3],
-    pub osc_coarse: &'a mut [f32; 3],
-    pub osc_unison: &'a mut [u32; 3],
-    pub osc_position: &'a mut [f32; 3],
-    pub osc_pulse_width: &'a mut [f32; 3],
-    pub osc_warp_mode: &'a mut [usize; 3],
-    pub osc_warp_amount: &'a mut [f32; 3],
-    pub osc_fm_source: &'a mut [usize; 3],
-    pub osc_fm_algorithm: &'a mut [usize; 3],
-    pub osc_fm_ratio: &'a mut [f32; 3],
-    pub osc_fm_index: &'a mut [f32; 3],
     pub unison_stereo_spread: &'a mut f32,
     pub sub_level: &'a mut f32,
     pub noise_level: &'a mut f32,
     pub macro_values: &'a mut [f32; 4],
 }
 
-pub struct OscColumnResult {
-    pub changed: bool,
+pub struct OscColumnInput<'a> {
+    pub patch: &'a Patch,
+    pub preview: Option<OscStripContext<'a>>,
 }
 
-pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> OscColumnResult {
+pub struct OscColumnResult {
+    pub changed: bool,
+    pub osc_count_changed: bool,
+}
+
+pub fn draw_osc_column(
+    ui: &mut Ui,
+    state: OscColumnState<'_>,
+    input: OscColumnInput<'_>,
+    scale: f32,
+) -> OscColumnResult {
     let mut changed = false;
+    let mut osc_count_changed = false;
     let gap = CENTER_GAP * scale;
     let min_section_h = 80.0 * scale;
+    let card_w = OSC_CARD_WIDTH * scale;
+    let card_h = OSC_CARD_HEIGHT * scale;
 
     egui::Frame::none()
         .inner_margin(egui::Margin::same(SPACE_SM * scale * 0.75))
@@ -126,35 +138,64 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
             ui.spacing_mut().item_spacing.y = gap;
 
             panel(ui, "Oscillators", |ui| {
-                tab_bar(ui, &OSC_TABS, state.osc_tab);
-                ui.add_space(GRID_UNIT);
+                let previews = resolve_osc_previews(input.patch, input.preview);
+                let strip_result = draw_osc_scroll_strip(
+                    ui,
+                    state.oscillators,
+                    state.osc_tab,
+                    &previews,
+                    card_w,
+                    card_h,
+                    scale,
+                );
+                if strip_result.selection_changed {
+                    changed = true;
+                }
+                if strip_result.added {
+                    state.oscillators.push(OscillatorUi::new_silent());
+                    *state.osc_tab = state.oscillators.len().saturating_sub(1);
+                    changed = true;
+                    osc_count_changed = true;
+                }
+                if let Some(remove_idx) = strip_result.removed {
+                    if state.oscillators.len() > MIN_OSCILLATORS && remove_idx < state.oscillators.len()
+                    {
+                        state.oscillators.remove(remove_idx);
+                        *state.osc_tab = (*state.osc_tab)
+                            .min(state.oscillators.len().saturating_sub(1));
+                        changed = true;
+                        osc_count_changed = true;
+                    }
+                }
 
-                let idx = (*state.osc_tab).min(2);
-                let ty_label = OSC_TYPES[state.osc_type[idx].min(OSC_TYPES.len() - 1)];
-                if labeled_cycle(ui, "Type", ty_label).clicked() {
-                    state.osc_type[idx] = (state.osc_type[idx] + 1) % OSC_TYPES.len();
+                ui.add_space(GRID_UNIT * 0.5);
+
+                let idx = (*state.osc_tab).min(state.oscillators.len().saturating_sub(1));
+                let osc = &mut state.oscillators[idx];
+
+                if labeled_select(ui, "Type", &OSC_TYPES, &mut osc.osc_type) {
                     changed = true;
                 }
 
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = SPACE_SM;
-                    let level_text = format!("{:.2}", state.osc_level[idx]);
-                    let r1 = Knob::new(&mut state.osc_level[idx], 0.0..=1.0, "Level")
+                    let level_text = format!("{:.2}", osc.level);
+                    let r1 = Knob::new(&mut osc.level, 0.0..=1.0, "Level")
                         .size(KnobSize::Sm)
                         .scale(scale)
                         .style(KnobStyle::Wired)
                         .show_wired_badge(false)
                         .value_text(level_text)
                         .show(ui);
-                    let pan_text = format_pan(state.osc_pan[idx]);
-                    let r2 = Knob::new(&mut state.osc_pan[idx], -1.0..=1.0, "Pan")
+                    let pan_text = format_pan(osc.pan);
+                    let r2 = Knob::new(&mut osc.pan, -1.0..=1.0, "Pan")
                         .size(KnobSize::Sm)
                         .scale(scale)
                         .style(KnobStyle::Normal)
                         .value_text(pan_text)
                         .show(ui);
-                    let coarse_text = format_coarse(state.osc_coarse[idx]);
-                    let r3 = Knob::new(&mut state.osc_coarse[idx], -2400.0..=2400.0, "Coarse")
+                    let coarse_text = format_coarse(osc.coarse);
+                    let r3 = Knob::new(&mut osc.coarse, -2400.0..=2400.0, "Coarse")
                         .size(KnobSize::Sm)
                         .scale(scale)
                         .style(KnobStyle::Wired)
@@ -167,30 +208,28 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
                 });
 
                 ui.add_space(GRID_UNIT);
-                let pos = &mut state.osc_position[idx];
-                let is_wt = state.osc_type[idx] == 0;
+                let is_wt = osc.osc_type == 0;
                 if is_wt {
+                    let pos_label = format!("{:.0} / 255", osc.position.round());
                     if param_slider(
                         ui,
                         "WT Position",
-                        pos,
+                        &mut osc.position,
                         0.0..=255.0,
-                        &format!("{:.0} / 255", pos.round()),
+                        &pos_label,
                     ) {
                         changed = true;
                     }
 
-                    let warp_label = WARP_MODES[state.osc_warp_mode[idx].min(2)];
-                    if labeled_cycle(ui, "Warp", warp_label).clicked() {
-                        state.osc_warp_mode[idx] =
-                            (state.osc_warp_mode[idx] + 1) % WARP_MODES.len();
+                    let warp_idx = &mut osc.warp_mode;
+                    if labeled_select(ui, "Warp", &WARP_MODES, warp_idx) {
                         changed = true;
                     }
-                    let warp_label_pct = state.osc_warp_amount[idx] * 100.0;
+                    let warp_label_pct = osc.warp_amount * 100.0;
                     if param_slider(
                         ui,
                         "Warp Amt",
-                        &mut state.osc_warp_amount[idx],
+                        &mut osc.warp_amount,
                         0.0..=1.0,
                         &format!("{:.0}%", warp_label_pct),
                     ) {
@@ -198,13 +237,13 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
                     }
                 }
 
-                let is_pulse = matches!(state.osc_type[idx], 2 | 4);
+                let is_pulse = matches!(osc.osc_type, 2 | 4);
                 if is_pulse {
-                    let pw_pct = state.osc_pulse_width[idx] * 100.0;
+                    let pw_pct = osc.pulse_width * 100.0;
                     if param_slider(
                         ui,
                         "Pulse W",
-                        &mut state.osc_pulse_width[idx],
+                        &mut osc.pulse_width,
                         0.05..=0.95,
                         &format!("{:.0}%", pw_pct),
                     ) {
@@ -212,10 +251,10 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
                     }
                 }
 
-                let unison_f = &mut (state.osc_unison[idx] as f32);
-                let unison_label = format_unison(state.osc_unison[idx]);
+                let unison_f = &mut (osc.unison as f32);
+                let unison_label = format_unison(osc.unison);
                 if param_slider(ui, "Unison", unison_f, 1.0..=8.0, &unison_label) {
-                    state.osc_unison[idx] = unison_f.round().clamp(1.0, 8.0) as u32;
+                    osc.unison = unison_f.round().clamp(1.0, 8.0) as u32;
                     changed = true;
                 }
 
@@ -230,44 +269,36 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
                 }
 
                 ui.add_space(GRID_UNIT);
-                // Avoid clipping at minimum window: show FM only when there is room.
                 if ui.available_height() > min_section_h * 2.2 {
                     panel(ui, "FM", |ui| {
-                        let algo_label = FM_ALGORITHMS
-                            [state.osc_fm_algorithm[idx].min(FM_ALGORITHMS.len() - 1)];
-                        if labeled_cycle(ui, "Algo", algo_label).clicked() {
-                            state.osc_fm_algorithm[idx] =
-                                (state.osc_fm_algorithm[idx] + 1) % FM_ALGORITHMS.len();
-                            if state.osc_fm_algorithm[idx] == 0 {
-                                state.osc_fm_source[idx] = 0;
+                        let algo_idx = &mut osc.fm_algorithm;
+                        if labeled_select(ui, "Algo", &FM_ALGORITHMS, algo_idx) {
+                            if *algo_idx == 0 {
+                                osc.fm_source = 0;
                             } else {
-                                state.osc_fm_source[idx] = state.osc_fm_algorithm[idx];
+                                osc.fm_source = *algo_idx;
                             }
                             changed = true;
                         }
 
-                        let src_label =
-                            FM_SOURCES[state.osc_fm_source[idx].min(FM_SOURCES.len() - 1)];
-                        if labeled_cycle(ui, "Source", src_label).clicked() {
-                            state.osc_fm_source[idx] =
-                                (state.osc_fm_source[idx] + 1) % FM_SOURCES.len();
-                            state.osc_fm_algorithm[idx] = fm_algorithm_index(fm_source_from_index(
-                                state.osc_fm_source[idx],
-                            ));
+                        let src_idx = &mut osc.fm_source;
+                        if labeled_select(ui, "Source", &FM_SOURCES, src_idx) {
+                            osc.fm_algorithm =
+                                fm_algorithm_index(fm_source_from_index(*src_idx));
                             changed = true;
                         }
 
                         ui.horizontal_centered(|ui| {
                             ui.spacing_mut().item_spacing.x = SPACE_SM;
-                            let ratio_text = format!("{:.2}", state.osc_fm_ratio[idx]);
-                            let r1 = Knob::new(&mut state.osc_fm_ratio[idx], 0.5..=16.0, "Ratio")
+                            let ratio_text = format!("{:.2}", osc.fm_ratio);
+                            let r1 = Knob::new(&mut osc.fm_ratio, 0.5..=16.0, "Ratio")
                                 .size(KnobSize::Sm)
                                 .scale(scale)
                                 .style(KnobStyle::Wired)
                                 .value_text(ratio_text)
                                 .show(ui);
-                            let index_text = format!("{:.1}", state.osc_fm_index[idx]);
-                            let r2 = Knob::new(&mut state.osc_fm_index[idx], 0.0..=10.0, "Index")
+                            let index_text = format!("{:.1}", osc.fm_index);
+                            let r2 = Knob::new(&mut osc.fm_index, 0.0..=10.0, "Index")
                                 .size(KnobSize::Sm)
                                 .scale(scale)
                                 .style(KnobStyle::Normal)
@@ -322,7 +353,270 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>, scale: f32) -> Os
             }
         });
 
-    OscColumnResult { changed }
+    OscColumnResult {
+        changed,
+        osc_count_changed,
+    }
+}
+
+struct OscPreviews {
+    per_osc: Vec<Vec<f32>>,
+    combined: Vec<f32>,
+}
+
+struct OscScrollStripResult {
+    selection_changed: bool,
+    added: bool,
+    removed: Option<usize>,
+}
+
+fn resolve_osc_previews(patch: &Patch, preview: Option<OscStripContext<'_>>) -> OscPreviews {
+    if let Some(ctx) = preview {
+        let count = patch.oscillators.len();
+        let stale = ctx.state.osc_count != count
+            || ctx.now_secs - ctx.state.last_preview_secs >= OSC_PREVIEW_INTERVAL_SECS
+            || ctx.state.per_osc.len() != count;
+
+        if stale && !ctx.banks.is_empty() {
+            ctx.state.per_osc = (0..count)
+                .map(|i| {
+                    render_osc_cycle_at_index(
+                        ctx.banks,
+                        ctx.bank_for_osc,
+                        patch,
+                        i,
+                        OSC_PREVIEW_SAMPLES,
+                    )
+                })
+                .collect();
+            ctx.state.combined = render_combined_osc_cycle(
+                ctx.banks,
+                ctx.bank_for_osc,
+                patch,
+                OSC_PREVIEW_SAMPLES,
+            );
+            ctx.state.last_preview_secs = ctx.now_secs;
+            ctx.state.osc_count = count;
+        }
+
+        return OscPreviews {
+            per_osc: ctx.state.per_osc.clone(),
+            combined: ctx.state.combined.clone(),
+        };
+    }
+
+    OscPreviews {
+        per_osc: vec![Vec::new(); patch.oscillators.len()],
+        combined: Vec::new(),
+    }
+}
+
+fn draw_osc_scroll_strip(
+    ui: &mut Ui,
+    oscillators: &[OscillatorUi],
+    selected: &mut usize,
+    previews: &OscPreviews,
+    card_w: f32,
+    card_h: f32,
+    scale: f32,
+) -> OscScrollStripResult {
+    let tokens = Tokens::default();
+    let mut result = OscScrollStripResult {
+        selection_changed: false,
+        added: false,
+        removed: None,
+    };
+
+    ui.label(
+        egui::RichText::new("Browse oscillators")
+            .size(10.0)
+            .color(tokens.text_muted),
+    );
+    ui.add_space(4.0);
+
+    egui::ScrollArea::horizontal()
+        .id_salt("osc_scroll_strip")
+        .max_height(card_h + 8.0 * scale)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = GRID_UNIT * 0.75;
+
+                draw_osc_preview_card(
+                    ui,
+                    "Mix",
+                    &previews.combined,
+                    Color32::from_rgb(0x4a, 0xde, 0x80),
+                    card_w,
+                    card_h,
+                    false,
+                    false,
+                    scale,
+                );
+
+                for (i, osc) in oscillators.iter().enumerate() {
+                    let wave = previews.per_osc.get(i).map(Vec::as_slice).unwrap_or(&[]);
+                    let label = format!("Osc {}", i + 1);
+                    let accent = if *selected == i {
+                        tokens.accent_on
+                    } else if osc.level > 0.0 {
+                        Color32::from_rgb(0x5b, 0xc0, 0xde)
+                    } else {
+                        tokens.text_muted
+                    };
+                    let (card_resp, remove_clicked) = draw_osc_preview_card_with_remove(
+                        ui,
+                        &label,
+                        wave,
+                        accent,
+                        card_w,
+                        card_h,
+                        *selected == i,
+                        oscillators.len() > MIN_OSCILLATORS,
+                        scale,
+                    );
+                    if card_resp.clicked() && *selected != i {
+                        *selected = i;
+                        result.selection_changed = true;
+                    }
+                    if remove_clicked {
+                        result.removed = Some(i);
+                    }
+                }
+
+                let add_size = egui::vec2(32.0 * scale, card_h);
+                let (add_rect, add_resp) =
+                    ui.allocate_exact_size(add_size, egui::Sense::click());
+                if ui.is_rect_visible(add_rect) {
+                    let painter = ui.painter_at(add_rect);
+                    painter.rect_filled(add_rect, 6.0, tokens.surface2);
+                    painter.rect_stroke(add_rect, 6.0, egui::Stroke::new(1.0, tokens.border));
+                    painter.text(
+                        add_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "+",
+                        egui::FontId::proportional(18.0 * scale),
+                        tokens.accent,
+                    );
+                }
+                if add_resp.clicked() {
+                    result.added = true;
+                }
+            });
+        });
+
+    result
+}
+
+fn draw_osc_preview_card(
+    ui: &mut Ui,
+    label: &str,
+    samples: &[f32],
+    accent: Color32,
+    width: f32,
+    height: f32,
+    selected: bool,
+    show_remove: bool,
+    scale: f32,
+) -> egui::Response {
+    let (resp, _) = draw_osc_preview_card_with_remove(
+        ui,
+        label,
+        samples,
+        accent,
+        width,
+        height,
+        selected,
+        show_remove,
+        scale,
+    );
+    resp
+}
+
+fn draw_osc_preview_card_with_remove(
+    ui: &mut Ui,
+    label: &str,
+    samples: &[f32],
+    accent: Color32,
+    width: f32,
+    height: f32,
+    selected: bool,
+    show_remove: bool,
+    scale: f32,
+) -> (egui::Response, bool) {
+    let tokens = Tokens::default();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    let mut remove_clicked = false;
+
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter_at(rect);
+        let bg = if selected {
+            tokens.surface2
+        } else {
+            tokens.bg_muted
+        };
+        painter.rect_filled(rect, 6.0, bg);
+        let stroke = if selected {
+            egui::Stroke::new(1.5, tokens.accent)
+        } else {
+            egui::Stroke::new(1.0, tokens.border)
+        };
+        painter.rect_stroke(rect, 6.0, stroke);
+
+        painter.text(
+            egui::pos2(rect.min.x + 6.0, rect.min.y + 3.0),
+            egui::Align2::LEFT_TOP,
+            label,
+            egui::FontId::monospace(9.0),
+            accent,
+        );
+
+        let wave_rect = rect.shrink2(egui::vec2(6.0, 14.0));
+        let points = waveform_points(
+            samples,
+            wave_rect,
+            OSC_PREVIEW_SAMPLES.min(samples.len().max(2)),
+            0.38,
+        );
+        if points.len() >= 2 {
+            painter.add(Shape::line(
+                points,
+                egui::Stroke::new(1.1, accent.gamma_multiply(0.9)),
+            ));
+            let mid = wave_rect.center().y;
+            painter.line_segment(
+                [
+                    Pos2::new(wave_rect.min.x, mid),
+                    Pos2::new(wave_rect.max.x, mid),
+                ],
+                egui::Stroke::new(0.5, tokens.border),
+            );
+        }
+
+        if show_remove {
+            let btn = egui::Rect::from_min_size(
+                egui::pos2(rect.max.x - 16.0 * scale, rect.min.y + 2.0),
+                egui::vec2(14.0 * scale, 14.0 * scale),
+            );
+            let btn_id = ui.id().with(label).with("remove");
+            let btn_resp = ui.interact(btn, btn_id, egui::Sense::click());
+            if btn_resp.clicked() {
+                remove_clicked = true;
+            }
+            painter.text(
+                btn.center(),
+                egui::Align2::CENTER_CENTER,
+                "×",
+                egui::FontId::monospace(10.0),
+                if btn_resp.hovered() {
+                    tokens.accent_on
+                } else {
+                    tokens.text_muted
+                },
+            );
+        }
+    }
+
+    (resp, remove_clicked)
 }
 
 fn param_slider(
@@ -415,5 +709,20 @@ mod bridge_tests {
             let idx = fm_source_index(src);
             assert_eq!(fm_source_from_index(idx), src);
         }
+    }
+}
+
+#[cfg(test)]
+mod osc_count_tests {
+    use super::*;
+    use crate::OscillatorUi;
+
+    #[test]
+    fn unlimited_add_oscillator() {
+        let mut oscs = vec![OscillatorUi::new_active()];
+        for _ in 0..10 {
+            oscs.push(OscillatorUi::new_silent());
+        }
+        assert_eq!(oscs.len(), 11);
     }
 }
