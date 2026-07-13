@@ -1,7 +1,7 @@
 //! Analytical single-cycle previews for scope strip (Phase 1 placeholder).
 
 use crate::fx::FxChain;
-use crate::patch::Patch;
+use crate::patch::{Oscillator, Patch};
 use crate::voice::{process_sample, VoiceSampleContext, VoiceState};
 use crate::wavetable::WavetableBank;
 
@@ -86,9 +86,15 @@ fn preview_osc_sample(
     patch: &Patch,
     phase: f32,
 ) -> f32 {
+    use crate::osc::{sample_va, VaWaveform, WtWarpMode};
+
     let mut sum = 0.0f32;
     for (oi, osc) in patch.oscillators.iter().enumerate() {
         if osc.level <= 0.0 {
+            continue;
+        }
+        if let Some(wave) = VaWaveform::from_osc_type(&osc.osc_type) {
+            sum += sample_va(wave, phase.fract(), 1.0 / 2048.0, osc.pulse_width) * osc.level;
             continue;
         }
         let bank_idx = bank_for_osc(oi);
@@ -96,13 +102,19 @@ fn preview_osc_sample(
         let Some(bank) = bank else {
             continue;
         };
-        let frame_idx = osc.position.round() as usize;
-        let frame = bank.frame(frame_idx.min(bank.num_frames.saturating_sub(1)));
-        if frame.is_empty() {
-            continue;
-        }
-        let idx = ((phase.fract() * frame.len() as f32) as usize).min(frame.len() - 1);
-        sum += frame[idx] * osc.level;
+        let wt_pos = preview_wt_position(osc, bank.num_frames);
+        let warp = WtWarpMode::from_str(&osc.warp_mode);
+        sum += bank.sample_warped(wt_pos, phase, warp, osc.warp_amount) * osc.level;
     }
     sum.clamp(-1.0, 1.0)
+}
+
+fn preview_wt_position(osc: &Oscillator, num_frames: usize) -> f32 {
+    let max_pos = (num_frames.saturating_sub(1)).max(1) as f32;
+    if osc.morph_amount > 0.0 {
+        let pos = osc.morph_a + (osc.morph_b - osc.morph_a) * osc.morph_amount.clamp(0.0, 1.0);
+        pos.clamp(0.0, max_pos)
+    } else {
+        osc.position.clamp(0.0, max_pos)
+    }
 }

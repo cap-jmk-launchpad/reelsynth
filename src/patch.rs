@@ -22,6 +22,53 @@ pub struct Oscillator {
     pub pan: f32,
     #[serde(default)]
     pub wavetable_id: Option<String>,
+    /// Square/pulse duty cycle (0.05..0.95).
+    #[serde(default = "default_pulse_width")]
+    pub pulse_width: f32,
+    /// Morph endpoint A (frame index).
+    #[serde(default)]
+    pub morph_a: f32,
+    /// Morph endpoint B (frame index).
+    #[serde(default = "default_morph_b")]
+    pub morph_b: f32,
+    /// Morph blend 0..1 between A and B.
+    #[serde(default)]
+    pub morph_amount: f32,
+    /// Wavetable warp: none | sync | bend.
+    #[serde(default = "default_warp_none")]
+    pub warp_mode: String,
+    #[serde(default)]
+    pub warp_amount: f32,
+}
+
+impl Oscillator {
+    pub fn default_va() -> Self {
+        Self {
+            osc_type: "saw".into(),
+            level: 0.0,
+            position: 0.0,
+            detune: 0.0,
+            unison: 1,
+            pan: 0.0,
+            wavetable_id: None,
+            pulse_width: default_pulse_width(),
+            morph_a: 0.0,
+            morph_b: default_morph_b(),
+            morph_amount: 0.0,
+            warp_mode: default_warp_none(),
+            warp_amount: 0.0,
+        }
+    }
+}
+
+fn default_pulse_width() -> f32 {
+    0.5
+}
+fn default_morph_b() -> f32 {
+    255.0
+}
+fn default_warp_none() -> String {
+    "none".into()
 }
 
 fn default_wt_type() -> String {
@@ -45,6 +92,9 @@ pub struct Filter {
     /// 0 = no tracking, 1 = cutoff follows pitch 1:1 in semitones.
     #[serde(default = "default_key_tracking")]
     pub key_tracking: f32,
+    /// Soft tanh drive before the SVF (0..1).
+    #[serde(default)]
+    pub drive: f32,
 }
 
 fn default_lp() -> String {
@@ -156,6 +206,9 @@ pub struct Patch {
     pub oscillators: Vec<Oscillator>,
     #[serde(default)]
     pub filter: Filter,
+    /// Second parallel filter for stereo sculpting.
+    #[serde(default = "default_filter2")]
+    pub filter2: Filter,
     #[serde(default)]
     pub envelope: Envelope,
     #[serde(default = "default_filter_envelope")]
@@ -170,6 +223,23 @@ pub struct Patch {
     pub sub_level: f32,
     #[serde(default)]
     pub noise_level: f32,
+    /// Unison voice pan spread (0 = mono, 1 = full L/R).
+    #[serde(default = "default_unison_spread")]
+    pub unison_stereo_spread: f32,
+}
+
+fn default_filter2() -> Filter {
+    Filter {
+        filter_type: default_lp(),
+        cutoff: 2400.0,
+        resonance: 0.25,
+        key_tracking: default_key_tracking(),
+        drive: 0.0,
+    }
+}
+
+fn default_unison_spread() -> f32 {
+    0.7
 }
 
 impl Default for Filter {
@@ -179,6 +249,7 @@ impl Default for Filter {
             cutoff: default_cutoff(),
             resonance: 0.3,
             key_tracking: default_key_tracking(),
+            drive: 0.0,
         }
     }
 }
@@ -234,8 +305,15 @@ impl Patch {
                 unison: 1,
                 pan: 0.0,
                 wavetable_id: None,
+                pulse_width: default_pulse_width(),
+                morph_a: 0.0,
+                morph_b: default_morph_b(),
+                morph_amount: 0.0,
+                warp_mode: default_warp_none(),
+                warp_amount: 0.0,
             }],
             filter: Filter::default(),
+            filter2: default_filter2(),
             envelope: Envelope::default(),
             filter_envelope: default_filter_envelope(),
             lfo: Lfo::default(),
@@ -243,6 +321,120 @@ impl Patch {
             fx_bypass: crate::fx::FxBypass::default(),
             sub_level: 0.0,
             noise_level: 0.0,
+            unison_stereo_spread: default_unison_spread(),
+        }
+    }
+
+    /// Warm subtractive bass: dual VA saws + filter envelope.
+    pub fn factory_va_bass() -> Self {
+        Self {
+            schema: SCHEMA_V2.into(),
+            name: "VA Bass".into(),
+            wavetable_id: Some("saw_morph".into()),
+            oscillators: vec![
+                Oscillator {
+                    osc_type: "saw".into(),
+                    level: 0.85,
+                    detune: -7.0,
+                    unison: 2,
+                    ..Oscillator::default_va()
+                },
+                Oscillator {
+                    osc_type: "saw".into(),
+                    level: 0.55,
+                    detune: 7.0,
+                    unison: 1,
+                    ..Oscillator::default_va()
+                },
+                Oscillator {
+                    osc_type: "square".into(),
+                    level: 0.15,
+                    pulse_width: 0.25,
+                    unison: 1,
+                    ..Oscillator::default_va()
+                },
+            ],
+            filter: Filter {
+                cutoff: 180.0,
+                resonance: 0.45,
+                key_tracking: 0.35,
+                drive: 0.35,
+                ..Filter::default()
+            },
+            filter2: Filter {
+                cutoff: 420.0,
+                resonance: 0.3,
+                filter_type: "lowpass".into(),
+                key_tracking: 0.2,
+                drive: 0.2,
+            },
+            filter_envelope: Envelope {
+                attack: 0.003,
+                decay: 0.45,
+                sustain: 0.15,
+                release: 0.35,
+            },
+            envelope: Envelope {
+                attack: 0.005,
+                decay: 0.25,
+                sustain: 0.75,
+                release: 0.2,
+            },
+            sub_level: 0.35,
+            unison_stereo_spread: 0.85,
+            ..Self::default_mono()
+        }
+    }
+
+    /// WT lead with morph + unison spread.
+    pub fn factory_wt_lead() -> Self {
+        Self {
+            schema: SCHEMA_V2.into(),
+            name: "WT Lead".into(),
+            wavetable_id: Some("saw_morph".into()),
+            oscillators: vec![Oscillator {
+                osc_type: "wavetable".into(),
+                level: 0.9,
+                position: 64.0,
+                morph_a: 0.0,
+                morph_b: 180.0,
+                morph_amount: 0.55,
+                warp_mode: "sync".into(),
+                warp_amount: 0.35,
+                unison: 4,
+                detune: 12.0,
+                pan: 0.0,
+                wavetable_id: Some("saw_morph".into()),
+                pulse_width: default_pulse_width(),
+            }],
+            filter: Filter {
+                cutoff: 2800.0,
+                resonance: 0.55,
+                key_tracking: 0.65,
+                drive: 0.15,
+                ..Filter::default()
+            },
+            filter2: Filter {
+                cutoff: 5200.0,
+                resonance: 0.35,
+                filter_type: "highpass".into(),
+                key_tracking: 0.4,
+                drive: 0.0,
+            },
+            filter_envelope: Envelope {
+                attack: 0.08,
+                decay: 0.5,
+                sustain: 0.35,
+                release: 0.6,
+            },
+            envelope: Envelope {
+                attack: 0.02,
+                decay: 0.35,
+                sustain: 0.65,
+                release: 0.45,
+            },
+            unison_stereo_spread: 1.0,
+            ..Self::default_mono()
         }
     }
 
@@ -257,6 +449,12 @@ impl Patch {
                 unison: 1,
                 pan: 0.0,
                 wavetable_id: None,
+                pulse_width: default_pulse_width(),
+                morph_a: 0.0,
+                morph_b: default_morph_b(),
+                morph_amount: 0.0,
+                warp_mode: default_warp_none(),
+                warp_amount: 0.0,
             });
         }
         if let Some(first) = self.oscillators.first_mut() {
@@ -319,6 +517,33 @@ fn migrate_v1_to_v2(v: &mut Value) {
     if let Some(f) = obj.get_mut("filter").and_then(|f| f.as_object_mut()) {
         f.entry("key_tracking")
             .or_insert(Value::Number(serde_json::Number::from_f64(0.5).unwrap()));
+        f.entry("drive").or_insert(Value::Number(0.into()));
+    }
+
+    if !obj.contains_key("filter2") {
+        obj.insert(
+            "filter2".into(),
+            serde_json::to_value(default_filter2()).unwrap(),
+        );
+    }
+
+    obj.entry("unison_stereo_spread")
+        .or_insert(Value::Number(serde_json::Number::from_f64(0.7).unwrap()));
+
+    if let Some(arr) = obj.get_mut("oscillators").and_then(|a| a.as_array_mut()) {
+        for osc in arr {
+            if let Some(o) = osc.as_object_mut() {
+                o.entry("pulse_width")
+                    .or_insert(Value::Number(serde_json::Number::from_f64(0.5).unwrap()));
+                o.entry("morph_a").or_insert(Value::Number(0.into()));
+                o.entry("morph_b")
+                    .or_insert(Value::Number(serde_json::Number::from_f64(255.0).unwrap()));
+                o.entry("morph_amount").or_insert(Value::Number(0.into()));
+                o.entry("warp_mode")
+                    .or_insert(Value::String("none".into()));
+                o.entry("warp_amount").or_insert(Value::Number(0.into()));
+            }
+        }
     }
 }
 
@@ -352,5 +577,21 @@ mod tests {
         p.oscillators[2].wavetable_id = Some("saw_morph".into());
         let ids = p.wavetable_ids();
         assert_eq!(ids, vec!["saw_morph", "sine"]);
+    }
+
+    #[test]
+    fn factory_va_bass_parses() {
+        let p = Patch::factory_va_bass();
+        assert_eq!(p.oscillators[0].osc_type, "saw");
+        assert!(p.filter.drive > 0.0);
+        assert!(p.filter2.cutoff > p.filter.cutoff);
+    }
+
+    #[test]
+    fn factory_wt_lead_has_morph() {
+        let p = Patch::factory_wt_lead();
+        assert_eq!(p.oscillators[0].warp_mode, "sync");
+        assert!(p.oscillators[0].morph_amount > 0.0);
+        assert_eq!(p.oscillators[0].unison, 4);
     }
 }

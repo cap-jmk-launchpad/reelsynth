@@ -64,16 +64,28 @@ impl WavetableBank {
 
     /// Sample at wavetable position (0..num_frames-1) and phase (0..1).
     pub fn sample(&self, position: f32, phase: f32) -> f32 {
+        self.sample_warped(position, phase, crate::osc::WtWarpMode::None, 0.0)
+    }
+
+    /// Sample with optional phase warp (sync / bend).
+    pub fn sample_warped(
+        &self,
+        position: f32,
+        phase: f32,
+        warp: crate::osc::WtWarpMode,
+        warp_amount: f32,
+    ) -> f32 {
         if self.num_frames == 0 || self.frame_size == 0 {
             return 0.0;
         }
+        let warped_phase = crate::osc::warp_phase(phase, warp, warp_amount);
         let pos = position.clamp(0.0, (self.num_frames - 1) as f32);
         let idx0 = pos.floor() as usize;
         let idx1 = (idx0 + 1).min(self.num_frames - 1);
         let frac = pos - idx0 as f32;
 
-        let s0 = self.sample_frame(idx0, phase);
-        let s1 = self.sample_frame(idx1, phase);
+        let s0 = self.sample_frame(idx0, warped_phase);
+        let s1 = self.sample_frame(idx1, warped_phase);
         if frac < 1e-6 || idx0 == idx1 {
             s0
         } else {

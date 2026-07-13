@@ -183,4 +183,22 @@ mod tests {
         let late = zero_crossings(&audio[4000..6500]);
         assert!(late > early, "early zc={early} late zc={late}");
     }
+
+    #[test]
+    fn factory_va_bass_renders() {
+        let bank = WavetableBank::factory_saw_morph();
+        let patch = Patch::factory_va_bass();
+        let audio = render_note_single_bank(&bank, 55.0, 0.3, 44100, &patch);
+        let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(peak > 0.05, "va bass peak={peak}");
+    }
+
+    #[test]
+    fn factory_wt_lead_renders() {
+        let bank = WavetableBank::factory_saw_morph();
+        let patch = Patch::factory_wt_lead();
+        let audio = render_note_single_bank(&bank, 440.0, 0.3, 44100, &patch);
+        let peak: f32 = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(peak > 0.05, "wt lead peak={peak}");
+    }
 }

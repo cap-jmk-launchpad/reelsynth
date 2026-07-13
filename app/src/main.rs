@@ -7,7 +7,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
 use midi_input::{MidiDevices, MidiInputHandle};
 use reelsynth::{import::{import_serum_fxp, import_vital, import_wav_folder}, load_preset, resolve_bank_for_preset, Envelope, ModSlot, Patch, SynthEngine, WavetableBank};
-use reelsynth_ui::{draw_s1, factory_bank, factory_label, fx_slots_from_bypass, fx_slots_to_bypass, mod_routes_from_slots, mod_routes_to_slots, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
+use reelsynth_ui::{draw_s1, factory_bank, factory_label, fx_slots_from_bypass, fx_slots_to_bypass, mod_routes_from_slots, mod_routes_to_slots, osc_type_from_index, osc_type_index, warp_mode_from_index, warp_mode_index, APP_HEIGHT_FULL, S1MidiDevices, S1ShellConfig, S1State};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -29,7 +29,22 @@ enum AudioCmd {
         unison: u32,
         position: f32,
         pan: f32,
+        osc_type: String,
+        pulse_width: f32,
+        morph_a: f32,
+        morph_b: f32,
+        morph_amount: f32,
+        warp_mode: String,
+        warp_amount: f32,
     },
+    SetFilterDrive(f32),
+    SetFilter2 {
+        cutoff: f32,
+        resonance: f32,
+        filter_type: String,
+        drive: f32,
+    },
+    SetUnisonStereoSpread(f32),
     SetSubLevel(f32),
     SetNoiseLevel(f32),
     SetModMatrix(Vec<ModSlot>),
@@ -159,13 +174,37 @@ fn drain_commands(
                 unison,
                 position,
                 pan,
+                osc_type,
+                pulse_width,
+                morph_a,
+                morph_b,
+                morph_amount,
+                warp_mode,
+                warp_amount,
             }) => {
                 engine.set_osc_level(index, level);
                 engine.set_osc_detune(index, detune);
                 engine.set_osc_unison(index, unison);
                 engine.set_osc_position(index, position);
                 engine.set_osc_pan(index, pan);
+                engine.set_osc_type(index, &osc_type);
+                engine.set_osc_pulse_width(index, pulse_width);
+                engine.set_osc_morph(index, morph_a, morph_b, morph_amount);
+                engine.set_osc_warp(index, &warp_mode, warp_amount);
             }
+            Ok(AudioCmd::SetFilterDrive(d)) => engine.set_filter_drive(d),
+            Ok(AudioCmd::SetFilter2 {
+                cutoff,
+                resonance,
+                filter_type,
+                drive,
+            }) => {
+                engine.set_filter2_cutoff(cutoff);
+                engine.set_filter2_resonance(resonance);
+                engine.set_filter2_type(&filter_type);
+                engine.set_filter2_drive(drive);
+            }
+            Ok(AudioCmd::SetUnisonStereoSpread(s)) => engine.set_unison_stereo_spread(s),
             Ok(AudioCmd::SetSubLevel(l)) => engine.set_sub_level(l),
             Ok(AudioCmd::SetNoiseLevel(l)) => engine.set_noise_level(l),
             Ok(AudioCmd::SetModMatrix(slots)) => engine.set_mod_matrix(slots),
@@ -224,8 +263,29 @@ fn sync_state_from_patch(state: &mut S1State, patch: &Patch) {
             state.osc_coarse[i] = osc.detune;
             state.osc_unison[i] = osc.unison;
             state.osc_position[i] = osc.position;
+            state.osc_type[i] = osc_type_index(&osc.osc_type);
+            state.osc_pulse_width[i] = osc.pulse_width;
+            state.osc_warp_mode[i] = warp_mode_index(&osc.warp_mode);
+            state.osc_warp_amount[i] = osc.warp_amount;
         }
     }
+    state.unison_stereo_spread = patch.unison_stereo_spread;
+    state.filter_drive = patch.filter.drive;
+    state.filter2_cutoff = patch.filter2.cutoff;
+    state.filter2_resonance = patch.filter2.resonance;
+    state.filter2_mode = filter_mode_from_type(&patch.filter2.filter_type);
+    state.filter2_drive = patch.filter2.drive;
+    for i in 0..3 {
+        if let Some(osc) = patch.oscillators.get(i) {
+            state.osc_morph_a[i] = osc.morph_a;
+            state.osc_morph_b[i] = osc.morph_b;
+            state.osc_morph_amount[i] = osc.morph_amount;
+        }
+    }
+    let idx = state.osc_tab.min(2);
+    state.wt_morph_a = state.osc_morph_a[idx];
+    state.wt_morph_b = state.osc_morph_b[idx];
+    state.wt_morph_amount = state.osc_morph_amount[idx];
     state.sub_level = patch.sub_level;
     state.noise_level = patch.noise_level;
     state.filter_cutoff = patch.filter.cutoff;
@@ -285,12 +345,29 @@ fn patch_from_state(state: &S1State, base: &Patch) -> Patch {
             osc.detune = state.osc_coarse[i];
             osc.unison = state.osc_unison[i];
             osc.position = state.osc_position[i];
+            osc.osc_type = osc_type_from_index(state.osc_type[i]).into();
+            osc.pulse_width = state.osc_pulse_width[i];
+            osc.warp_mode = warp_mode_from_index(state.osc_warp_mode[i]).into();
+            osc.warp_amount = state.osc_warp_amount[i];
+            osc.morph_a = state.osc_morph_a[i];
+            osc.morph_b = state.osc_morph_b[i];
+            osc.morph_amount = state.osc_morph_amount[i];
+            if state.osc_morph_amount[i] > 0.0 {
+                osc.position = state.osc_morph_a[i]
+                    + (state.osc_morph_b[i] - state.osc_morph_a[i]) * state.osc_morph_amount[i];
+            }
         }
     }
     patch.filter.cutoff = state.filter_cutoff;
     patch.filter.resonance = state.filter_resonance;
     patch.filter.key_tracking = state.filter_key_tracking;
+    patch.filter.drive = state.filter_drive;
     patch.filter.filter_type = filter_type_from_mode(state.filter_mode).into();
+    patch.filter2.cutoff = state.filter2_cutoff;
+    patch.filter2.resonance = state.filter2_resonance;
+    patch.filter2.drive = state.filter2_drive;
+    patch.filter2.filter_type = filter_type_from_mode(state.filter2_mode).into();
+    patch.unison_stereo_spread = state.unison_stereo_spread;
     patch.envelope = Envelope {
         attack: state.env_attack,
         decay: state.env_decay,
@@ -418,6 +495,14 @@ impl ReelSynthApp {
                 filter_type_from_mode(self.state.filter_mode).into(),
             ));
             a.send(AudioCmd::SetFilterKeyTracking(self.state.filter_key_tracking));
+            a.send(AudioCmd::SetFilterDrive(self.state.filter_drive));
+            a.send(AudioCmd::SetFilter2 {
+                cutoff: self.state.filter2_cutoff,
+                resonance: self.state.filter2_resonance,
+                filter_type: filter_type_from_mode(self.state.filter2_mode).into(),
+                drive: self.state.filter2_drive,
+            });
+            a.send(AudioCmd::SetUnisonStereoSpread(self.state.unison_stereo_spread));
             a.send(AudioCmd::SetEnvelope(Envelope {
                 attack: self.state.env_attack,
                 decay: self.state.env_decay,
@@ -442,6 +527,13 @@ impl ReelSynthApp {
                     unison: self.state.osc_unison[i],
                     position: self.state.osc_position[i],
                     pan: self.state.osc_pan[i],
+                    osc_type: osc_type_from_index(self.state.osc_type[i]).into(),
+                    pulse_width: self.state.osc_pulse_width[i],
+                    morph_a: self.state.osc_morph_a[i],
+                    morph_b: self.state.osc_morph_b[i],
+                    morph_amount: self.state.osc_morph_amount[i],
+                    warp_mode: warp_mode_from_index(self.state.osc_warp_mode[i]).into(),
+                    warp_amount: self.state.osc_warp_amount[i],
                 });
             }
             a.send(AudioCmd::SetSubLevel(self.state.sub_level));

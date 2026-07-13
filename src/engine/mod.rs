@@ -101,6 +101,64 @@ impl SynthEngine {
         self.patch.filter.key_tracking = key_tracking.clamp(0.0, 1.0);
     }
 
+    pub fn set_filter_drive(&mut self, drive: f32) {
+        self.patch.filter.drive = drive.clamp(0.0, 1.0);
+    }
+
+    pub fn set_filter2_cutoff(&mut self, cutoff: f32) {
+        self.patch.filter2.cutoff = cutoff;
+    }
+
+    pub fn set_filter2_resonance(&mut self, resonance: f32) {
+        self.patch.filter2.resonance = resonance.clamp(0.0, 0.95);
+    }
+
+    pub fn set_filter2_type(&mut self, filter_type: &str) {
+        self.patch.filter2.filter_type = filter_type.to_string();
+    }
+
+    pub fn set_filter2_drive(&mut self, drive: f32) {
+        self.patch.filter2.drive = drive.clamp(0.0, 1.0);
+    }
+
+    pub fn set_unison_stereo_spread(&mut self, spread: f32) {
+        self.patch.unison_stereo_spread = spread.clamp(0.0, 1.0);
+    }
+
+    pub fn set_osc_type(&mut self, index: usize, osc_type: &str) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.osc_type = osc_type.to_string();
+        }
+    }
+
+    pub fn set_osc_pulse_width(&mut self, index: usize, pw: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.pulse_width = pw.clamp(0.05, 0.95);
+        }
+    }
+
+    pub fn set_osc_morph(&mut self, index: usize, a: f32, b: f32, amount: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.morph_a = a.clamp(0.0, 255.0);
+            osc.morph_b = b.clamp(0.0, 255.0);
+            osc.morph_amount = amount.clamp(0.0, 1.0);
+            if amount > 0.0 {
+                osc.position = osc.morph_a + (osc.morph_b - osc.morph_a) * amount;
+            }
+        }
+    }
+
+    pub fn set_osc_warp(&mut self, index: usize, mode: &str, amount: f32) {
+        self.patch.ensure_oscillators(index + 1);
+        if let Some(osc) = self.patch.oscillators.get_mut(index) {
+            osc.warp_mode = mode.to_string();
+            osc.warp_amount = amount.clamp(0.0, 1.0);
+        }
+    }
+
     pub fn set_envelope(&mut self, envelope: crate::patch::Envelope) {
         self.patch.envelope = envelope;
     }

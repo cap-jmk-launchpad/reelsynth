@@ -10,7 +10,7 @@ use crate::layout::{
 };
 use crate::fx_rack::{draw_fx_rack, default_fx_slots, FxRackState, FxSlotUi};
 use crate::mod_matrix::{draw_mod_matrix, default_mod_routes, ModMatrixState, ModRouteUi};
-use crate::osc::{draw_osc_column, OscColumnState};
+use crate::osc::{draw_osc_column, osc_type_index, warp_mode_index, OscColumnState};
 use crate::widgets::{
     adsr_graph, format_depth, format_env_time, format_lfo_rate, format_sustain, tab_bar, Knob,
     KnobSize, KnobStyle, PianoKeyboard, panel, panel_disabled,
@@ -60,17 +60,30 @@ pub struct S1State {
     pub wt_morph_a: f32,
     pub wt_morph_b: f32,
     pub wt_morph_amount: f32,
+    pub osc_morph_a: [f32; 3],
+    pub osc_morph_b: [f32; 3],
+    pub osc_morph_amount: [f32; 3],
     pub osc_tab: usize,
+    pub osc_type: [usize; 3],
     pub osc_level: [f32; 3],
     pub osc_pan: [f32; 3],
     pub osc_coarse: [f32; 3],
     pub osc_unison: [u32; 3],
+    pub osc_pulse_width: [f32; 3],
+    pub osc_warp_mode: [usize; 3],
+    pub osc_warp_amount: [f32; 3],
+    pub unison_stereo_spread: f32,
     pub sub_level: f32,
     pub noise_level: f32,
     pub macro_values: [f32; 4],
     pub filter_cutoff: f32,
     pub filter_resonance: f32,
     pub filter_key_tracking: f32,
+    pub filter_drive: f32,
+    pub filter2_cutoff: f32,
+    pub filter2_resonance: f32,
+    pub filter2_mode: usize,
+    pub filter2_drive: f32,
     pub filter_mode: usize,
     pub env_attack: f32,
     pub env_decay: f32,
@@ -105,17 +118,30 @@ impl Default for S1State {
             wt_morph_a: 0.0,
             wt_morph_b: 255.0,
             wt_morph_amount: morph_amount_for_position(0.0, 255.0, 108.0),
+            osc_morph_a: [0.0; 3],
+            osc_morph_b: [255.0; 3],
+            osc_morph_amount: [0.0; 3],
             osc_tab: 0,
+            osc_type: [0, 0, 0],
             osc_level: [0.85, 0.0, 0.0],
             osc_pan: [0.0, 0.0, 0.0],
             osc_coarse: [0.0, 0.0, 0.0],
             osc_unison: [3, 1, 1],
+            osc_pulse_width: [0.5, 0.5, 0.5],
+            osc_warp_mode: [0, 0, 0],
+            osc_warp_amount: [0.0, 0.0, 0.0],
+            unison_stereo_spread: 0.7,
             sub_level: 0.0,
             noise_level: 0.0,
             macro_values: [0.5; 4],
             filter_cutoff: 1200.0,
             filter_resonance: 0.3,
             filter_key_tracking: 0.5,
+            filter_drive: 0.0,
+            filter2_cutoff: 2400.0,
+            filter2_resonance: 0.25,
+            filter2_mode: 0,
+            filter2_drive: 0.0,
             filter_mode: 0,
             env_attack: 0.012,
             env_decay: 0.22,
@@ -436,6 +462,20 @@ fn header_menu_label(label: &str) -> egui::WidgetText {
     egui::RichText::new(label).size(11.0).into()
 }
 
+fn sync_morph_to_active_tab(state: &mut S1State) {
+    let idx = state.osc_tab.min(2);
+    state.wt_morph_a = state.osc_morph_a[idx];
+    state.wt_morph_b = state.osc_morph_b[idx];
+    state.wt_morph_amount = state.osc_morph_amount[idx];
+}
+
+fn sync_morph_from_active_tab(state: &mut S1State) {
+    let idx = state.osc_tab.min(2);
+    state.osc_morph_a[idx] = state.wt_morph_a;
+    state.osc_morph_b[idx] = state.wt_morph_b;
+    state.osc_morph_amount[idx] = state.wt_morph_amount;
+}
+
 fn sync_wt_position_from_osc(state: &mut S1State) {
     let idx = state.osc_tab.min(2);
     state.wt_position = state.osc_position[idx];
@@ -453,26 +493,35 @@ fn draw_osc(ui: &mut Ui, rect: Rect, state: &mut S1State, actions: &mut S1Action
             ui,
             OscColumnState {
                 osc_tab: &mut state.osc_tab,
+                osc_type: &mut state.osc_type,
                 osc_level: &mut state.osc_level,
                 osc_pan: &mut state.osc_pan,
                 osc_coarse: &mut state.osc_coarse,
                 osc_unison: &mut state.osc_unison,
                 osc_position: &mut state.osc_position,
+                osc_pulse_width: &mut state.osc_pulse_width,
+                osc_warp_mode: &mut state.osc_warp_mode,
+                osc_warp_amount: &mut state.osc_warp_amount,
+                unison_stereo_spread: &mut state.unison_stereo_spread,
                 sub_level: &mut state.sub_level,
                 noise_level: &mut state.noise_level,
                 macro_values: &mut state.macro_values,
             },
         );
         if state.osc_tab != prev_tab {
+            sync_morph_from_active_tab(state);
             sync_wt_position_from_osc(state);
+            sync_morph_to_active_tab(state);
         }
         if result.changed {
             sync_wt_position_from_osc(state);
+            sync_morph_from_active_tab(state);
             state.wt_morph_amount = morph_amount_for_position(
                 state.wt_morph_a,
                 state.wt_morph_b,
                 state.wt_position,
             );
+            state.osc_morph_amount[state.osc_tab.min(2)] = state.wt_morph_amount;
             actions.params_changed = true;
         }
     });
@@ -581,6 +630,7 @@ fn draw_center(
             };
             if morph.show(ui).changed {
                 sync_osc_position_from_wt(state);
+                sync_morph_from_active_tab(state);
                 actions.params_changed = true;
             }
         });
@@ -632,6 +682,7 @@ fn draw_center(
             sync_osc_position_from_wt(state);
             state.wt_morph_amount =
                 morph_amount_for_position(state.wt_morph_a, state.wt_morph_b, state.wt_position);
+            sync_morph_from_active_tab(state);
             actions.params_changed = true;
         }
     });
@@ -710,7 +761,13 @@ fn draw_rail(
                             .style(KnobStyle::Wired)
                             .value_text(res_text)
                             .show(ui);
-                        if r1.changed || r2.changed {
+                        let drive_text = format!("{:.0}%", state.filter_drive * 100.0);
+                        let r_drive = Knob::new(&mut state.filter_drive, 0.0..=1.0, "Drive")
+                            .size(KnobSize::Sm)
+                            .style(KnobStyle::Wired)
+                            .value_text(drive_text)
+                            .show(ui);
+                        if r1.changed || r2.changed || r_drive.changed {
                             actions.params_changed = true;
                         }
                     });
@@ -722,7 +779,14 @@ fn draw_rail(
                             .style(KnobStyle::Wired)
                             .value_text(kt_text)
                             .show(ui);
-                        if r3.changed {
+                        let f2_text = format_cutoff(state.filter2_cutoff);
+                        let r4 = Knob::new(&mut state.filter2_cutoff, 40.0..=12000.0, "F2 Cut")
+                            .size(KnobSize::Sm)
+                            .style(KnobStyle::Wired)
+                            .logarithmic(true)
+                            .value_text(f2_text)
+                            .show(ui);
+                        if r3.changed || r4.changed {
                             actions.params_changed = true;
                         }
                     }

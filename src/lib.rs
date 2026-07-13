@@ -1,5 +1,6 @@
 pub mod wavetable;
 pub mod patch;
+pub mod osc;
 pub mod fx;
 pub mod voice;
 pub mod preview;

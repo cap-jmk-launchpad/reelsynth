@@ -10,14 +10,57 @@ use crate::widgets::{
 };
 
 const OSC_TABS: [&str; 3] = ["Osc 1", "Osc 2", "Osc 3"];
+const OSC_TYPES: [&str; 5] = ["Wavetable", "Saw", "Square", "Triangle", "Pulse"];
+const WARP_MODES: [&str; 3] = ["None", "Sync", "Bend"];
+
+pub fn osc_type_index(ty: &str) -> usize {
+    match ty.to_ascii_lowercase().as_str() {
+        "saw" => 1,
+        "square" => 2,
+        "triangle" => 3,
+        "pulse" => 4,
+        _ => 0,
+    }
+}
+
+pub fn osc_type_from_index(idx: usize) -> &'static str {
+    match idx {
+        1 => "saw",
+        2 => "square",
+        3 => "triangle",
+        4 => "pulse",
+        _ => "wavetable",
+    }
+}
+
+pub fn warp_mode_index(mode: &str) -> usize {
+    match mode.to_ascii_lowercase().as_str() {
+        "sync" => 1,
+        "bend" => 2,
+        _ => 0,
+    }
+}
+
+pub fn warp_mode_from_index(idx: usize) -> &'static str {
+    match idx {
+        1 => "sync",
+        2 => "bend",
+        _ => "none",
+    }
+}
 
 pub struct OscColumnState<'a> {
     pub osc_tab: &'a mut usize,
+    pub osc_type: &'a mut [usize; 3],
     pub osc_level: &'a mut [f32; 3],
     pub osc_pan: &'a mut [f32; 3],
     pub osc_coarse: &'a mut [f32; 3],
     pub osc_unison: &'a mut [u32; 3],
     pub osc_position: &'a mut [f32; 3],
+    pub osc_pulse_width: &'a mut [f32; 3],
+    pub osc_warp_mode: &'a mut [usize; 3],
+    pub osc_warp_amount: &'a mut [f32; 3],
+    pub unison_stereo_spread: &'a mut f32,
     pub sub_level: &'a mut f32,
     pub noise_level: &'a mut f32,
     pub macro_values: &'a mut [f32; 4],
@@ -41,6 +84,19 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>) -> OscColumnResul
                 ui.add_space(GRID_UNIT);
 
                 let idx = (*state.osc_tab).min(2);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Type")
+                            .size(10.0)
+                            .color(Tokens::default().text_muted),
+                    );
+                    let ty_label = OSC_TYPES[state.osc_type[idx].min(OSC_TYPES.len() - 1)];
+                    if ui.button(ty_label).clicked() {
+                        state.osc_type[idx] = (state.osc_type[idx] + 1) % OSC_TYPES.len();
+                        changed = true;
+                    }
+                });
+
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = SPACE_SM;
                     let level_text = format!("{:.2}", state.osc_level[idx]);
@@ -68,20 +124,69 @@ pub fn draw_osc_column(ui: &mut Ui, state: OscColumnState<'_>) -> OscColumnResul
 
                 ui.add_space(GRID_UNIT);
                 let pos = &mut state.osc_position[idx];
-                if param_slider(
-                    ui,
-                    "WT Position",
-                    pos,
-                    0.0..=255.0,
-                    &format!("{:.0} / 255", pos.round()),
-                ) {
-                    changed = true;
+                let is_wt = state.osc_type[idx] == 0;
+                if is_wt {
+                    if param_slider(
+                        ui,
+                        "WT Position",
+                        pos,
+                        0.0..=255.0,
+                        &format!("{:.0} / 255", pos.round()),
+                    ) {
+                        changed = true;
+                    }
+
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Warp")
+                                .size(10.0)
+                                .color(Tokens::default().text_muted),
+                        );
+                        let warp_label = WARP_MODES[state.osc_warp_mode[idx].min(2)];
+                        if ui.button(warp_label).clicked() {
+                            state.osc_warp_mode[idx] =
+                                (state.osc_warp_mode[idx] + 1) % WARP_MODES.len();
+                            changed = true;
+                        }
+                    });
+                    if param_slider(
+                        ui,
+                        "Warp Amt",
+                        &mut state.osc_warp_amount[idx],
+                        0.0..=1.0,
+                        &format!("{:.0}%", state.osc_warp_amount[idx] * 100.0),
+                    ) {
+                        changed = true;
+                    }
+                }
+
+                let is_pulse = matches!(state.osc_type[idx], 2 | 4);
+                if is_pulse {
+                    if param_slider(
+                        ui,
+                        "Pulse W",
+                        &mut state.osc_pulse_width[idx],
+                        0.05..=0.95,
+                        &format!("{:.0}%", state.osc_pulse_width[idx] * 100.0),
+                    ) {
+                        changed = true;
+                    }
                 }
 
                 let unison_f = &mut (state.osc_unison[idx] as f32);
                 let unison_label = format_unison(state.osc_unison[idx]);
                 if param_slider(ui, "Unison", unison_f, 1.0..=8.0, &unison_label) {
                     state.osc_unison[idx] = unison_f.round().clamp(1.0, 8.0) as u32;
+                    changed = true;
+                }
+
+                if param_slider(
+                    ui,
+                    "Spread",
+                    state.unison_stereo_spread,
+                    0.0..=1.0,
+                    &format!("{:.0}%", *state.unison_stereo_spread * 100.0),
+                ) {
                     changed = true;
                 }
             });
