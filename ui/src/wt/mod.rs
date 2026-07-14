@@ -11,5 +11,5 @@ pub use morph::{morph_amount_for_position, morph_position, WtMorph, WtMorphRespo
 pub use strip::{WtStrip, WtStripResponse};
 pub use toolbar::{WtEditTool, WtToolbar};
 pub use view_2d::{WtView2d, WtView2dResponse};
-pub use view_3d::WtView3d;
+pub use view_3d::{WtView3d, WtView3dResponse};
 pub use waveform::waveform_points;

@@ -135,12 +135,31 @@ pub(super) fn draw_center(
                     egui::vec2(half_w, views_h),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        WtView3d {
-                            position: state.wt_position,
+                        let view3d = WtView3d {
+                            position: &mut state.wt_position,
                             bank: bank.as_deref(),
+                            morph_amount: Some(&mut state.wt_morph_amount),
                             time: time as f32,
+                        };
+                        let view3d_resp = view3d.show(ui);
+                        if view3d_resp.changed() {
+                            if view3d_resp.morph_changed {
+                                state.wt_position = morph_position(
+                                    state.wt_morph_a,
+                                    state.wt_morph_b,
+                                    state.wt_morph_amount,
+                                );
+                            } else if view3d_resp.position_changed {
+                                state.wt_morph_amount = morph_amount_for_position(
+                                    state.wt_morph_a,
+                                    state.wt_morph_b,
+                                    state.wt_position,
+                                );
+                            }
+                            sync_osc_position_from_wt(state);
+                            sync_morph_from_active_tab(state);
+                            actions.params_changed = true;
                         }
-                        .show(ui);
                     },
                 );
             });
