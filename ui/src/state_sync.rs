@@ -270,6 +270,28 @@ mod tests {
     }
 
     #[test]
+    fn fx_delay_params_roundtrip_through_patch() {
+        let mut state = UiState::default();
+        let delay_idx = state
+            .fx_slots
+            .iter()
+            .position(|s| s.effect_type == reelsynth::EffectType::Delay)
+            .expect("default delay slot");
+        state.fx_slots[delay_idx].time_ms = 512.0;
+        state.fx_slots[delay_idx].feedback = 0.4;
+        state.fx_slots[delay_idx].mix = 0.75;
+        let patch = patch_from_state(&state, &Patch::default_mono());
+        let delay = patch
+            .effects
+            .iter()
+            .find(|s| s.effect_type == reelsynth::EffectType::Delay)
+            .expect("delay in patch");
+        assert!((delay.time_ms - 512.0).abs() < 1e-3);
+        assert!((delay.feedback - 0.4).abs() < 1e-4);
+        assert!((delay.mix - 0.75).abs() < 1e-4);
+    }
+
+    #[test]
     fn fx_ui_patch_changes_engine_output() {
         use reelsynth::{SynthEngine, WavetableBank};
 

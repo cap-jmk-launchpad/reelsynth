@@ -7,9 +7,13 @@ use reelsynth_ui_theme::Tokens;
 use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, sidebar_panel_chrome_height};
 use crate::region::region;
 use crate::widgets::{
-    button_icon, card_stroke, collapsible_panel, menu_selectable, reel_combo, select_value_text,
-    sidebar_panel,
+    button_icon, button_toggle, card_stroke, collapsible_panel, menu_selectable, reel_combo,
+    select_value_text, sidebar_panel,
 };
+
+const FX_FOOTER_HEIGHT: f32 = 18.0;
+const FX_TITLE_HEIGHT: f32 = 14.0;
+const FX_PARAM_ROW_HEIGHT: f32 = 18.0;
 
 pub const FX_SLOT_WIDTH: f32 = 148.0;
 pub const FX_SECTION_HEADER: f32 = 24.0;
@@ -29,10 +33,13 @@ impl FxMetrics {
     fn from_scale(scale: UiScale, body_h: f32) -> Self {
         let s = scale.ui();
         let header_h = FX_SECTION_HEADER * s;
-        let controls_h = 18.0 * s;
+        let controls_h = FX_FOOTER_HEIGHT * s;
         let gap = 2.0 * s;
+        let card_body = (FX_TITLE_HEIGHT + FX_PARAM_ROW_HEIGHT + 6.0) * s;
         let body = (body_h - header_h).max(40.0 * s);
-        let card_h = (body - controls_h - gap).clamp(44.0 * s, 60.0 * s);
+        let card_h = (body - controls_h - gap)
+            .max(card_body)
+            .clamp(card_body, 72.0 * s);
         let column_h = card_h + gap + controls_h;
         Self {
             slot_width: FX_SLOT_WIDTH * s,
@@ -316,12 +323,13 @@ fn draw_effect_rack_grid(
     let gap = GRID_UNIT * s * 0.75;
     let total_w = ui.available_width();
     let col_w = ((total_w - gap) * 0.5).max(72.0 * s);
-    let controls_h = 18.0 * s;
+    let controls_h = FX_FOOTER_HEIGHT * s;
     let cell_count = slots.len() + 1;
     let rows = cell_count.div_ceil(2);
     let row_gap_total = gap * 0.5 * (rows.saturating_sub(1) as f32);
-    let row_h = ((body_h - row_gap_total) / rows as f32).clamp(44.0 * s, 60.0 * s);
-    let card_h = (row_h - gap * 0.5 - controls_h).clamp(36.0 * s, 52.0 * s);
+    let min_card = (FX_TITLE_HEIGHT + FX_PARAM_ROW_HEIGHT + 6.0) * s;
+    let row_h = ((body_h - row_gap_total) / rows as f32).clamp(min_card + controls_h + gap * 0.5, 80.0 * s);
+    let card_h = (row_h - gap * 0.5 - controls_h).max(min_card);
     let column_h = card_h + gap * 0.5 + controls_h;
     let grid_metrics = FxMetrics {
         slot_width: col_w,
@@ -371,6 +379,139 @@ struct FxSlotResult {
     changed: bool,
 }
 
+fn fx_drag_pct(ui: &mut Ui, label: &str, value: &mut f32, max: f32) -> bool {
+    let tokens = Tokens::default();
+    let mut pct = (*value * 100.0).clamp(0.0, max * 100.0);
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.label(
+            egui::RichText::new(label)
+                .size(9.0)
+                .color(tokens.text_muted),
+        );
+        if ui
+            .add(
+                egui::DragValue::new(&mut pct)
+                    .speed(0.4)
+                    .range(0.0..=(max * 100.0))
+                    .suffix("%"),
+            )
+            .changed()
+        {
+            changed = true;
+        }
+    });
+    if changed {
+        *value = (pct / 100.0).clamp(0.0, max);
+    }
+    changed
+}
+
+fn fx_drag_f32(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut f32,
+    range: std::ops::RangeInclusive<f32>,
+    speed: f32,
+    suffix: &str,
+) -> bool {
+    let tokens = Tokens::default();
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.label(
+            egui::RichText::new(label)
+                .size(9.0)
+                .color(tokens.text_muted),
+        );
+        if ui
+            .add(
+                egui::DragValue::new(value)
+                    .speed(speed)
+                    .range(range)
+                    .suffix(suffix),
+            )
+            .changed()
+        {
+            changed = true;
+        }
+    });
+    changed
+}
+
+fn draw_fx_slot_params(ui: &mut Ui, slot: &mut EffectSlotUi) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0;
+        match slot.effect_type {
+            EffectType::Chorus => {
+                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
+                    changed = true;
+                }
+                if fx_drag_f32(ui, "Rate", &mut slot.rate, 0.05..=8.0, 0.02, "Hz") {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Depth", &mut slot.depth, 1.0) {
+                    changed = true;
+                }
+            }
+            EffectType::Delay => {
+                if fx_drag_f32(ui, "Time", &mut slot.time_ms, 1.0..=2000.0, 1.0, "ms") {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "FB", &mut slot.feedback, 0.95) {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
+                    changed = true;
+                }
+            }
+            EffectType::Reverb => {
+                if fx_drag_pct(ui, "Size", &mut slot.size, 1.0) {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Damp", &mut slot.damping, 1.0) {
+                    changed = true;
+                }
+            }
+            EffectType::Distortion => {
+                if fx_drag_pct(ui, "Drive", &mut slot.drive, 1.0) {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Tone", &mut slot.tone, 1.0) {
+                    changed = true;
+                }
+            }
+            EffectType::Compressor => {
+                if fx_drag_f32(
+                    ui,
+                    "Thr",
+                    &mut slot.threshold,
+                    -60.0..=0.0,
+                    0.25,
+                    "dB",
+                ) {
+                    changed = true;
+                }
+                if fx_drag_f32(ui, "Ratio", &mut slot.ratio, 1.0..=20.0, 0.05, ":1") {
+                    changed = true;
+                }
+                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
+                    changed = true;
+                }
+            }
+        }
+    });
+    changed
+}
+
 fn draw_fx_slot_column(
     ui: &mut Ui,
     slots: &mut Vec<EffectSlotUi>,
@@ -384,57 +525,52 @@ fn draw_fx_slot_column(
         ui.set_width(metrics.slot_width);
         ui.set_min_height(metrics.column_height);
 
-        let (card_rect, response) = ui.allocate_exact_size(
-            egui::vec2(metrics.slot_width, metrics.card_height),
-            egui::Sense::click(),
-        );
-
         let active = slots[idx].is_active();
         let bypassed = slots[idx].bypassed;
-        if ui.is_rect_visible(card_rect) {
-            let painter = ui.painter_at(card_rect);
-            let stroke = card_stroke(active, response.hovered(), &tokens);
-            let fill = if active {
-                tokens.accent_muted.gamma_multiply(0.55)
-            } else if response.hovered() {
-                tokens.surface2
-            } else {
-                tokens.bg
-            };
-            painter.rect_filled(card_rect, RADIUS_SM, fill);
-            painter.rect_stroke(card_rect, RADIUS_SM, egui::Stroke::new(1.0_f32, stroke));
-            let title_color = if bypassed {
-                tokens.text_secondary
-            } else {
-                tokens.text
-            };
-            painter.text(
-                egui::pos2(card_rect.min.x + GRID_UNIT, card_rect.min.y + 6.0),
-                egui::Align2::LEFT_TOP,
-                slots[idx].effect_type.label(),
-                FontId::proportional(11.0),
-                title_color,
-            );
-            let detail_color = if bypassed {
-                tokens.text_secondary
-            } else if active {
-                tokens.text_secondary
-            } else {
-                tokens.text_muted
-            };
-            painter.text(
-                egui::pos2(card_rect.min.x + GRID_UNIT, card_rect.min.y + 22.0),
-                egui::Align2::LEFT_TOP,
-                slots[idx].detail(),
-                FontId::proportional(10.0),
-                detail_color,
-            );
-        }
+        let stroke_color = card_stroke(active, false, &tokens);
 
-        if response.clicked() {
-            slots[idx].bypassed = !slots[idx].bypassed;
-            changed = true;
+        egui::Frame {
+            fill: if active {
+                tokens.accent_muted.gamma_multiply(0.55)
+            } else if bypassed {
+                tokens.bg
+            } else {
+                tokens.surface2.gamma_multiply(0.85)
+            },
+            stroke: egui::Stroke::new(1.0_f32, stroke_color),
+            rounding: egui::Rounding::same(RADIUS_SM),
+            inner_margin: egui::Margin::symmetric(GRID_UNIT * 0.5, 3.0),
+            ..Default::default()
         }
+        .show(ui, |ui| {
+            ui.set_min_height(metrics.card_height - 6.0);
+            ui.horizontal(|ui| {
+                let title_color = if bypassed {
+                    tokens.text_secondary
+                } else {
+                    tokens.text
+                };
+                ui.label(
+                    egui::RichText::new(slots[idx].effect_type.label())
+                        .size(11.0)
+                        .color(title_color),
+                );
+                ui.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| {
+                        ui.set_width(ui.available_width());
+                        let on_label = if slots[idx].bypassed { "Off" } else { "On" };
+                        if button_toggle(ui, on_label, !slots[idx].bypassed).clicked() {
+                            slots[idx].bypassed = !slots[idx].bypassed;
+                            changed = true;
+                        }
+                    },
+                );
+            });
+            if draw_fx_slot_params(ui, &mut slots[idx]) {
+                changed = true;
+            }
+        });
 
         ui.allocate_ui_with_layout(
             egui::vec2(metrics.slot_width, metrics.controls_height),
@@ -554,5 +690,17 @@ mod bridge_tests {
         slot.bypassed = false;
         let ui = EffectSlotUi::from_slot(&slot);
         assert!(ui.detail().contains("Drive"));
+    }
+
+    #[test]
+    fn delay_params_roundtrip_to_engine() {
+        let mut ui_slot = EffectSlotUi::from_slot(&EffectSlot::delay());
+        ui_slot.time_ms = 420.0;
+        ui_slot.feedback = 0.55;
+        ui_slot.mix = 0.6;
+        let engine = ui_slot.to_slot();
+        assert!((engine.time_ms - 420.0).abs() < 1e-3);
+        assert!((engine.feedback - 0.55).abs() < 1e-4);
+        assert!((engine.mix - 0.6).abs() < 1e-4);
     }
 }

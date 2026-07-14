@@ -84,9 +84,8 @@ pub fn sidebar_fx_min_height(scale: f32, slot_count: usize) -> f32 {
     let chrome = sidebar_panel_chrome_height(s, true);
     let rows = (slot_count + 1).div_ceil(2).max(2);
     let row_gap = GRID_UNIT * s * 0.375 * (rows.saturating_sub(1) as f32);
-    let controls_h = 18.0 * s;
-    let card_h = 48.0 * s;
-    let row_h = card_h + GRID_UNIT * s * 0.375 + controls_h;
+    let card_h = 56.0 * s;
+    let row_h = card_h + GRID_UNIT * s * 0.375 + 18.0 * s;
     chrome + rows as f32 * row_h + row_gap
 }
 
