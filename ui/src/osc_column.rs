@@ -20,8 +20,8 @@ const WARP_MODES: [&str; 3] = ["None", "Sync", "Bend"];
 const FM_ALGORITHMS: [&str; 4] = ["Off", "2→1", "3→1", "2+3→1"];
 const FM_SOURCES: [&str; 5] = ["None", "Osc 2", "Osc 3", "2+3→1", "Feedback"];
 
-const OSC_CARD_WIDTH: f32 = 76.0;
-const OSC_CARD_HEIGHT: f32 = 56.0;
+const OSC_CARD_WIDTH: f32 = 72.0;
+const OSC_CARD_HEIGHT: f32 = 48.0;
 const OSC_PREVIEW_SAMPLES: usize = 64;
 const OSC_PREVIEW_INTERVAL_SECS: f64 = 1.0 / 20.0;
 
@@ -127,15 +127,15 @@ pub fn draw_osc_column(
     let mut changed = false;
     let mut osc_count_changed = false;
     let gap = CENTER_GAP * scale;
-    let min_section_h = 80.0 * scale;
+    let min_section_h = 72.0 * scale;
     let card_w = OSC_CARD_WIDTH * scale;
     let card_h = OSC_CARD_HEIGHT * scale;
 
     egui::Frame::none()
-        .inner_margin(egui::Margin::same(SPACE_SM * scale * 0.75))
+        .inner_margin(egui::Margin::same(SPACE_SM * scale * 0.5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = gap;
+            ui.spacing_mut().item_spacing.y = gap * 0.65;
 
             panel(ui, "Oscillators", |ui| {
                 let previews = resolve_osc_previews(input.patch, input.preview);
@@ -168,7 +168,7 @@ pub fn draw_osc_column(
                     }
                 }
 
-                ui.add_space(GRID_UNIT * 0.35);
+                ui.add_space(GRID_UNIT * 0.25);
 
                 let idx = (*state.osc_tab).min(state.oscillators.len().saturating_sub(1));
                 let osc = &mut state.oscillators[idx];
@@ -207,7 +207,7 @@ pub fn draw_osc_column(
                     }
                 });
 
-                ui.add_space(GRID_UNIT * 0.5);
+                ui.add_space(GRID_UNIT * 0.2);
                 let is_wt = osc.osc_type == 0;
                 if is_wt {
                     let pos_label = format!("{:.0} / 255", osc.position.round());
@@ -268,8 +268,8 @@ pub fn draw_osc_column(
                     changed = true;
                 }
 
-                ui.add_space(GRID_UNIT);
-                if ui.available_height() > min_section_h * 2.2 {
+                ui.add_space(GRID_UNIT * 0.5);
+                if ui.available_height() > min_section_h * 1.8 {
                     panel(ui, "FM", |ui| {
                         let algo_idx = &mut osc.fm_algorithm;
                         if labeled_select(ui, "Algo", &FM_ALGORITHMS, algo_idx) {
@@ -310,13 +310,12 @@ pub fn draw_osc_column(
                         });
                     });
                 }
-            });
 
-            if ui.available_height() > min_section_h * 1.5 {
-                panel(ui, "Sub / Noise · Macros", |ui| {
+                if ui.available_height() > min_section_h * 1.1 {
+                    ui.add_space(GRID_UNIT * 0.35);
                     ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = SPACE_SM;
-                        let sub_text = format!("{:.2}", state.sub_level);
+                        ui.spacing_mut().item_spacing.x = SPACE_SM * 0.75;
+                        let sub_text = format!("{:.2}", *state.sub_level);
                         let r1 = Knob::new(state.sub_level, 0.0..=1.0, "Sub")
                             .size(KnobSize::Sm)
                             .scale(scale)
@@ -324,7 +323,7 @@ pub fn draw_osc_column(
                             .show_wired_badge(false)
                             .value_text(sub_text)
                             .show(ui);
-                        let noise_text = format!("{:.2}", state.noise_level);
+                        let noise_text = format!("{:.2}", *state.noise_level);
                         let r2 = Knob::new(state.noise_level, 0.0..=1.0, "Noise")
                             .size(KnobSize::Sm)
                             .scale(scale)
@@ -349,8 +348,9 @@ pub fn draw_osc_column(
                             changed = true;
                         }
                     });
-                });
-            }
+                }
+            });
+
         });
 
     OscColumnResult {
@@ -427,16 +427,11 @@ fn draw_osc_scroll_strip(
         removed: None,
     };
 
-    ui.label(
-        egui::RichText::new("Browse oscillators")
-            .size(10.0)
-            .color(tokens.text_muted),
-    );
-    ui.add_space(4.0);
+    ui.add_space(2.0 * scale);
 
     egui::ScrollArea::horizontal()
         .id_salt("osc_scroll_strip")
-        .max_height(card_h + 8.0 * scale)
+        .max_height(card_h + 4.0 * scale)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = GRID_UNIT * 0.75;

@@ -55,10 +55,59 @@ pub const PIANO_OCTAVES: usize = 3;
 pub const PIANO_START_NOTE: u8 = 48; // C3
 
 pub const MOD_MATRIX_HEIGHT: f32 = 120.0;
+pub const MOD_ROW_HEIGHT: f32 = 22.0;
 pub const FX_RACK_HEIGHT: f32 = 92.0;
 pub const CENTER_MOD_HEIGHT: f32 = 108.0;
 pub const CENTER_FX_HEIGHT: f32 = 88.0;
 pub const SECTION_HEADER_HEIGHT: f32 = 24.0;
+
+/// Minimum osc-column height reserved for scrollable oscillator params.
+pub const OSC_COLUMN_MIN_SCROLL_HEIGHT: f32 = 112.0;
+
+/// Minimum sidebar FX rack height for a 2-wide grid (header + padding + rows).
+pub fn sidebar_fx_min_height(scale: f32, slot_count: usize) -> f32 {
+    let s = scale;
+    let header = SECTION_HEADER_HEIGHT * s;
+    let padding = SPACE_SM * s * 2.0;
+    let rows = (slot_count + 1).div_ceil(2).max(2);
+    let row_h = 52.0 * s;
+    let gap = GRID_UNIT * s * 0.5 * (rows.saturating_sub(1) as f32);
+    header + padding + rows as f32 * row_h + gap
+}
+
+/// Split left column: compact osc scroll on top, FX grid fills the bottom.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OscColumnHeights {
+    pub osc: f32,
+    pub fx: f32,
+    /// Always zero — mod matrix lives in the right rail (`embed_mod_in_rail`).
+    pub mod_matrix: f32,
+}
+
+/// Split left column heights: scrollable osc params on top, FX grid anchored at bottom.
+pub fn osc_column_split_heights(
+    total_h: f32,
+    scale: f32,
+    slot_count: usize,
+    show_fx: bool,
+    _show_mod: bool,
+) -> OscColumnHeights {
+    let min_osc = OSC_COLUMN_MIN_SCROLL_HEIGHT * scale;
+    let fx_h = if show_fx {
+        let min_fx = sidebar_fx_min_height(scale, slot_count);
+        min_fx
+            .max(total_h * 0.48)
+            .min((total_h - min_osc).max(min_fx))
+    } else {
+        0.0
+    };
+    let osc_h = (total_h - fx_h).max(min_osc);
+    OscColumnHeights {
+        osc: osc_h,
+        fx: fx_h,
+        mod_matrix: 0.0,
+    }
+}
 
 /// Uniform UI scale derived from window and main-column budget.
 #[derive(Debug, Clone, Copy)]
@@ -138,7 +187,7 @@ pub fn embed_fx_in_osc_column(options: ShellLayoutOptions) -> bool {
     options.show_osc_column && options.show_fx_rack
 }
 
-/// Mod matrix lives in the right rail when the osc column is visible.
+/// Mod matrix lives in the left osc column when the osc column is visible.
 pub fn embed_mod_in_rail(options: ShellLayoutOptions) -> bool {
     options.show_osc_column && options.show_mod_matrix
 }
@@ -369,6 +418,16 @@ mod tests {
         let layout = ShellLayout::compute_with_options(screen, options);
         crate::layout_audit::audit_shell(&layout, screen, options);
         assert!(layout.main.height() > 100.0);
+    }
+
+    #[test]
+    fn osc_column_split_reserves_fx_at_bottom() {
+        let total = 796.0;
+        let stack = osc_column_split_heights(total, 1.0, 3, true, false);
+        assert!(stack.fx >= sidebar_fx_min_height(1.0, 3));
+        assert_eq!(stack.mod_matrix, 0.0);
+        assert!((stack.osc + stack.fx - total).abs() < 0.5);
+        assert!(stack.fx > stack.osc * 0.45);
     }
 
     #[test]

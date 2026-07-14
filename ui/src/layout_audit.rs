@@ -4,7 +4,7 @@ use egui::Rect;
 
 use crate::center_layout::CenterRegions;
 use crate::layout::{
-    embed_fx_in_osc_column, embed_mod_fx_in_center, embed_mod_in_rail, embed_piano_in_center,
+    embed_fx_in_osc_column, embed_mod_in_rail, embed_piano_in_center,
     ShellLayout, ShellLayoutOptions, SPACE_SM,
 };
 

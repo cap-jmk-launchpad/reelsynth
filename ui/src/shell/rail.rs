@@ -4,7 +4,7 @@ use reelsynth_ui_theme::Tokens;
 use super::*;
 use super::footer::{draw_level_meter, format_cutoff};
 use super::header::sync_osc_position_from_wt;
-use crate::layout::{CENTER_GAP, UiScale};
+use crate::layout::{CENTER_GAP, MOD_MATRIX_HEIGHT, UiScale};
 use crate::layout_audit::{
     rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_mod_allocated_rect_id,
     rail_mod_used_rect_id, rail_used_rect_id,
@@ -26,30 +26,73 @@ pub(super) fn draw_rail(
     let s = scale.ui();
     let gap = CENTER_GAP * s;
     region(ui, rect, |ui| {
-        egui::Frame::none()
-            .inner_margin(egui::Margin::same(SPACE_SM * s * 0.75))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = gap;
-                if config.show_osc_column {
-                    egui::ScrollArea::vertical()
-                        .id_salt("rail_scroll")
-                        .auto_shrink([false; 2])
-                        .show(ui, |ui| {
-                            draw_rail_panels(ui, rect, state, config, actions, scale);
-                        });
-                } else {
-                    draw_rail_panels(ui, rect, state, config, actions, scale);
-                }
-                let used = ui.min_rect().intersect(rect);
-                ui.ctx().data_mut(|d| d.insert_temp(rail_used_rect_id(), used));
+        let mod_h = if config.show_mod_matrix && config.show_osc_column {
+            (MOD_MATRIX_HEIGHT * s)
+                .min(rect.height() * 0.32)
+                .max(72.0 * s)
+        } else {
+            0.0
+        };
+        let scroll_h = (rect.height() - mod_h).max(0.0);
+        let scroll_rect =
+            Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + scroll_h));
+        let mod_top = rect.min.y + scroll_h;
+        let mod_rect = if mod_h > 0.0 {
+            Rect::from_min_max(
+                egui::pos2(rect.min.x, mod_top),
+                egui::pos2(rect.max.x, mod_top + mod_h),
+            )
+        } else {
+            Rect::NOTHING
+        };
+
+        region(ui, scroll_rect, |ui| {
+            egui::Frame::none()
+                .inner_margin(egui::Margin::same(SPACE_SM * s * 0.75))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = gap;
+                    if config.show_osc_column {
+                        egui::ScrollArea::vertical()
+                            .id_salt("rail_scroll")
+                            .auto_shrink([false; 2])
+                            .show(ui, |ui| {
+                                draw_rail_panels(ui, state, config, actions, scale);
+                            });
+                    } else {
+                        draw_rail_panels(ui, state, config, actions, scale);
+                    }
+                });
+        });
+
+        if mod_rect.is_positive() {
+            let mod_result = draw_mod_matrix(
+                ui,
+                mod_rect,
+                ModMatrixState {
+                    open: &mut state.mod_matrix_open,
+                    routes: &mut state.mod_routes,
+                    total_routes: state.mod_route_total,
+                },
+                scale,
+            );
+            if mod_result.changed {
+                actions.params_changed = true;
+            }
+            let used = ui.min_rect().intersect(mod_rect);
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(rail_mod_allocated_rect_id(), mod_rect);
+                d.insert_temp(rail_mod_used_rect_id(), used);
             });
+        }
+
+        let used = ui.min_rect().intersect(rect);
+        ui.ctx().data_mut(|d| d.insert_temp(rail_used_rect_id(), used));
     });
 }
 
 fn draw_rail_panels(
     ui: &mut Ui,
-    rail_rect: Rect,
     state: &mut UiState,
     config: &ShellConfig,
     actions: &mut ShellActions,
@@ -58,7 +101,6 @@ fn draw_rail_panels(
     let s = scale.ui();
     let knob_sm = if s < 0.82 { KnobSize::Sm } else { KnobSize::Sm };
     let knob_md = if s < 0.82 { KnobSize::Sm } else { KnobSize::Md };
-    let min_panel_h = 92.0 * s;
 
     if !config.show_osc_column {
         panel(ui, "Performance", |ui| {
@@ -113,118 +155,88 @@ fn draw_rail_panels(
     });
 
     if config.show_osc_column {
-        if ui.available_height() > min_panel_h * 3.8 {
-            panel(ui, "Filter Envelope", |ui| {
-                adsr_graph(
-                    ui,
-                    state.filt_env_attack,
-                    state.filt_env_decay,
-                    state.filt_env_sustain,
-                    state.filt_env_release,
-                    s * 0.85,
-                );
-                ui.add_space(GRID_UNIT * s * 0.5);
-                env_knobs(
-                    ui,
-                    &mut state.filt_env_attack,
-                    &mut state.filt_env_decay,
-                    &mut state.filt_env_sustain,
-                    &mut state.filt_env_release,
-                    actions,
-                    s,
-                );
-            });
-        }
-
-        if ui.available_height() > min_panel_h * 2.8 {
-            panel(ui, "Amp Envelope", |ui| {
-                adsr_graph(
-                    ui,
-                    state.env_attack,
-                    state.env_decay,
-                    state.env_sustain,
-                    state.env_release,
-                    s * 0.85,
-                );
-                ui.add_space(GRID_UNIT * s * 0.5);
-                env_knobs(
-                    ui,
-                    &mut state.env_attack,
-                    &mut state.env_decay,
-                    &mut state.env_sustain,
-                    &mut state.env_release,
-                    actions,
-                    s,
-                );
-            });
-        }
-
-        if ui.available_height() > min_panel_h * 1.8 {
-            panel(ui, "LFOs", |ui| {
-                ui.spacing_mut().item_spacing.x = SPACE_SM * s;
-                let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(w, 0.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            lfo_block(
-                                ui,
-                                "LFO 1",
-                                &mut state.lfo_rate,
-                                &mut state.lfo_depth,
-                                &mut state.lfo_shape,
-                                KnobStyle::Wired,
-                                actions,
-                                s,
-                            );
-                        },
-                    );
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(w, 0.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            lfo_block(
-                                ui,
-                                "LFO 2",
-                                &mut state.lfo2_rate,
-                                &mut state.lfo2_depth,
-                                &mut state.lfo2_shape,
-                                KnobStyle::Normal,
-                                actions,
-                                s,
-                            );
-                        },
-                    );
-                });
-            });
-        }
-
-        if config.show_mod_matrix {
-            let mod_h = (120.0 * s).min(ui.available_height().max(72.0 * s));
-            let mod_top = ui.cursor().min.y;
-            let mod_rect = egui::Rect::from_min_max(
-                egui::pos2(ui.max_rect().min.x, mod_top),
-                egui::pos2(ui.max_rect().max.x, mod_top + mod_h),
-            );
-            let result = draw_mod_matrix(
+        panel(ui, "Filter Envelope", |ui| {
+            adsr_graph(
                 ui,
-                mod_rect,
-                ModMatrixState {
-                    open: &mut state.mod_matrix_open,
-                    routes: &mut state.mod_routes,
-                    total_routes: state.mod_route_total,
-                },
-                scale,
+                state.filt_env_attack,
+                state.filt_env_decay,
+                state.filt_env_sustain,
+                state.filt_env_release,
+                s * 0.85,
             );
-            if result.changed {
-                actions.params_changed = true;
-            }
-            ui.ctx().data_mut(|d| {
-                d.insert_temp(rail_mod_allocated_rect_id(), mod_rect);
-                d.insert_temp(rail_mod_used_rect_id(), mod_rect);
+            ui.add_space(GRID_UNIT * s * 0.5);
+            env_knobs(
+                ui,
+                &mut state.filt_env_attack,
+                &mut state.filt_env_decay,
+                &mut state.filt_env_sustain,
+                &mut state.filt_env_release,
+                actions,
+                s,
+            );
+        });
+
+        panel(ui, "Amp Envelope", |ui| {
+            adsr_graph(
+                ui,
+                state.env_attack,
+                state.env_decay,
+                state.env_sustain,
+                state.env_release,
+                s * 0.85,
+            );
+            ui.add_space(GRID_UNIT * s * 0.5);
+            env_knobs(
+                ui,
+                &mut state.env_attack,
+                &mut state.env_decay,
+                &mut state.env_sustain,
+                &mut state.env_release,
+                actions,
+                s,
+            );
+        });
+
+        panel(ui, "LFOs", |ui| {
+            ui.spacing_mut().item_spacing.x = SPACE_SM * s;
+            let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
+            ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(w, 0.0),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        lfo_block(
+                            ui,
+                            "LFO 1",
+                            &mut state.lfo_rate,
+                            &mut state.lfo_depth,
+                            &mut state.lfo_shape,
+                            KnobStyle::Wired,
+                            actions,
+                            s,
+                        );
+                    },
+                );
+                ui.allocate_ui_with_layout(
+                    egui::vec2(w, 0.0),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        lfo_block(
+                            ui,
+                            "LFO 2",
+                            &mut state.lfo2_rate,
+                            &mut state.lfo2_depth,
+                            &mut state.lfo2_shape,
+                            KnobStyle::Normal,
+                            actions,
+                            s,
+                        );
+                    },
+                );
             });
-        } else if ui.available_height() > 40.0 * s {
+        });
+
+        if ui.available_height() > 40.0 * s {
             draw_level_meter(ui);
         }
     } else {

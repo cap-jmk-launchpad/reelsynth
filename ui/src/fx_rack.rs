@@ -223,9 +223,11 @@ fn draw_effect_rack_inner(
                         );
                     }
 
+                    let body_h = (rect.height() - metrics.header_h).max(0.0);
                     egui::Frame::none()
                         .inner_margin(egui::Margin::symmetric(SPACE_SM * scale.ui(), GRID_UNIT * scale.ui()))
                         .show(ui, |ui| {
+                            ui.set_min_height(body_h);
                             match layout {
                                 RackLayout::Horizontal => {
                                     draw_effect_rack_horizontal(ui, state, scale, metrics, &mut changed);
@@ -288,8 +290,13 @@ fn draw_effect_rack_grid(
     let gap = GRID_UNIT * s * 0.75;
     let total_w = ui.available_width();
     let col_w = ((total_w - gap) * 0.5).max(72.0 * s);
-    let card_h = metrics.card_height.max(48.0 * s);
-    let controls_h = metrics.controls_height;
+    let controls_h = 18.0 * s;
+    let cell_count = state.slots.len() + 1;
+    let rows = cell_count.div_ceil(2);
+    let body_h = ui.available_height();
+    let row_gap_total = gap * 0.5 * (rows.saturating_sub(1) as f32);
+    let row_h = ((body_h - row_gap_total) / rows as f32).max(52.0 * s);
+    let card_h = (row_h - gap * 0.5 - controls_h).max(40.0 * s);
     let column_h = card_h + gap * 0.5 + controls_h;
     let grid_metrics = FxMetrics {
         slot_width: col_w,
@@ -300,8 +307,6 @@ fn draw_effect_rack_grid(
         header_h: metrics.header_h,
     };
 
-    let cell_count = state.slots.len() + 1;
-    let rows = cell_count.div_ceil(2);
     for row in 0..rows {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;

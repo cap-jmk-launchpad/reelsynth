@@ -11,9 +11,9 @@ use reelsynth_ui::{
     ShellMidiDevices, center_morph_used_rect_id, center_piano_used_rect_id,
     center_scope_used_rect_id, center_strip_used_rect_id, center_used_rect_id,
     center_views_used_rect_id, footer_used_rect_id, fx_strip_used_rect_id, header_used_rect_id,
-    mod_strip_used_rect_id, osc_fx_allocated_rect_id, osc_fx_used_rect_id, osc_used_rect_id,
-    rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_mod_allocated_rect_id,
-    rail_mod_used_rect_id, rail_used_rect_id, ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH,
+    mod_strip_used_rect_id, osc_fx_allocated_rect_id, osc_fx_used_rect_id, rail_mod_allocated_rect_id,
+    rail_mod_used_rect_id, osc_used_rect_id,
+    rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id, ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH,
     SPACE_SM, utilization,
 };
 use reelsynth_ui::widgets::{Knob, KnobSize, PianoKeyboard};
@@ -378,9 +378,9 @@ fn interface_used_rects_within_allocated_min_window() {
 
     let osc_used = get_used(&harness.ctx, osc_used_rect_id(), "osc");
     assert!(
-        fits_max_slack(layout.osc, osc_used, 12.0),
+        fits_max_slack(layout.rail, osc_used, 12.0),
         "osc used rect out of bounds: used={osc_used:?} osc={:?}",
-        layout.osc
+        layout.rail
     );
 
     let rail_used = get_used(&harness.ctx, rail_used_rect_id(), "rail");
@@ -414,7 +414,7 @@ fn interface_used_rects_within_allocated_min_window() {
     assert!(fits_max_slack(center_regions.wt_views, views_used, 12.0));
 
     let osc_fx_used = get_used(&harness.ctx, osc_fx_used_rect_id(), "osc fx");
-    assert!(fits_max_slack(layout.osc, osc_fx_used, 12.0));
+    assert!(fits_max_slack(layout.rail, osc_fx_used, 12.0));
 
     let rail_mod_used = get_used(&harness.ctx, rail_mod_used_rect_id(), "rail mod");
     assert!(
