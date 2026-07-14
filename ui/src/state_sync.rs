@@ -254,4 +254,56 @@ mod tests {
         assert_eq!(lfo_shape_from_index(lfo_shape_index("triangle")), "tri");
         assert_eq!(lfo_shape_index(lfo_shape_from_index(3)), 3);
     }
+
+    #[test]
+    fn fx_bypass_roundtrip_through_patch() {
+        let mut state = UiState::default();
+        assert!(
+            !state.fx_slots.is_empty(),
+            "default UI should include FX slots"
+        );
+        assert!(!state.fx_slots[0].bypassed, "default chorus should be active");
+        state.fx_slots[0].bypassed = true;
+        let patch = patch_from_state(&state, &Patch::default_mono());
+        assert_eq!(patch.effects.len(), state.fx_slots.len());
+        assert!(patch.effects[0].bypassed);
+    }
+
+    #[test]
+    fn fx_ui_patch_changes_engine_output() {
+        use reelsynth::{SynthEngine, WavetableBank};
+
+        let bank = WavetableBank::factory_saw_morph();
+        let base = Patch::default_mono();
+
+        let mut dry_state = UiState::default();
+        for slot in &mut dry_state.fx_slots {
+            slot.bypassed = true;
+        }
+        let dry_patch = patch_from_state(&dry_state, &base);
+        let mut engine =
+            SynthEngine::new(bank.clone(), dry_patch.clone(), 44100);
+        let dry = engine.render_offline(440.0, 0.15);
+
+        let mut wet_state = UiState::default();
+        wet_state.fx_slots[0].bypassed = false;
+        wet_state.fx_slots[0].mix = 1.0;
+        for slot in wet_state.fx_slots.iter_mut().skip(1) {
+            slot.bypassed = true;
+        }
+        let wet_patch = patch_from_state(&wet_state, &base);
+        engine.set_patch(wet_patch);
+        let wet = engine.render_offline(440.0, 0.15);
+
+        assert_eq!(dry.len(), wet.len());
+        let max_delta = dry
+            .iter()
+            .zip(wet.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_delta > 0.001,
+            "enabling chorus via UI patch path should change rendered audio (delta={max_delta})"
+        );
+    }
 }
