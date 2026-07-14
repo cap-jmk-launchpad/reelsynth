@@ -10,7 +10,7 @@ use reelsynth::Patch;
 use reelsynth_ui_theme::Tokens;
 
 use crate::fx_rack::{draw_effect_rack, EffectRackState};
-use crate::layout::{embed_mod_fx_in_center, embed_piano_in_center, ShellLayout, ShellLayoutOptions};
+use crate::layout::{embed_piano_in_center, ShellLayout, ShellLayoutOptions};
 use crate::layout_audit::{fx_strip_used_rect_id, mod_strip_used_rect_id};
 use crate::mod_matrix::{draw_mod_matrix, ModMatrixState};
 use crate::region::region;
@@ -58,7 +58,6 @@ pub fn draw_shell(
         fx_rack_open: state.fx_rack_open,
     };
     let layout = ShellLayout::compute_with_options(screen, layout_opts);
-    let embedded_mod_fx = embed_mod_fx_in_center(layout_opts);
     let tokens = Tokens::default();
     let mut actions = ShellActions::default();
 
@@ -119,6 +118,7 @@ pub fn draw_shell(
             state,
             preview_patch,
             osc_preview,
+            config,
             &mut actions,
             layout.scale,
         );
@@ -136,7 +136,7 @@ pub fn draw_shell(
     );
     draw_rail(ui, layout.rail, state, config, &mut actions, layout.scale);
 
-    if layout.mod_matrix.is_positive() && !embedded_mod_fx {
+    if layout.mod_matrix.is_positive() {
         region(ui, layout.mod_matrix, |ui| {
             let result = draw_mod_matrix(
                 ui,
@@ -157,7 +157,7 @@ pub fn draw_shell(
         });
     }
 
-    if layout.fx_rack.is_positive() && !embedded_mod_fx {
+    if layout.fx_rack.is_positive() {
         region(ui, layout.fx_rack, |ui| {
             let result = draw_effect_rack(
                 ui,

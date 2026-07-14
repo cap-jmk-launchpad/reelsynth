@@ -5,7 +5,8 @@ use super::*;
 use super::footer::{draw_level_meter, format_cutoff};
 use super::header::sync_osc_position_from_wt;
 use crate::layout::{CENTER_GAP, UiScale};
-use crate::layout_audit::rail_used_rect_id;
+use crate::layout_audit::{rail_mod_used_rect_id, rail_used_rect_id};
+use crate::mod_matrix::{draw_mod_matrix, ModMatrixState};
 use crate::region::region;
 use crate::widgets::{labeled_select, tab_bar, Knob, KnobSize, KnobStyle, panel, panel_disabled};
 
@@ -25,9 +26,17 @@ pub(super) fn draw_rail(
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = gap;
-                draw_rail_panels(ui, state, config, actions, scale);
-                // Store used rect for widget-overflow regression tests.
-                let used = ui.min_rect();
+                if config.show_osc_column {
+                    egui::ScrollArea::vertical()
+                        .id_salt("rail_scroll")
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            draw_rail_panels(ui, rect, state, config, actions, scale);
+                        });
+                } else {
+                    draw_rail_panels(ui, rect, state, config, actions, scale);
+                }
+                let used = ui.min_rect().intersect(rect);
                 ui.ctx().data_mut(|d| d.insert_temp(rail_used_rect_id(), used));
             });
     });
@@ -35,6 +44,7 @@ pub(super) fn draw_rail(
 
 fn draw_rail_panels(
     ui: &mut Ui,
+    rail_rect: Rect,
     state: &mut UiState,
     config: &ShellConfig,
     actions: &mut ShellActions,
@@ -86,7 +96,7 @@ fn draw_rail_panels(
     });
 
     if config.show_osc_column {
-        if ui.available_height() > min_panel_h * 4.8 {
+        if ui.available_height() > min_panel_h * 3.8 {
             panel(ui, "Filter Envelope", |ui| {
                 adsr_graph(
                     ui,
@@ -109,7 +119,7 @@ fn draw_rail_panels(
             });
         }
 
-        if ui.available_height() > min_panel_h * 3.6 {
+        if ui.available_height() > min_panel_h * 2.8 {
             panel(ui, "Amp Envelope", |ui| {
                 adsr_graph(
                     ui,
@@ -132,7 +142,7 @@ fn draw_rail_panels(
             });
         }
 
-        if ui.available_height() > min_panel_h * 2.2 {
+        if ui.available_height() > min_panel_h * 1.8 {
             panel(ui, "LFOs", |ui| {
                 ui.spacing_mut().item_spacing.x = SPACE_SM * s;
                 let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
@@ -173,7 +183,30 @@ fn draw_rail_panels(
             });
         }
 
-        if ui.available_height() > 56.0 * s {
+        if config.show_mod_matrix {
+            let mod_h = (120.0 * s).min(ui.available_height().max(72.0 * s));
+            let mod_top = ui.cursor().min.y;
+            let mod_rect = egui::Rect::from_min_max(
+                egui::pos2(ui.max_rect().min.x, mod_top),
+                egui::pos2(ui.max_rect().max.x, mod_top + mod_h),
+            );
+            let result = draw_mod_matrix(
+                ui,
+                mod_rect,
+                ModMatrixState {
+                    open: &mut state.mod_matrix_open,
+                    routes: &mut state.mod_routes,
+                    total_routes: state.mod_route_total,
+                },
+                scale,
+            );
+            if result.changed {
+                actions.params_changed = true;
+            }
+            let used = mod_rect.intersect(ui.min_rect()).intersect(rail_rect);
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(rail_mod_used_rect_id(), used));
+        } else if ui.available_height() > 40.0 * s {
             draw_level_meter(ui);
         }
     } else {
@@ -258,44 +291,63 @@ fn draw_filter_knobs_compact(
     actions: &mut ShellActions,
     scale: f32,
 ) {
-    ui.horizontal_centered(|ui| {
-        ui.spacing_mut().item_spacing.x = SPACE_SM * scale * 0.35;
-        let cutoff_text = format_cutoff(state.filter_cutoff);
-        let r1 = Knob::new(&mut state.filter_cutoff, 40.0..=12000.0, "Cutoff")
-            .size(KnobSize::Sm)
-            .scale(scale)
-            .style(KnobStyle::Wired)
-            .show_wired_badge(false)
-            .logarithmic(true)
-            .value_text(cutoff_text)
-            .show(ui);
-        let res_text = format!("{:.2}", state.filter_resonance);
-        let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, "Res")
-            .size(KnobSize::Sm)
-            .scale(scale)
-            .style(KnobStyle::Wired)
-            .show_wired_badge(false)
-            .value_text(res_text)
-            .show(ui);
-        let drive_text = format!("{:.0}%", state.filter_drive * 100.0);
-        let r_drive = Knob::new(&mut state.filter_drive, 0.0..=1.0, "Drive")
-            .size(KnobSize::Sm)
-            .scale(scale)
-            .style(KnobStyle::Wired)
-            .show_wired_badge(false)
-            .value_text(drive_text)
-            .show(ui);
-        let key_text = format!("{:.0}%", state.filter_key_tracking * 100.0);
-        let r3 = Knob::new(&mut state.filter_key_tracking, 0.0..=1.0, "Key")
-            .size(KnobSize::Sm)
-            .scale(scale)
-            .style(KnobStyle::Wired)
-            .show_wired_badge(false)
-            .value_text(key_text)
-            .show(ui);
-        if r1.changed || r2.changed || r_drive.changed || r3.changed {
-            actions.params_changed = true;
-        }
+    let gap = SPACE_SM * scale * 0.35;
+    let col_w = ((ui.available_width() - gap) * 0.5).max(0.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.allocate_ui_with_layout(
+            egui::vec2(col_w, 0.0),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.y = gap;
+                let cutoff_text = format_cutoff(state.filter_cutoff);
+                let r1 = Knob::new(&mut state.filter_cutoff, 40.0..=12000.0, "Cutoff")
+                    .size(KnobSize::Sm)
+                    .scale(scale)
+                    .style(KnobStyle::Wired)
+                    .show_wired_badge(false)
+                    .logarithmic(true)
+                    .value_text(cutoff_text)
+                    .show(ui);
+                let res_text = format!("{:.2}", state.filter_resonance);
+                let r2 = Knob::new(&mut state.filter_resonance, 0.0..=0.95, "Res")
+                    .size(KnobSize::Sm)
+                    .scale(scale)
+                    .style(KnobStyle::Wired)
+                    .show_wired_badge(false)
+                    .value_text(res_text)
+                    .show(ui);
+                if r1.changed || r2.changed {
+                    actions.params_changed = true;
+                }
+            },
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(col_w, 0.0),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.y = gap;
+                let drive_text = format!("{:.0}%", state.filter_drive * 100.0);
+                let r_drive = Knob::new(&mut state.filter_drive, 0.0..=1.0, "Drive")
+                    .size(KnobSize::Sm)
+                    .scale(scale)
+                    .style(KnobStyle::Wired)
+                    .show_wired_badge(false)
+                    .value_text(drive_text)
+                    .show(ui);
+                let key_text = format!("{:.0}%", state.filter_key_tracking * 100.0);
+                let r3 = Knob::new(&mut state.filter_key_tracking, 0.0..=1.0, "Key")
+                    .size(KnobSize::Sm)
+                    .scale(scale)
+                    .style(KnobStyle::Wired)
+                    .show_wired_badge(false)
+                    .value_text(key_text)
+                    .show(ui);
+                if r_drive.changed || r3.changed {
+                    actions.params_changed = true;
+                }
+            },
+        );
     });
 }
 

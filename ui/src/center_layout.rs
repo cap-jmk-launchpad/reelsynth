@@ -1,4 +1,4 @@
-//! Center-column region allocation (scope, WT, mod matrix, FX, piano).
+//! Center-column region allocation (scope, WT, piano — visualization focus).
 
 use egui::Rect;
 
@@ -37,8 +37,7 @@ pub fn compute_center_regions(
     inner: Rect,
     config: &ShellConfig,
     scale: f32,
-    embedded: bool,
-    piano_visible: bool,
+    piano_in_center: bool,
 ) -> CenterRegions {
     let gap = CENTER_GAP * scale;
     let scope_h = SCOPE_STRIP_HEIGHT * scale;
@@ -60,80 +59,58 @@ pub fn compute_center_regions(
             Rect::NOTHING
         };
 
-        if embedded {
-            let remaining = (inner.max.y - y).max(0.0);
-            let show_piano = piano_visible;
-            let (preview_h, mod_h, fx_h, piano_h) = embedded_heights(
-                remaining,
-                gap,
-                scale,
-                config.show_wt_editor,
-                config.show_mod_matrix,
-                config.show_fx_rack,
-                show_piano,
-            );
+        let remaining = (inner.max.y - y).max(0.0);
+        let piano_h = if piano_in_center {
+            PIANO_HEIGHT * scale
+        } else {
+            0.0
+        };
+        let gap_before_piano = if piano_in_center && remaining > piano_h + gap {
+            gap
+        } else {
+            0.0
+        };
+        let views_budget = (remaining - piano_h - gap_before_piano).max(0.0);
+        let views_min = if config.show_wt_editor {
+            WT_VIEW_MIN_HEIGHT * scale * 0.5
+        } else {
+            0.0
+        };
+        let views_h = if config.show_wt_editor && views_budget > views_min {
+            views_budget
+        } else if config.show_wt_editor && remaining > piano_h + gap + views_min {
+            remaining - piano_h - gap
+        } else {
+            0.0
+        };
 
-            let wt_views = if preview_h > EPS {
-                let r = rect_row(inner, y, preview_h);
-                y = r.max.y + gap;
-                r
+        let wt_views = if views_h > EPS {
+            let r = rect_row(inner, y, views_h);
+            y = r.max.y + gap_before_piano;
+            r
+        } else {
+            Rect::NOTHING
+        };
+
+        let piano = if piano_in_center && piano_h > EPS {
+            let remaining_h = (inner.max.y - y).max(0.0);
+            if remaining_h > EPS {
+                rect_row(inner, y, remaining_h.max(piano_h))
             } else {
                 Rect::NOTHING
-            };
-
-            let mod_matrix = if mod_h > EPS {
-                let r = rect_row(inner, y, mod_h);
-                y = r.max.y + gap;
-                r
-            } else {
-                Rect::NOTHING
-            };
-
-            let fx_rack = if fx_h > EPS {
-                let r = rect_row(inner, y, fx_h);
-                y = r.max.y + gap;
-                r
-            } else {
-                Rect::NOTHING
-            };
-
-            let piano = if show_piano {
-                let remaining_h = (inner.max.y - y).max(0.0);
-                if remaining_h > EPS {
-                    rect_row(inner, y, remaining_h.max(piano_h))
-                } else {
-                    Rect::NOTHING
-                }
-            } else {
-                Rect::NOTHING
-            };
-
-            CenterRegions {
-                scope,
-                wt_strip,
-                morph,
-                mod_matrix,
-                fx_rack,
-                wt_views,
-                piano,
             }
         } else {
-            let wt_views = if config.show_wt_editor
-                && y < inner.max.y - WT_VIEW_MIN_HEIGHT * scale * 0.5
-            {
-                Rect::from_min_max(egui::pos2(inner.min.x, y), inner.max)
-            } else {
-                Rect::NOTHING
-            };
-            CenterRegions {
-                scope,
-                wt_strip,
-                morph,
-                mod_matrix: Rect::NOTHING,
-                fx_rack: Rect::NOTHING,
-                wt_views,
-                piano: Rect::NOTHING,
-            }
+            Rect::NOTHING
+        };
+
+        CenterRegions {
+            scope,
+            wt_strip,
+            morph,
+            mod_matrix: Rect::NOTHING,
+            fx_rack: Rect::NOTHING,
+            wt_views,
+            piano,
         }
     } else {
         let views_h = if config.show_wt_editor {
@@ -191,83 +168,6 @@ pub fn compute_center_regions(
 
 const EPS: f32 = 0.01;
 
-fn embedded_heights(
-    remaining: f32,
-    gap: f32,
-    scale: f32,
-    show_preview: bool,
-    show_mod: bool,
-    show_fx: bool,
-    show_piano: bool,
-) -> (f32, f32, f32, f32) {
-    let piano_h = if show_piano {
-        PIANO_HEIGHT * scale
-    } else {
-        0.0
-    };
-
-    let segment_count = [show_preview, show_mod, show_fx].iter().filter(|&&e| e).count();
-    let gap_total = gap * segment_count.saturating_sub(1) as f32
-        + if show_piano && segment_count > 0 { gap } else { 0.0 };
-    let budget = (remaining - piano_h - gap_total).max(0.0);
-
-    let mut segments: Vec<(f32, f32)> = Vec::new();
-    if show_preview {
-        segments.push((32.0 * scale, 0.38));
-    }
-    if show_mod {
-        segments.push((48.0 * scale, 0.34));
-    }
-    if show_fx {
-        segments.push((40.0 * scale, 0.28));
-    }
-
-    let heights = distribute_heights(budget, &segments);
-    let mut preview_h = 0.0;
-    let mut mod_h = 0.0;
-    let mut fx_h = 0.0;
-    let mut i = 0;
-    if show_preview {
-        preview_h = heights[i];
-        i += 1;
-    }
-    if show_mod {
-        mod_h = heights[i];
-        i += 1;
-    }
-    if show_fx {
-        fx_h = heights[i];
-    }
-
-    (preview_h, mod_h, fx_h, piano_h)
-}
-
-fn distribute_heights(budget: f32, segments: &[(f32, f32)]) -> Vec<f32> {
-    if segments.is_empty() || budget <= EPS {
-        return vec![0.0; segments.len()];
-    }
-
-    let min_sum: f32 = segments.iter().map(|(m, _)| m).sum();
-    let mut out: Vec<f32> = segments.iter().map(|(m, _)| *m).collect();
-
-    if min_sum > budget {
-        let s = budget / min_sum;
-        for h in &mut out {
-            *h *= s;
-        }
-        return out;
-    }
-
-    let spare = budget - min_sum;
-    let weight_sum: f32 = segments.iter().map(|(_, w)| w).sum();
-    if weight_sum > EPS {
-        for ((_, weight), h) in segments.iter().zip(out.iter_mut()) {
-            *h += spare * (*weight / weight_sum);
-        }
-    }
-    out
-}
-
 fn rect_row(inner: Rect, y: f32, height: f32) -> Rect {
     if height <= EPS || y >= inner.max.y - EPS {
         return Rect::NOTHING;
@@ -283,25 +183,6 @@ mod tests {
     use super::*;
     use crate::layout_audit::{audit_center, overlap_area};
     use crate::layout::{APP_HEIGHT_FULL, APP_MIN_WIDTH, ShellLayout, ShellLayoutOptions, SPACE_SM};
-
-    #[test]
-    fn embedded_heights_never_exceed_budget() {
-        for remaining in (80..=600).step_by(17) {
-            let (p, m, f, piano) = embedded_heights(
-                remaining as f32,
-                4.0,
-                1.0,
-                true,
-                true,
-                true,
-                true,
-            );
-            assert!(
-                p + m + f + piano + 12.0 <= remaining as f32 + 0.5,
-                "overflow at remaining={remaining}: {p}+{m}+{f}+{piano}"
-            );
-        }
-    }
 
     #[test]
     fn center_regions_no_overlap_at_min_window() {
@@ -326,7 +207,7 @@ mod tests {
         };
         let scale = layout.scale.ui();
         let inner = layout.center.shrink(SPACE_SM * scale);
-        let regions = compute_center_regions(inner, &config, scale, true, true);
+        let regions = compute_center_regions(inner, &config, scale, true);
 
         for (name, rect) in regions.named() {
             if rect.is_positive() {
@@ -338,8 +219,10 @@ mod tests {
         }
         audit_center(layout.center, &regions, scale);
         assert!(regions.piano.is_positive());
-        assert!(regions.fx_rack.is_positive());
-        assert!(regions.piano.min.y >= regions.fx_rack.max.y - 1.0);
+        assert!(regions.wt_views.is_positive());
+        assert!(!regions.fx_rack.is_positive());
+        assert!(!regions.mod_matrix.is_positive());
+        assert!(regions.wt_views.height() > regions.piano.height());
     }
 
     fn within(rect: Rect, outer: Rect) -> bool {

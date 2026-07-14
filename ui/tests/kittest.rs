@@ -7,11 +7,11 @@ use egui_kittest::Harness;
 use reelsynth::Patch;
 use reelsynth_ui::{
     audit_center, audit_shell, compute_center_regions, default_effect_slots, draw_shell,
-    embed_mod_fx_in_center, embed_piano_in_center, osc_type_index, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
-    center_fx_used_rect_id, center_mod_used_rect_id, center_morph_used_rect_id,
-    center_piano_used_rect_id, center_scope_used_rect_id, center_strip_used_rect_id,
-    center_used_rect_id, center_views_used_rect_id, footer_used_rect_id, fx_strip_used_rect_id, header_used_rect_id,
-    mod_strip_used_rect_id, osc_used_rect_id, rail_used_rect_id, ShellConfig,
+    embed_piano_in_center, osc_type_index, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
+    center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
+    center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id,
+    footer_used_rect_id, fx_strip_used_rect_id, header_used_rect_id, mod_strip_used_rect_id,
+    osc_fx_used_rect_id, osc_used_rect_id, rail_mod_used_rect_id, rail_used_rect_id, ShellConfig,
     UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH, SPACE_SM,
 };
 use reelsynth_ui::widgets::{Knob, KnobSize, PianoKeyboard};
@@ -159,7 +159,7 @@ fn full_shell_min_window_no_layout_overlap() {
 
     let scale = layout.scale.ui();
     let inner = layout.center.shrink(SPACE_SM * scale);
-    let regions = compute_center_regions(inner, &config, scale, embed_mod_fx_in_center(options), embed_piano_in_center(options));
+    let regions = compute_center_regions(inner, &config, scale, embed_piano_in_center(options));
     audit_center(layout.center, &regions, scale);
 
     let midi = ShellMidiDevices {
@@ -325,7 +325,6 @@ fn interface_used_rects_within_allocated_min_window() {
         center_inner,
         &config,
         scale,
-        embed_mod_fx_in_center(options),
         embed_piano_in_center(options),
     );
     audit_center(layout.center, &center_regions, scale);
@@ -412,16 +411,16 @@ fn interface_used_rects_within_allocated_min_window() {
     let views_used = get_used(&harness.ctx, center_views_used_rect_id(), "center views");
     assert!(fits_max_slack(center_regions.wt_views, views_used, 12.0));
 
-    let mod_used = get_used(&harness.ctx, center_mod_used_rect_id(), "center mod");
-    assert!(fits_max_slack(center_regions.mod_matrix, mod_used, 12.0));
+    let osc_fx_used = get_used(&harness.ctx, osc_fx_used_rect_id(), "osc fx");
+    assert!(fits_max_slack(layout.osc, osc_fx_used, 12.0));
 
-    let fx_used = get_used(&harness.ctx, center_fx_used_rect_id(), "center fx");
-    assert!(fits_max_slack(center_regions.fx_rack, fx_used, 12.0));
+    let rail_mod_used = get_used(&harness.ctx, rail_mod_used_rect_id(), "rail mod");
+    assert!(fits_max_slack(layout.rail, rail_mod_used, 12.0));
 
     let piano_region_used = get_used(&harness.ctx, center_piano_used_rect_id(), "center piano widget");
     assert!(fits_max_slack(center_regions.piano, piano_region_used, 12.0));
 
-    // Bottom strips only exist when not embedded; should be absent here.
+    // Bottom strips only exist when not in sidebars; should be absent here.
     assert!(harness.ctx.data(|d| d.get_temp::<egui::Rect>(mod_strip_used_rect_id())).is_none());
     assert!(harness.ctx.data(|d| d.get_temp::<egui::Rect>(fx_strip_used_rect_id())).is_none());
 }

@@ -16,16 +16,17 @@ pub mod wt;
 
 pub use region::region;
 pub use fx_rack::{
-    default_effect_slots, draw_effect_rack, effect_slots_from_bypass, effect_slots_from_patch,
-    effect_slots_to_bypass, effect_slots_to_patch, EffectRackState, EffectSlotUi,
+    default_effect_slots, draw_effect_rack, draw_effect_rack_sidebar, effect_slots_from_bypass,
+    effect_slots_from_patch, effect_slots_to_bypass, effect_slots_to_patch, EffectRackState,
+    EffectSlotUi,
 };
 pub use layout::*;
 pub use layout_audit::{
-    audit_center, audit_shell, center_fx_used_rect_id, center_mod_used_rect_id,
-    center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
-    center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id,
-    footer_used_rect_id, header_used_rect_id, fx_strip_used_rect_id, mod_strip_used_rect_id,
-    osc_used_rect_id, overlap_area, piano_used_rect_id, rail_used_rect_id, within_bounds,
+    audit_center, audit_shell, center_morph_used_rect_id, center_piano_used_rect_id,
+    center_scope_used_rect_id, center_strip_used_rect_id, center_used_rect_id,
+    center_views_used_rect_id, footer_used_rect_id, header_used_rect_id, fx_strip_used_rect_id,
+    mod_strip_used_rect_id, osc_fx_used_rect_id, osc_used_rect_id, overlap_area,
+    piano_used_rect_id, rail_mod_used_rect_id, rail_used_rect_id, within_bounds,
 };
 pub use center_layout::{compute_center_regions, CenterRegions};
 pub use mod_matrix::{

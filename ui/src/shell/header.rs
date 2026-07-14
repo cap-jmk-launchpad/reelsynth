@@ -3,8 +3,9 @@ use reelsynth::Patch;
 use reelsynth_ui_theme::Tokens;
 
 use super::*;
+use crate::fx_rack::{draw_effect_rack_sidebar, EffectRackState};
 use crate::layout::UiScale;
-use crate::layout_audit::{header_used_rect_id, osc_used_rect_id};
+use crate::layout_audit::{header_used_rect_id, osc_fx_used_rect_id, osc_used_rect_id};
 use crate::osc_column::{draw_osc_column, OscColumnInput, OscColumnState};
 use crate::region::region;
 use crate::widgets::{button_ghost, button_toggle, menu_action, menu_divider, menu_section_label, menu_selectable, reel_combo, select_value_text, styled_menu_body};
@@ -171,47 +172,86 @@ pub(super) fn draw_osc(
     state: &mut UiState,
     preview_patch: &Patch,
     osc_preview: Option<OscStripContext<'_>>,
+    config: &ShellConfig,
     actions: &mut ShellActions,
     scale: UiScale,
 ) {
     region(ui, rect, |ui| {
-        let prev_tab = state.osc_tab;
-        let result = draw_osc_column(
-            ui,
-            OscColumnState {
-                oscillators: &mut state.oscillators,
-                osc_tab: &mut state.osc_tab,
-                unison_stereo_spread: &mut state.unison_stereo_spread,
-                sub_level: &mut state.sub_level,
-                noise_level: &mut state.noise_level,
-                macro_values: &mut state.macro_values,
-            },
-            OscColumnInput {
-                patch: preview_patch,
-                preview: osc_preview,
-            },
-            scale.ui(),
-        );
-        if state.osc_tab != prev_tab {
-            sync_morph_from_active_tab(state);
-            sync_wt_position_from_osc(state);
-            sync_morph_to_active_tab(state);
-        }
-        if result.changed {
-            sync_wt_position_from_osc(state);
-            sync_morph_from_active_tab(state);
-            state.wt_morph_amount = morph_amount_for_position(
-                state.wt_morph_a,
-                state.wt_morph_b,
-                state.wt_position,
+        let s = scale.ui();
+        let fx_h = if config.show_fx_rack {
+            (132.0 * s).min(rect.height() * 0.38).max(88.0 * s)
+        } else {
+            0.0
+        };
+        let osc_h = (rect.height() - fx_h).max(0.0);
+        let osc_rect = Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + osc_h));
+        let fx_rect = if fx_h > 0.0 {
+            Rect::from_min_max(
+                egui::pos2(rect.min.x, rect.min.y + osc_h),
+                rect.max,
+            )
+        } else {
+            Rect::NOTHING
+        };
+
+        region(ui, osc_rect, |ui| {
+            let prev_tab = state.osc_tab;
+            let result = draw_osc_column(
+                ui,
+                OscColumnState {
+                    oscillators: &mut state.oscillators,
+                    osc_tab: &mut state.osc_tab,
+                    unison_stereo_spread: &mut state.unison_stereo_spread,
+                    sub_level: &mut state.sub_level,
+                    noise_level: &mut state.noise_level,
+                    macro_values: &mut state.macro_values,
+                },
+                OscColumnInput {
+                    patch: preview_patch,
+                    preview: osc_preview,
+                },
+                s,
             );
-            let idx = state.active_osc_index();
-            state.oscillators[idx].morph_amount = state.wt_morph_amount;
-            actions.params_changed = true;
+            if state.osc_tab != prev_tab {
+                sync_morph_from_active_tab(state);
+                sync_wt_position_from_osc(state);
+                sync_morph_to_active_tab(state);
+            }
+            if result.changed {
+                sync_wt_position_from_osc(state);
+                sync_morph_from_active_tab(state);
+                state.wt_morph_amount = morph_amount_for_position(
+                    state.wt_morph_a,
+                    state.wt_morph_b,
+                    state.wt_position,
+                );
+                let idx = state.active_osc_index();
+                state.oscillators[idx].morph_amount = state.wt_morph_amount;
+                actions.params_changed = true;
+            }
+            if result.osc_count_changed {
+                actions.params_changed = true;
+            }
+        });
+
+        if fx_rect.is_positive() {
+            let fx_result = draw_effect_rack_sidebar(
+                ui,
+                fx_rect,
+                EffectRackState {
+                    open: &mut state.fx_rack_open,
+                    slots: &mut state.fx_slots,
+                },
+                scale,
+            );
+            if fx_result.changed {
+                actions.params_changed = true;
+            }
+            let used = ui.min_rect().intersect(fx_rect);
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(osc_fx_used_rect_id(), used));
         }
-        if result.osc_count_changed {
-            actions.params_changed = true;
-        }
+
         let used = ui.min_rect().intersect(rect);
         ui.ctx().data_mut(|d| d.insert_temp(osc_used_rect_id(), used));
     });

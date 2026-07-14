@@ -166,6 +166,32 @@ pub fn draw_effect_rack(
     mut state: EffectRackState<'_>,
     scale: UiScale,
 ) -> FxRackResult {
+    draw_effect_rack_inner(ui, rect, &mut state, scale, RackLayout::Horizontal)
+}
+
+/// Narrow-column layout: 2-column grid of effect slots (left osc column).
+pub fn draw_effect_rack_sidebar(
+    ui: &mut Ui,
+    rect: Rect,
+    mut state: EffectRackState<'_>,
+    scale: UiScale,
+) -> FxRackResult {
+    draw_effect_rack_inner(ui, rect, &mut state, scale, RackLayout::Grid2x2)
+}
+
+#[derive(Clone, Copy)]
+enum RackLayout {
+    Horizontal,
+    Grid2x2,
+}
+
+fn draw_effect_rack_inner(
+    ui: &mut Ui,
+    rect: Rect,
+    state: &mut EffectRackState<'_>,
+    scale: UiScale,
+    layout: RackLayout,
+) -> FxRackResult {
     let tokens = Tokens::default();
     let mut changed = false;
     let metrics = FxMetrics::from_scale(scale, rect.height());
@@ -200,40 +226,97 @@ pub fn draw_effect_rack(
                     egui::Frame::none()
                         .inner_margin(egui::Margin::symmetric(SPACE_SM * scale.ui(), GRID_UNIT * scale.ui()))
                         .show(ui, |ui| {
-                            let s = scale.ui();
-                            let gap = GRID_UNIT * s;
-                            let slot_count = state.slots.len().max(1);
-                            let add_w = metrics.add_width;
-                            let gaps = gap * slot_count as f32;
-                            let avail = ui.available_width();
-                            let flex_slot_w = ((avail - add_w - gaps) / slot_count as f32)
-                                .clamp(96.0 * s, FX_SLOT_WIDTH * s * 1.35);
-                            let mut flex_metrics = metrics;
-                            flex_metrics.slot_width = flex_slot_w;
-
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = gap;
-                                ui.set_min_height(flex_metrics.column_height);
-                                for idx in 0..state.slots.len() {
-                                    if draw_fx_slot_column(ui, &mut state.slots, idx, flex_metrics)
-                                        .changed
-                                    {
-                                        changed = true;
-                                    }
+                            match layout {
+                                RackLayout::Horizontal => {
+                                    draw_effect_rack_horizontal(ui, state, scale, metrics, &mut changed);
                                 }
-                                if draw_add_slot(ui, flex_metrics).clicked() {
-                                    state
-                                        .slots
-                                        .push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
-                                    changed = true;
+                                RackLayout::Grid2x2 => {
+                                    draw_effect_rack_grid(ui, state, scale, metrics, &mut changed);
                                 }
-                            });
+                            }
                         });
                 }
             });
     });
 
     FxRackResult { changed }
+}
+
+fn draw_effect_rack_horizontal(
+    ui: &mut Ui,
+    state: &mut EffectRackState<'_>,
+    scale: UiScale,
+    metrics: FxMetrics,
+    changed: &mut bool,
+) {
+    let s = scale.ui();
+    let gap = GRID_UNIT * s;
+    let slot_count = state.slots.len().max(1);
+    let add_w = metrics.add_width;
+    let gaps = gap * slot_count as f32;
+    let avail = ui.available_width();
+    let flex_slot_w = ((avail - add_w - gaps) / slot_count as f32)
+        .clamp(96.0 * s, FX_SLOT_WIDTH * s * 1.35);
+    let mut flex_metrics = metrics;
+    flex_metrics.slot_width = flex_slot_w;
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.set_min_height(flex_metrics.column_height);
+        for idx in 0..state.slots.len() {
+            if draw_fx_slot_column(ui, &mut state.slots, idx, flex_metrics).changed {
+                *changed = true;
+            }
+        }
+        if draw_add_slot(ui, flex_metrics).clicked() {
+            state
+                .slots
+                .push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
+            *changed = true;
+        }
+    });
+}
+
+fn draw_effect_rack_grid(
+    ui: &mut Ui,
+    state: &mut EffectRackState<'_>,
+    scale: UiScale,
+    metrics: FxMetrics,
+    changed: &mut bool,
+) {
+    let s = scale.ui();
+    let gap = GRID_UNIT * s * 0.75;
+    let col_w = ((ui.available_width() - gap) * 0.5).max(72.0 * s);
+    let compact_metrics = FxMetrics {
+        slot_width: col_w,
+        card_height: (44.0 * s).clamp(36.0 * s, 52.0 * s),
+        controls_height: 16.0 * s,
+        column_height: (44.0 * s).clamp(36.0 * s, 52.0 * s) + gap + 16.0 * s,
+        add_width: col_w,
+        header_h: metrics.header_h,
+    };
+
+    let mut idx = 0usize;
+    while idx < state.slots.len() {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for _col in 0..2 {
+                if idx < state.slots.len() {
+                    if draw_fx_slot_column(ui, &mut state.slots, idx, compact_metrics).changed {
+                        *changed = true;
+                    }
+                    idx += 1;
+                }
+            }
+        });
+        ui.add_space(gap * 0.5);
+    }
+    if draw_add_slot(ui, compact_metrics).clicked() {
+        state
+            .slots
+            .push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
+        *changed = true;
+    }
 }
 
 fn section_header(ui: &mut Ui, title: &str, meta: &str, open: bool, height: f32) -> egui::Response {

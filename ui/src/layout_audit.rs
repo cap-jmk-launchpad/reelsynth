@@ -3,7 +3,10 @@
 use egui::Rect;
 
 use crate::center_layout::CenterRegions;
-use crate::layout::{embed_mod_fx_in_center, ShellLayout, ShellLayoutOptions, SPACE_SM};
+use crate::layout::{
+    embed_fx_in_osc_column, embed_mod_fx_in_center, embed_mod_in_rail, embed_piano_in_center,
+    ShellLayout, ShellLayoutOptions, SPACE_SM,
+};
 
 const EPS: f32 = 0.5;
 
@@ -66,6 +69,14 @@ pub fn mod_strip_used_rect_id() -> egui::Id {
 
 pub fn fx_strip_used_rect_id() -> egui::Id {
     egui::Id::new("reelsynth.audit.fx_strip_used_rect")
+}
+
+pub fn rail_mod_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.rail_mod_used_rect")
+}
+
+pub fn osc_fx_used_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.osc_fx_used_rect")
 }
 
 /// Positive overlap area between two rects (0 if adjacent or disjoint).
@@ -165,7 +176,7 @@ pub fn audit_shell(layout: &ShellLayout, screen: Rect, options: ShellLayoutOptio
     assert!(layout.main.max.y <= layout.piano_wrap.min.y + EPS || !layout.piano_wrap.is_positive());
     if layout.piano_wrap.is_positive() {
         assert!(layout.piano_wrap.max.y <= layout.footer.min.y + EPS);
-    } else if !embed_mod_fx_in_center(options) {
+    } else if !embed_mod_in_rail(options) && !embed_fx_in_osc_column(options) {
         if layout.mod_matrix.is_positive() {
             assert!(layout.main.max.y <= layout.mod_matrix.min.y + EPS);
         }
@@ -239,13 +250,11 @@ mod tests {
         let layout = ShellLayout::compute_with_options(screen, options);
         audit_shell(&layout, screen, options);
 
-        let embedded = embed_mod_fx_in_center(options);
         let regions = compute_center_regions(
             layout.center.shrink(SPACE_SM * layout.scale.ui()),
             &full_config(),
             layout.scale.ui(),
-            embedded,
-            options.piano_visible,
+            embed_piano_in_center(options),
         );
         audit_center(layout.center, &regions, layout.scale.ui());
     }
@@ -290,8 +299,7 @@ mod tests {
                                     inner,
                                     &config,
                                     layout.scale.ui(),
-                                    embed_mod_fx_in_center(options),
-                                    piano,
+                                    embed_piano_in_center(options),
                                 );
                                 audit_center(layout.center, &regions, layout.scale.ui());
                             }

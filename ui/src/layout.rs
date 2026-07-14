@@ -47,8 +47,8 @@ pub const WT_MORPH_HEIGHT: f32 = 20.0;
 pub const WT_TOOLBAR_HEIGHT: f32 = 24.0;
 pub const WT_VIEW_MIN_HEIGHT: f32 = 128.0;
 
-pub const PIANO_HEIGHT: f32 = 64.0;
-pub const PIANO_WHITE_KEY_WIDTH: f32 = 14.0;
+pub const PIANO_HEIGHT: f32 = 128.0;
+pub const PIANO_WHITE_KEY_WIDTH: f32 = 28.0;
 pub const PIANO_BLACK_WIDTH_RATIO: f32 = 0.58;
 pub const PIANO_BLACK_HEIGHT_RATIO: f32 = 0.56;
 pub const PIANO_OCTAVES: usize = 3;
@@ -128,14 +128,24 @@ pub struct ShellLayout {
     pub scale: UiScale,
 }
 
-/// Mod matrix + FX live in the center column when the osc column is visible.
-pub fn embed_mod_fx_in_center(options: ShellLayoutOptions) -> bool {
-    options.show_osc_column && (options.show_mod_matrix || options.show_fx_rack)
+/// Mod matrix + FX are never embedded in the center column (sidebars when osc visible).
+pub fn embed_mod_fx_in_center(_options: ShellLayoutOptions) -> bool {
+    false
 }
 
-/// Piano sits under FX in the center column (same width as effects).
+/// FX rack lives in the left osc column when the osc column is visible.
+pub fn embed_fx_in_osc_column(options: ShellLayoutOptions) -> bool {
+    options.show_osc_column && options.show_fx_rack
+}
+
+/// Mod matrix lives in the right rail when the osc column is visible.
+pub fn embed_mod_in_rail(options: ShellLayoutOptions) -> bool {
+    options.show_osc_column && options.show_mod_matrix
+}
+
+/// Piano sits at the bottom of the center column when the osc column is visible.
 pub fn embed_piano_in_center(options: ShellLayoutOptions) -> bool {
-    options.piano_visible && embed_mod_fx_in_center(options)
+    options.piano_visible && options.show_osc_column
 }
 
 impl ShellLayout {
@@ -170,7 +180,7 @@ impl ShellLayout {
             0.0
         };
 
-        let mod_h = if options.show_mod_matrix && !embed_mod_fx_in_center(options) {
+        let mod_h = if options.show_mod_matrix && !embed_mod_in_rail(options) {
             let base = if options.mod_matrix_open {
                 MOD_MATRIX_HEIGHT
             } else {
@@ -181,7 +191,7 @@ impl ShellLayout {
             0.0
         };
 
-        let fx_h = if options.show_fx_rack && !embed_mod_fx_in_center(options) {
+        let fx_h = if options.show_fx_rack && !embed_fx_in_osc_column(options) {
             let base = if options.fx_rack_open {
                 FX_RACK_HEIGHT
             } else {
@@ -320,23 +330,24 @@ mod tests {
     }
 
     #[test]
-    fn s4_s5_full_layout_embedded_mod_fx() {
+    fn s4_s5_full_layout_sidebar_mod_fx() {
         let screen = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, APP_HEIGHT_FULL));
-        let layout = ShellLayout::compute_with_options(
-            screen,
-            ShellLayoutOptions {
-                piano_visible: true,
-                show_osc_column: true,
-                show_mod_matrix: true,
-                mod_matrix_open: true,
-                show_fx_rack: true,
-                fx_rack_open: true,
-            },
-        );
-        // Mod/FX/piano embedded in center — no full-width bottom strips.
+        let options = ShellLayoutOptions {
+            piano_visible: true,
+            show_osc_column: true,
+            show_mod_matrix: true,
+            mod_matrix_open: true,
+            show_fx_rack: true,
+            fx_rack_open: true,
+        };
+        let layout = ShellLayout::compute_with_options(screen, options);
+        // Mod/FX in sidebars, piano in center — no full-width bottom strips.
         assert!(!layout.mod_matrix.is_positive());
         assert!(!layout.fx_rack.is_positive());
         assert!(!layout.piano_wrap.is_positive());
+        assert!(embed_fx_in_osc_column(options));
+        assert!(embed_mod_in_rail(options));
+        assert!(embed_piano_in_center(options));
         assert!(layout.main.height() > 400.0);
         assert_eq!(layout.footer.max.y, screen.max.y);
     }
