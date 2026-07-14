@@ -6,6 +6,7 @@ use crate::modulation::{compute_macro_mods, compute_mods, merge_mods, ModSources
 use crate::osc::WtWarpMode;
 use crate::oversample::{process_os, OS_FACTOR};
 use crate::patch::{Lfo, Oscillator, Patch};
+use crate::wt_quant::resolve_wt_position;
 use crate::wavetable::WavetableBank;
 use crate::engine::VoiceMpe;
 use super::envelope::advance_envelope;
@@ -91,6 +92,7 @@ impl VoiceState {
 pub struct VoiceSampleContext<'a> {
     pub banks: &'a [WavetableBank],
     pub bank_for_osc: &'a dyn Fn(usize) -> usize,
+    pub wt_ids: &'a [String],
     pub patch: &'a Patch,
     pub freq: f32,
     pub gate: bool,
@@ -203,11 +205,24 @@ pub fn process_sample_stages(state: &mut VoiceState, ctx: &VoiceSampleContext<'_
             .get(&format!("osc{}_position", oi + 1))
             .copied()
             .unwrap_or(0.0);
+        let slot_mod = mods
+            .get(&format!("osc{}_wave_slot", oi + 1))
+            .copied()
+            .unwrap_or(0.0);
         let fm_index_mod = mods
             .get(&format!("osc{}_fm_index", oi + 1))
             .copied()
             .unwrap_or(0.0);
-        let wt_pos = wt_position(osc, pos_mod, lfo1, lfo2, &ctx.patch.lfo, &ctx.patch.lfo2, bank.num_frames);
+        let wt_pos = wt_position(
+            osc,
+            pos_mod,
+            slot_mod,
+            lfo1,
+            lfo2,
+            &ctx.patch.lfo,
+            &ctx.patch.lfo2,
+            bank.num_frames,
+        );
         let det_mod = mods
             .get(&format!("osc{}_detune", oi + 1))
             .copied()
@@ -392,6 +407,8 @@ fn process_os_fm(
         sample_carrier_with_fm(
             osc,
             bank,
+            ctx.banks,
+            ctx.wt_ids,
             sub_phase,
             sub_inc,
             wt_pos,
@@ -406,6 +423,7 @@ fn process_os_fm(
 fn wt_position(
     osc: &Oscillator,
     pos_mod: f32,
+    slot_mod: f32,
     lfo1: f32,
     lfo2: f32,
     lfo1_cfg: &Lfo,
@@ -413,16 +431,9 @@ fn wt_position(
     num_frames: usize,
 ) -> f32 {
     let max_pos = (num_frames.saturating_sub(1)).max(1) as f32;
-    let morph_pos = if osc.morph_amount > 0.0 {
-        osc.morph_a + (osc.morph_b - osc.morph_a) * osc.morph_amount.clamp(0.0, 1.0)
-    } else {
-        osc.position
-    };
-    (morph_pos
-        + pos_mod
-        + lfo_for_target(lfo1_cfg, lfo1, "wt_position")
-        + lfo_for_target(lfo2_cfg, lfo2, "wt_position"))
-    .clamp(0.0, max_pos)
+    let lfo_pos = lfo_for_target(lfo1_cfg, lfo1, "wt_position")
+        + lfo_for_target(lfo2_cfg, lfo2, "wt_position");
+    resolve_wt_position(osc, pos_mod + lfo_pos, slot_mod, num_frames).clamp(0.0, max_pos)
 }
 
 fn soft_drive(input: f32, drive: f32) -> f32 {

@@ -98,7 +98,10 @@ fn noise_osc_adds_broadband() {
     wet.noise_level = 0.5;
     let dry_audio = render_patch(&dry, 220.0, 0.15);
     let wet_audio = render_patch(&wet, 220.0, 0.15);
-    let zc_dry = zero_crossings(&dry_audio);
-    let zc_wet = zero_crossings(&wet_audio);
-    assert!(zc_wet > zc_dry, "noise should add ZC: dry={zc_dry} wet={zc_wet}");
+    assert!(
+        rms(&wet_audio) > rms(&dry_audio) * 1.05,
+        "noise should raise RMS: dry={} wet={}",
+        rms(&dry_audio),
+        rms(&wet_audio)
+    );
 }

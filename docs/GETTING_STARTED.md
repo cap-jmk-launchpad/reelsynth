@@ -28,9 +28,9 @@ Three ways to trigger notes:
 
 | Method | How |
 |--------|-----|
-| **QWERTY keyboard** | `Z S X D C V G B H N J M` (one octave, low to high) |
-| **On-screen piano** | Toggle **Piano** in the header; click keys |
-| **MIDI controller** | Select your device in the **MIDI** dropdown (header, right side) |
+| **QWERTY keyboard** | `Z S X D C V G B H N J M` — layout depends on **Layout** (piano / scale / chords) |
+| **On-screen piano** | Toggle **Piano** in the header; click keys (3 octaves from C3) |
+| **MIDI controller** | Select your device in the **MIDI** dropdown; enable scale lock to snap incoming notes |
 
 ![Header: save, MIDI, piano](https://github.com/reeldemo/reelsynth/releases/download/v0.1.0/02-header-midi-save.png)
 

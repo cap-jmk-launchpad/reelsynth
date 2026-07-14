@@ -55,7 +55,9 @@ impl ModSources {
 /// Target scaling: amount is normalized -1..1 from UI, scaled per target type.
 fn apply_target_scale(target: &str, src: f32, amount: f32) -> f32 {
     let raw = src * amount;
-    if target.ends_with("_position") {
+    if target.ends_with("_wave_slot") {
+        raw * 4.0
+    } else if target.ends_with("_position") {
         raw * 64.0
     } else if target.ends_with("_fm_index") {
         raw * 5.0
@@ -117,7 +119,7 @@ pub fn merge_mods(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::patch::ModSlot;
+    use crate::patch::{Macro, ModSlot};
 
     #[test]
     fn lfo2_routes_to_cutoff() {
@@ -144,5 +146,37 @@ mod tests {
         }];
         let mods = compute_macro_mods(&macros);
         assert!(mods.get("osc1_position").copied().unwrap_or(0.0) > 0.0);
+    }
+
+    #[test]
+    fn wave_slot_mod_scales_by_four() {
+        let sources = ModSources {
+            lfo1: 1.0,
+            ..Default::default()
+        };
+        let slots = vec![ModSlot {
+            source: "lfo1".into(),
+            target: "osc1_wave_slot".into(),
+            amount: 0.5,
+            enabled: true,
+        }];
+        let mods = compute_mods(&slots, &sources);
+        assert!((mods.get("osc1_wave_slot").copied().unwrap_or(0.0) - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn position_mod_still_fine_frames() {
+        let sources = ModSources {
+            lfo1: 1.0,
+            ..Default::default()
+        };
+        let slots = vec![ModSlot {
+            source: "lfo1".into(),
+            target: "osc1_position".into(),
+            amount: 0.5,
+            enabled: true,
+        }];
+        let mods = compute_mods(&slots, &sources);
+        assert!((mods.get("osc1_position").copied().unwrap_or(0.0) - 32.0).abs() < 0.01);
     }
 }

@@ -286,12 +286,17 @@ impl SynthEngine {
 
     pub fn note_on(&mut self, channel: u8, note: u8, velocity: f32) {
         let freq = note_to_freq(note);
+        self.note_on_freq(channel, note, freq, velocity);
+    }
+
+    /// Trigger a voice at an arbitrary frequency (custom Hz performance input).
+    pub fn note_on_freq(&mut self, channel: u8, note: u8, freq: f32, velocity: f32) {
         let voice_mpe = self.mpe.voice_mpe(channel);
         self.pool.note_on(
             &self.patch,
             channel,
             note,
-            freq,
+            freq.max(0.0),
             velocity,
             self.global_time,
             voice_mpe,

@@ -1,9 +1,50 @@
 //! Patch schema parsing (reelsynth-preset-v2 with v1 migration).
 
+use crate::performance::PerformanceSettings;
 use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_V1: &str = "reelsynth-preset-v1";
 pub const SCHEMA_V2: &str = "reelsynth-preset-v2";
+
+/// One entry in the per-oscillator wave slot map (frame index + label).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct WaveSlot {
+    pub frame: f32,
+    #[serde(default)]
+    pub label: String,
+}
+
+/// One layer in a live wave stack (additive overlay inside a single oscillator).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct WaveLayer {
+    #[serde(default = "default_saw_type", rename = "type")]
+    pub source_type: String,
+    #[serde(default = "one")]
+    pub level: f32,
+    /// Detune offset in cents relative to the carrier.
+    #[serde(default)]
+    pub detune: f32,
+    /// Wavetable frame index for `wavetable` layers.
+    #[serde(default)]
+    pub wt_position: f32,
+    #[serde(default = "default_pulse_width")]
+    pub pulse_width: f32,
+    #[serde(default)]
+    pub wavetable_id: Option<String>,
+}
+
+impl Default for WaveLayer {
+    fn default() -> Self {
+        Self {
+            source_type: default_saw_type(),
+            level: 1.0,
+            detune: 0.0,
+            wt_position: 0.0,
+            pulse_width: default_pulse_width(),
+            wavetable_id: None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Oscillator {
@@ -47,6 +88,24 @@ pub struct Oscillator {
     /// FM modulation depth (0..10).
     #[serde(default)]
     pub fm_index: f32,
+    /// Wave slot count: 8 | 16 | 32 | 64 | 0 = smooth (legacy continuous position).
+    #[serde(default = "default_wave_quant")]
+    pub wave_quant: u8,
+    /// Current wave slot index (0..wave_quant-1).
+    #[serde(default = "default_wave_slot")]
+    pub wave_slot: u8,
+    /// Fine blend 0..1 toward the next slot.
+    #[serde(default)]
+    pub wave_slot_fine: f32,
+    /// User slot map; auto-generated from `wave_quant` when empty.
+    #[serde(default)]
+    pub wave_slots: Vec<WaveSlot>,
+    /// Live wave stack layers (empty = legacy single-source via `osc_type`).
+    #[serde(default)]
+    pub wave_layers: Vec<WaveLayer>,
+    /// Stack combine mode: `add` (default) or `avg`.
+    #[serde(default = "default_stack_mode")]
+    pub stack_mode: String,
 }
 
 impl Oscillator {
@@ -68,6 +127,23 @@ impl Oscillator {
             fm_source: default_fm_none(),
             fm_ratio: default_fm_ratio(),
             fm_index: 0.0,
+            wave_quant: default_wave_quant(),
+            wave_slot: default_wave_slot(),
+            wave_slot_fine: 0.0,
+            wave_slots: Vec::new(),
+            wave_layers: Vec::new(),
+            stack_mode: default_stack_mode(),
+        }
+    }
+
+    /// Effective slot count (explicit quant or derived from custom map).
+    pub fn effective_wave_quant(&self) -> u8 {
+        if self.wave_quant > 0 {
+            self.wave_quant
+        } else if !self.wave_slots.is_empty() {
+            self.wave_slots.len().min(255) as u8
+        } else {
+            default_wave_quant()
         }
     }
 }
@@ -91,11 +167,23 @@ pub(crate) fn default_fm_ratio() -> f32 {
 pub(crate) fn default_wt_type() -> String {
     "wavetable".into()
 }
+pub(crate) fn default_saw_type() -> String {
+    "saw".into()
+}
+pub(crate) fn default_stack_mode() -> String {
+    "add".into()
+}
 fn one() -> f32 {
     1.0
 }
 pub(crate) fn default_unison() -> u32 {
     1
+}
+pub(crate) fn default_wave_quant() -> u8 {
+    16
+}
+pub(crate) fn default_wave_slot() -> u8 {
+    7
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -314,6 +402,9 @@ pub struct Patch {
     /// Unison voice pan spread (0 = mono, 1 = full L/R).
     #[serde(default = "default_unison_spread")]
     pub unison_stereo_spread: f32,
+    /// Key, scale, and performance keyboard layout.
+    #[serde(default)]
+    pub performance: PerformanceSettings,
 }
 
 pub(crate) fn default_filter2() -> Filter {

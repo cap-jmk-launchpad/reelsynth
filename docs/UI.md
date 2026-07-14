@@ -25,6 +25,7 @@ The standalone app (`reelsynth-app`) uses a fixed **1280×880** layout (see `ui/
 | **Save** | Write current patch as `.reelpreset` |
 | **WT** menu | Open/Save `.reelwt`, factory banks, Vital/WAV/Serum import |
 | **Piano** | Show/hide on-screen keyboard |
+| **Key / Scale / Layout** | Performance input: root key, scale mode, piano vs scale-fold vs chord row |
 | **MIDI** combo | Select hardware MIDI input device |
 | **Status** | Audio/MIDI state, save confirmations, errors |
 
@@ -90,7 +91,9 @@ Serial chain: delay, reverb, chorus, etc. Per-slot mix and bypass.
 
 | Element | Function |
 |---------|----------|
-| **Position strip** | Scrub through 256 frames |
+| **Position strip** | Scrub through 256 frames; click slots when quant is 8/16/32/64 |
+| **Wave quant** | Roland-style discrete slots (8–64) or Smooth for continuous morph |
+| **Wave stack** | Preset-defined additive layers (e.g. saw + sine + WT) summed per oscillator |
 | **Morph A / B / amount** | Crossfade between frame ranges |
 | **2D view** | Current frame waveform |
 | **3D view** | Bank surface (frame index × sample) |

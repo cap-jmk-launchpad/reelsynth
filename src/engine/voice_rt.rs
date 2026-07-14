@@ -109,6 +109,7 @@ impl RtVoice {
         let ctx = crate::voice::VoiceSampleContext {
             banks,
             bank_for_osc,
+            wt_ids: &patch.wavetable_ids(),
             patch,
             freq: self.freq,
             gate: self.gate,

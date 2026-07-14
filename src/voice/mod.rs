@@ -30,12 +30,14 @@ pub fn render_note(
         .min(num_samples / 2)
         .max(1);
 
+    let wt_ids = patch.wavetable_ids();
     for i in 0..num_samples {
         let t = i as f32 / sr;
         let gate = i < num_samples.saturating_sub(tail_release);
         let ctx = VoiceSampleContext {
             banks,
             bank_for_osc: &bank_for_osc,
+            wt_ids: &wt_ids,
             patch,
             freq,
             gate,

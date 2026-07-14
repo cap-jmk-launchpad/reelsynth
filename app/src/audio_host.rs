@@ -29,7 +29,7 @@ impl AudioHandle {
 
 pub fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
     let bank = WavetableBank::factory_saw_morph();
-    let patch = Patch::default_mono();
+    let patch = Patch::factory_lead();
     let bank_shared = Arc::new(RwLock::new(bank.clone()));
     let mut engine = SynthEngine::new(bank, patch, sample_rate);
 
@@ -45,7 +45,7 @@ pub fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
         .map_err(|e| e.to_string())?;
     let sr = config.sample_rate().0;
     if sr != sample_rate {
-        engine = SynthEngine::new(WavetableBank::factory_saw_morph(), Patch::default_mono(), sr);
+        engine = SynthEngine::new(WavetableBank::factory_saw_morph(), Patch::factory_lead(), sr);
     }
     let scope_monitor = engine.scope_monitor().clone();
 

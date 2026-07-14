@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binaries
+        run: |
+          cargo build --release -p reelsynth-app -p reelsynth --bin reelsynth-export
+          cargo build --release -p reelsynth-plugin --bin reelsynth-plugin-editor || true
+
+      - name: Package artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="dist/reelsynth-${VERSION}-macos-$(uname -m)"
+          mkdir -p "$STAGE/bin"
+          cp target/release/reelsynth-app "$STAGE/bin/"
+          cp target/release/reelsynth-export "$STAGE/bin/"
+          cp README.md LICENSE "$STAGE/"
+          if [[ -f target/release/reelsynth-plugin-editor ]]; then
+            cp target/release/reelsynth-plugin-editor "$STAGE/bin/"
+          fi
+          (cd dist && zip -qr "reelsynth-${VERSION}-macos-$(uname -m).zip" "$(basename "$STAGE")")
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

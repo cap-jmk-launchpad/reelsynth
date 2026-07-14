@@ -6,7 +6,11 @@ use crate::midi_host::{MidiDevices, MidiInputHandle};
 use crossbeam_channel::{Receiver, Sender};
 use eframe::egui;
 use reelsynth::import::{import_serum_fxp, import_vital, import_wav_folder};
-use reelsynth::{load_preset, resolve_bank_for_preset, Envelope, MidiEvent, Patch, ScopeMonitor, WavetableBank};
+use reelsynth::{
+    load_preset, note_in_scale, resolve_diatonic_chord, scale_degree_to_midi, snap_note,
+    resolve_bank_for_preset, Envelope, MidiEvent, Patch, PerformanceLayout, PerformanceSettings,
+    ScaleBehavior, ScopeMonitor, WavetableBank,
+};
 use reelsynth_ui::{
     draw_shell, effect_slots_to_patch, factory_bank, factory_label, fm_source_from_index,
     filter_type_from_mode, lfo_shape_from_index, mod_slots_to_patch, osc_type_from_index,
@@ -14,8 +18,23 @@ use reelsynth_ui::{
     OscStripPreviewState, ShellConfig, ShellMidiDevices, UiState, ScopeStripContext,
     ScopeStripState,
 };
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+#[derive(Clone, Copy, Debug)]
+enum PerformanceKey {
+    Note(u8),
+    ScaleDegree(usize),
+    ChordDegree(usize),
+    Freq(f32),
+}
+
+#[derive(Default)]
+struct PerformanceInput {
+    next_token: u64,
+    token_notes: HashMap<u64, Vec<u8>>,
+}
 
 fn resolve_bank(path: &Path, preset: &Patch) -> Result<WavetableBank, String> {
     resolve_bank_for_preset(path, preset).or_else(|_| match preset.wavetable_id.as_deref() {
@@ -40,6 +59,7 @@ pub struct ReelSynthApp {
     scope: ScopeMonitor,
     scope_strip_state: ScopeStripState,
     osc_strip_state: OscStripPreviewState,
+    performance: PerformanceInput,
 }
 
 impl ReelSynthApp {
@@ -59,7 +79,7 @@ impl ReelSynthApp {
             status,
             ..UiState::default()
         };
-        let mut current_patch = Patch::default_mono();
+        let mut current_patch = Patch::factory_lead();
         sync_state_from_patch(&mut state, &current_patch);
         current_patch.mod_matrix = mod_slots_to_patch(&state.mod_routes);
         current_patch.effects = effect_slots_to_patch(&state.fx_slots);
@@ -78,10 +98,11 @@ impl ReelSynthApp {
             scope,
             scope_strip_state: ScopeStripState::default(),
             osc_strip_state: OscStripPreviewState::default(),
+            performance: PerformanceInput::default(),
         }
     }
 
-    fn note_on(&mut self, note: u8, velocity: f32) {
+    fn engine_note_on(&mut self, note: u8, velocity: f32) {
         if self.state.keys_down.insert(note) {
             if let Some(a) = &self.audio {
                 a.send(AudioCmd::Midi(MidiEvent::note_on(0, note, velocity)));
@@ -89,11 +110,137 @@ impl ReelSynthApp {
         }
     }
 
-    fn note_off(&mut self, note: u8) {
+    fn engine_note_on_freq(&mut self, note: u8, freq: f32, velocity: f32) {
+        if self.state.keys_down.insert(note) {
+            if let Some(a) = &self.audio {
+                a.send(AudioCmd::NoteOnFreq {
+                    channel: 0,
+                    note,
+                    freq,
+                    velocity,
+                });
+            }
+        }
+    }
+
+    fn engine_note_off(&mut self, note: u8) {
         if self.state.keys_down.remove(&note) {
             if let Some(a) = &self.audio {
                 a.send(AudioCmd::Midi(MidiEvent::note_off(0, note)));
             }
+        }
+    }
+
+    fn transform_piano_note(&self, raw: u8, settings: &PerformanceSettings) -> u8 {
+        if settings.scale.is_chromatic() {
+            return raw;
+        }
+        match settings.layout {
+            PerformanceLayout::Piano | PerformanceLayout::Scale => {
+                snap_note(raw, settings.root, settings.scale)
+            }
+            PerformanceLayout::Chords => raw,
+        }
+    }
+
+    fn performance_note_on(&mut self, key: PerformanceKey, velocity: f32) {
+        let settings = self.state.performance.to_settings();
+        match key {
+            PerformanceKey::Note(raw) => {
+                let note = self.transform_piano_note(raw, &settings);
+                if settings.scale_behavior == ScaleBehavior::Filter
+                    && !settings.scale.is_chromatic()
+                    && !note_in_scale(note, settings.root, settings.scale)
+                {
+                    return;
+                }
+                self.engine_note_on(note, velocity);
+            }
+            PerformanceKey::ScaleDegree(deg) => {
+                let note = scale_degree_to_midi(
+                    settings.root,
+                    settings.scale,
+                    deg,
+                    settings.base_octave,
+                );
+                self.engine_note_on(note, velocity);
+            }
+            PerformanceKey::ChordDegree(deg) => {
+                let notes = resolve_diatonic_chord(
+                    settings.root,
+                    settings.scale,
+                    deg,
+                    settings.base_octave,
+                    settings.chord_set,
+                    settings.voicing,
+                );
+                let token = self.performance.next_token;
+                self.performance.next_token += 1;
+                for note in &notes {
+                    self.engine_note_on(*note, velocity);
+                }
+                self.performance.token_notes.insert(token, notes);
+                self.state.active_chord_token = Some(token);
+            }
+            PerformanceKey::Freq(freq) => {
+                let note = freq_to_midi_note(freq);
+                self.engine_note_on_freq(note, freq, velocity);
+            }
+        }
+    }
+
+    fn performance_note_off(&mut self, key: PerformanceKey) {
+        let settings = self.state.performance.to_settings();
+        match key {
+            PerformanceKey::Note(raw) => {
+                let note = self.transform_piano_note(raw, &settings);
+                self.engine_note_off(note);
+            }
+            PerformanceKey::ScaleDegree(deg) => {
+                let note = scale_degree_to_midi(
+                    settings.root,
+                    settings.scale,
+                    deg,
+                    settings.base_octave,
+                );
+                self.engine_note_off(note);
+            }
+            PerformanceKey::ChordDegree(_) => {
+                if let Some(token) = self.state.active_chord_token.take() {
+                    self.release_chord_token(token);
+                }
+            }
+            PerformanceKey::Freq(freq) => {
+                let note = freq_to_midi_note(freq);
+                self.engine_note_off(note);
+            }
+        }
+    }
+
+    fn release_chord_token(&mut self, token: u64) {
+        if let Some(notes) = self.performance.token_notes.remove(&token) {
+            for note in notes {
+                self.engine_note_off(note);
+            }
+        }
+    }
+
+    fn release_chord_degree(&mut self, degree: usize) {
+        if let Some(token) = self.state.active_chord_token.take() {
+            self.release_chord_token(token);
+            return;
+        }
+        let settings = self.state.performance.to_settings();
+        let notes = resolve_diatonic_chord(
+            settings.root,
+            settings.scale,
+            degree,
+            settings.base_octave,
+            settings.chord_set,
+            settings.voicing,
+        );
+        for note in notes {
+            self.engine_note_off(note);
         }
     }
 
@@ -480,6 +627,14 @@ impl ReelSynthApp {
     }
 }
 
+fn freq_to_midi_note(freq: f32) -> u8 {
+    if freq <= 0.0 {
+        return 60;
+    }
+    let midi = 69.0 + 12.0 * (freq / 440.0).log2();
+    midi.round().clamp(0.0, 127.0) as u8
+}
+
 fn keyboard_note(key: egui::Key) -> Option<u8> {
     use egui::Key;
     Some(match key {
@@ -499,9 +654,54 @@ fn keyboard_note(key: egui::Key) -> Option<u8> {
     })
 }
 
+fn qwer_index(key: egui::Key) -> Option<usize> {
+    use egui::Key;
+    Some(match key {
+        Key::Z => 0,
+        Key::S => 1,
+        Key::X => 2,
+        Key::D => 3,
+        Key::C => 4,
+        Key::V => 5,
+        Key::G => 6,
+        Key::B => 7,
+        Key::H => 8,
+        Key::N => 9,
+        Key::J => 10,
+        Key::M => 11,
+        _ => return None,
+    })
+}
+
+fn keyboard_performance_key(key: egui::Key, layout: PerformanceLayout) -> Option<PerformanceKey> {
+    match layout {
+        PerformanceLayout::Piano => keyboard_note(key).map(PerformanceKey::Note),
+        PerformanceLayout::Scale => qwer_index(key).map(PerformanceKey::ScaleDegree),
+        PerformanceLayout::Chords => qwer_index(key).and_then(|i| {
+            if i < 7 {
+                Some(PerformanceKey::ChordDegree(i))
+            } else {
+                None
+            }
+        }),
+    }
+}
+
 impl eframe::App for ReelSynthApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(event) = self.midi_event_rx.try_recv() {
+            let event = match event {
+                MidiEvent::NoteOn {
+                    channel,
+                    note,
+                    velocity,
+                } if self.state.scale_lock_midi => {
+                    let settings = self.state.performance.to_settings();
+                    let snapped = snap_note(note, settings.root, settings.scale);
+                    MidiEvent::note_on(channel, snapped, velocity)
+                }
+                other => other,
+            };
             if let Some(a) = &self.audio {
                 a.send(AudioCmd::Midi(event));
             }
@@ -514,6 +714,11 @@ impl eframe::App for ReelSynthApp {
             }
         }
 
+        let layout = self
+            .state
+            .performance
+            .to_settings()
+            .layout;
         ctx.input(|i| {
             for event in &i.events {
                 if let egui::Event::Key {
@@ -523,11 +728,11 @@ impl eframe::App for ReelSynthApp {
                     ..
                 } = event
                 {
-                    if let Some(note) = keyboard_note(*key) {
+                    if let Some perf_key) = keyboard_performance_key(*key, layout) {
                         if *pressed {
-                            self.note_on(note, 0.9);
+                            self.performance_note_on(perf_key, 0.9);
                         } else {
-                            self.note_off(note);
+                            self.performance_note_off(perf_key);
                         }
                     }
                 }
@@ -646,10 +851,17 @@ impl eframe::App for ReelSynthApp {
                 };
 
                 if let Some(n) = actions.note_on {
-                    self.note_on(n, 0.9);
+                    self.performance_note_on(PerformanceKey::Note(n), 0.9);
                 }
                 if let Some(n) = actions.note_off {
-                    self.note_off(n);
+                    self.performance_note_off(PerformanceKey::Note(n));
+                }
+                if let Some(deg) = actions.chord_degree_on {
+                    self.performance_note_on(PerformanceKey::ChordDegree(deg), 0.9);
+                }
+                if let Some(deg) = actions.chord_degree_off {
+                    self.release_chord_degree(deg);
+                    self.state.active_chord_degree = None;
                 }
                 if actions.params_changed {
                     self.sync_params();

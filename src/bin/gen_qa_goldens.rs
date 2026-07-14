@@ -27,7 +27,8 @@ fn main() {
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio");
     std::fs::create_dir_all(&out_dir).expect("create audio fixtures dir");
 
-    let presets: [(&str, Patch, f32); 4] = [
+    let presets: [(&str, Patch, f32); 5] = [
+        ("factory_lead", Patch::factory_lead(), 440.0),
         ("factory_va_bass", Patch::factory_va_bass(), 55.0),
         ("factory_wt_lead", Patch::factory_wt_lead(), 440.0),
         ("factory_fm_bell", Patch::factory_fm_bell(), 880.0),

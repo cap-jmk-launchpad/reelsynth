@@ -31,6 +31,66 @@ fn wavetable_ids_dedupes() {
 }
 
 #[test]
+fn factory_lead_parses() {
+    let p = Patch::factory_lead();
+    assert_eq!(p.name, "Factory Lead");
+    assert_eq!(p.wavetable_id.as_deref(), Some("saw_morph"));
+    assert_eq!(p.oscillators[0].position, 108.0);
+    assert_eq!(p.oscillators[0].unison, 3);
+    assert!((p.oscillators[0].detune - 10.0).abs() < 0.01);
+    assert_eq!(p.oscillators[0].warp_mode, "none");
+    assert!((p.sub_level - 0.12).abs() < 0.01);
+    assert!((p.unison_stereo_spread - 0.75).abs() < 0.01);
+}
+
+#[test]
+fn factory_lead_fast_attack() {
+    let p = Patch::factory_lead();
+    assert!(p.envelope.attack < 0.01, "amp attack was {}", p.envelope.attack);
+    assert!(
+        p.filter_envelope.attack < 0.01,
+        "filt attack was {}",
+        p.filter_envelope.attack
+    );
+}
+
+#[test]
+fn factory_lead_mod_matrix_curated() {
+    let p = Patch::factory_lead();
+    assert_eq!(p.mod_matrix.len(), 3);
+    assert!(p.mod_matrix.iter().all(|s| s.source != "step" && s.source != "rand"));
+    assert!(p
+        .mod_matrix
+        .iter()
+        .any(|s| s.source == "filt_env" && s.target == "filter_cutoff"));
+}
+
+#[test]
+fn factory_lead_fx_chorus_delay_on() {
+    let p = Patch::factory_lead();
+    assert_eq!(p.effects.len(), 3);
+    assert!(!p.effects[0].bypassed);
+    assert!((p.effects[0].mix - 0.22).abs() < 0.01);
+    assert!(!p.effects[1].bypassed);
+    assert!((p.effects[1].time_ms - 120.0).abs() < 1.0);
+    assert!((p.effects[1].mix - 0.18).abs() < 0.01);
+    assert!(p.effects[2].bypassed);
+}
+
+#[test]
+fn factory_lead_wave_stack() {
+    let p = Patch::factory_lead();
+    let layers = &p.oscillators[0].wave_layers;
+    assert_eq!(layers.len(), 3);
+    assert_eq!(layers[0].source_type, "saw");
+    assert_eq!(layers[1].source_type, "sine");
+    assert_eq!(layers[2].source_type, "wavetable");
+    assert!((layers[0].level - 0.65).abs() < 0.01);
+    assert!((layers[2].wt_position - 108.0).abs() < 0.01);
+    assert_eq!(p.oscillators[0].stack_mode, "add");
+}
+
+#[test]
 fn factory_va_bass_parses() {
     let p = Patch::factory_va_bass();
     assert_eq!(p.oscillators[0].osc_type, "saw");
@@ -85,4 +145,30 @@ fn v1_migration_adds_fm_fields() {
     let p = Patch::from_json(json).unwrap();
     assert_eq!(p.oscillators[0].fm_source, "none");
     assert_eq!(p.oscillators[0].fm_ratio, 1.0);
+}
+
+#[test]
+fn oscillator_wave_slot_defaults() {
+    let osc = Oscillator::default_va();
+    assert_eq!(osc.wave_quant, 16);
+    assert_eq!(osc.wave_slot, 7);
+    assert!((osc.wave_slot_fine - 0.0).abs() < f32::EPSILON);
+    assert!(osc.wave_slots.is_empty());
+}
+
+#[test]
+fn empty_wave_slots_auto_generate_evenly_spaced() {
+    let osc = Oscillator::default_va();
+    let slots = crate::wt_quant::resolved_wave_slots(&osc, 256);
+    assert_eq!(slots.len(), 16);
+    assert!((slots[0].frame - 0.0).abs() < 0.01);
+    assert!((slots[15].frame - 255.0).abs() < 0.01);
+}
+
+#[test]
+fn v1_migration_adds_wave_slot_fields() {
+    let json = r#"{"schema":"reelsynth-preset-v1","oscillators":[{"type":"wavetable","level":1.0}]}"#;
+    let p = Patch::from_json(json).unwrap();
+    assert_eq!(p.oscillators[0].wave_quant, 16);
+    assert_eq!(p.oscillators[0].wave_slot, 7);
 }

@@ -1,6 +1,6 @@
 //! Inter-oscillator FM routing (phase modulation + type-aware carrier modes).
 
-use crate::osc::{sample_va, VaWaveform, WtWarpMode};
+use crate::osc::{sample_stack, sample_va, uses_wave_stack, VaWaveform, WtWarpMode};
 use crate::patch::Oscillator;
 use crate::wavetable::WavetableBank;
 
@@ -147,6 +147,8 @@ pub fn fm_freq_multiplier(mod_signal: f32, fm_index: f32) -> f32 {
 pub fn sample_carrier_with_fm(
     osc: &Oscillator,
     bank: &WavetableBank,
+    banks: &[WavetableBank],
+    wt_ids: &[String],
     carrier_phase: f32,
     carrier_phase_inc: f32,
     wt_pos: f32,
@@ -159,6 +161,8 @@ pub fn sample_carrier_with_fm(
         return sample_carrier_raw(
             osc,
             bank,
+            banks,
+            wt_ids,
             carrier_phase,
             carrier_phase_inc,
             wt_pos,
@@ -168,11 +172,29 @@ pub fn sample_carrier_with_fm(
     }
 
     let phase_off = fm_phase_offset(mod_signal, fm_index);
+    let wt_pos_off = fm_wt_position_offset(mod_signal, fm_index);
+    let freq_mult = fm_freq_multiplier(mod_signal, fm_index);
+
+    if uses_wave_stack(osc) {
+        return sample_stack(
+            osc,
+            bank,
+            banks,
+            wt_ids,
+            carrier_phase,
+            carrier_phase_inc,
+            wt_pos,
+            warp,
+            warp_amount,
+            phase_off,
+            wt_pos_off,
+            freq_mult,
+        );
+    }
 
     if let Some(wave) = VaWaveform::from_osc_type(&osc.osc_type) {
         match wave {
             VaWaveform::Sine => {
-                let freq_mult = fm_freq_multiplier(mod_signal, fm_index);
                 let modulated_inc = carrier_phase_inc * freq_mult;
                 let effective_phase = (carrier_phase + phase_off).fract();
                 sample_va(wave, effective_phase, modulated_inc, osc.pulse_width)
@@ -184,9 +206,8 @@ pub fn sample_carrier_with_fm(
         }
     } else {
         let effective_phase = (carrier_phase + phase_off).fract();
-        let pos_off = fm_wt_position_offset(mod_signal, fm_index);
         let max_pos = (bank.num_frames.saturating_sub(1)).max(1) as f32;
-        let effective_pos = (wt_pos + pos_off).clamp(0.0, max_pos);
+        let effective_pos = (wt_pos + wt_pos_off).clamp(0.0, max_pos);
         bank.sample_warped(effective_pos, effective_phase, warp, warp_amount)
     }
 }
@@ -194,12 +215,31 @@ pub fn sample_carrier_with_fm(
 fn sample_carrier_raw(
     osc: &Oscillator,
     bank: &WavetableBank,
+    banks: &[WavetableBank],
+    wt_ids: &[String],
     phase: f32,
     phase_inc: f32,
     wt_pos: f32,
     warp: WtWarpMode,
     warp_amount: f32,
 ) -> f32 {
+    if uses_wave_stack(osc) {
+        return sample_stack(
+            osc,
+            bank,
+            banks,
+            wt_ids,
+            phase,
+            phase_inc,
+            wt_pos,
+            warp,
+            warp_amount,
+            0.0,
+            0.0,
+            1.0,
+        );
+    }
+
     if let Some(wave) = VaWaveform::from_osc_type(&osc.osc_type) {
         sample_va(wave, phase, phase_inc, osc.pulse_width)
     } else {
@@ -227,10 +267,24 @@ mod tests {
             osc_type: "wavetable".into(),
             ..Oscillator::default_va()
         };
-        let dry = sample_carrier_with_fm(&osc, &bank, 0.25, 0.01, 0.0, WtWarpMode::None, 0.0, 0.0, 0.0);
+        let dry = sample_carrier_with_fm(
+            &osc,
+            &bank,
+            std::slice::from_ref(&bank),
+            &[],
+            0.25,
+            0.01,
+            0.0,
+            WtWarpMode::None,
+            0.0,
+            0.0,
+            0.0,
+        );
         let wet = sample_carrier_with_fm(
             &osc,
             &bank,
+            std::slice::from_ref(&bank),
+            &[],
             0.25,
             0.01,
             0.0,

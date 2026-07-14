@@ -2,7 +2,7 @@ use egui::{Rect, Ui};
 use reelsynth::Patch;
 
 use super::*;
-use super::header::{sync_morph_from_active_tab, sync_osc_position_from_wt};
+use super::header::{sync_morph_from_active_tab, sync_osc_from_wt, sync_wt_from_osc};
 use crate::ambient::paint_ambient_waves;
 use crate::center_layout::compute_center_regions;
 use crate::layout::{embed_piano_in_center, ShellLayoutOptions, UiScale};
@@ -11,6 +11,7 @@ use crate::layout_audit::{
     center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id,
 };
 use crate::region::region;
+use crate::wt::resolved_slots_for_ui;
 
 pub(super) fn draw_center(
     ui: &mut Ui,
@@ -45,6 +46,10 @@ pub(super) fn draw_center(
         let piano_rect = regions.piano;
 
         let bank_name = state.wt_bank_name.clone();
+        let num_frames = bank.as_ref().map(|b| b.num_frames).unwrap_or(256);
+        let active_idx = state.active_osc_index();
+        let resolved_slots = resolved_slots_for_ui(state.active_osc(), num_frames);
+        let wave_quant = state.oscillators[active_idx].wave_quant;
 
         if scope_rect.is_positive() {
             region(ui, scope_rect, |ui| {
@@ -92,9 +97,11 @@ pub(super) fn draw_center(
                 frame_b: &mut state.wt_morph_b,
                 amount: &mut state.wt_morph_amount,
                 position: &mut state.wt_position,
+                wave_quant,
+                wave_slots: &resolved_slots,
             };
             if morph.show(ui).changed {
-                sync_osc_position_from_wt(state);
+                sync_osc_from_wt(state, num_frames);
                 sync_morph_from_active_tab(state);
                 actions.params_changed = true;
             }
@@ -147,7 +154,7 @@ pub(super) fn draw_center(
                                     state.wt_position,
                                 );
                             }
-                            sync_osc_position_from_wt(state);
+                            sync_osc_from_wt(state, num_frames);
                             sync_morph_from_active_tab(state);
                             actions.params_changed = true;
                         }
@@ -178,7 +185,7 @@ pub(super) fn draw_center(
                                     state.wt_position,
                                 );
                             }
-                            sync_osc_position_from_wt(state);
+                            sync_osc_from_wt(state, num_frames);
                             sync_morph_from_active_tab(state);
                             actions.params_changed = true;
                         }
@@ -209,14 +216,20 @@ pub(super) fn draw_center(
 
         if strip_rect.is_positive() {
             region(ui, strip_rect, |ui| {
+            let idx = state.active_osc_index();
+            let osc = &mut state.oscillators[idx];
             let strip = WtStrip {
                 position: &mut state.wt_position,
+                wave_quant: osc.wave_quant,
+                wave_slot: &mut osc.wave_slot,
+                wave_slot_fine: &mut osc.wave_slot_fine,
+                wave_slots: &resolved_slots,
                 bank: bank.as_deref(),
                 bank_name: Some(bank_name.as_str()),
                 visible_frames: 16,
             };
             if strip.show(ui).changed {
-                sync_osc_position_from_wt(state);
+                sync_osc_from_wt(state, num_frames);
                 state.wt_morph_amount =
                     morph_amount_for_position(state.wt_morph_a, state.wt_morph_b, state.wt_position);
                 sync_morph_from_active_tab(state);

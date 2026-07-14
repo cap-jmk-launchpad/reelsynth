@@ -61,10 +61,24 @@ fn wt_position_mod_fm_mode() {
         osc_type: "wavetable".into(),
         ..Oscillator::default_va()
     };
-    let dry = sample_carrier_with_fm(&osc, &bank, 0.3, 0.01, 16.0, WtWarpMode::None, 0.0, 0.0, 0.0);
+    let dry = sample_carrier_with_fm(
+        &osc,
+        &bank,
+        std::slice::from_ref(&bank),
+        &[],
+        0.3,
+        0.01,
+        16.0,
+        WtWarpMode::None,
+        0.0,
+        0.0,
+        0.0,
+    );
     let wet = sample_carrier_with_fm(
         &osc,
         &bank,
+        std::slice::from_ref(&bank),
+        &[],
         0.3,
         0.01,
         16.0,

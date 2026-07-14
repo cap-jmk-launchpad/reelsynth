@@ -13,6 +13,7 @@ use crate::layout_audit::{
 use crate::osc_column::{draw_osc_column, OscColumnInput, OscColumnState};
 use crate::region::region;
 use crate::widgets::{button_ghost, button_toggle, menu_action, menu_divider, menu_section_label, menu_selectable, reel_combo, select_value_text, styled_menu_body};
+use crate::performance::draw_performance_header;
 use crate::state::OscStripContext;
 use crate::wt::morph_amount_for_position;
 
@@ -48,6 +49,14 @@ pub(super) fn draw_header(
                     if button_ghost(ui, "Save").clicked() {
                         actions.save_preset = true;
                     }
+
+                    ui.add_space(GRID_UNIT);
+                    let perf_actions = draw_performance_header(ui, state);
+                    if perf_actions.params_changed {
+                        actions.params_changed = true;
+                    }
+                    actions.chord_degree_on = perf_actions.chord_degree_on;
+                    actions.chord_degree_off = perf_actions.chord_degree_off;
 
                     ui.menu_button(header_menu_label("WT"), |ui| {
                         styled_menu_body(ui, |ui| {
@@ -160,14 +169,29 @@ pub(super) fn sync_morph_from_active_tab(state: &mut UiState) {
     state.oscillators[idx].morph_amount = morph_amount;
 }
 
-pub(super) fn sync_wt_position_from_osc(state: &mut UiState) {
+pub(super) fn sync_wt_from_osc(state: &mut UiState, num_frames: usize) {
+    use crate::wt::position_from_osc_ui;
+
     let idx = state.active_osc_index();
-    state.wt_position = state.oscillators[idx].position;
+    state.wt_position = position_from_osc_ui(&state.oscillators[idx], num_frames);
 }
 
-pub(super) fn sync_osc_position_from_wt(state: &mut UiState) {
+pub(super) fn sync_osc_from_wt(state: &mut UiState, num_frames: usize) {
+    use crate::wt::sync_slot_from_position;
+
     let idx = state.active_osc_index();
     state.oscillators[idx].position = state.wt_position;
+    sync_slot_from_position(&mut state.oscillators[idx], num_frames);
+}
+
+/// Legacy alias — sync position + slot from wt_position.
+pub(super) fn sync_osc_position_from_wt(state: &mut UiState) {
+    sync_osc_from_wt(state, 256);
+}
+
+/// Legacy alias — sync wt_position from active osc slots.
+pub(super) fn sync_wt_position_from_osc(state: &mut UiState) {
+    sync_wt_from_osc(state, 256);
 }
 
 pub(super) fn draw_osc(
@@ -243,11 +267,11 @@ pub(super) fn draw_osc(
                     );
                     if state.osc_tab != prev_tab {
                         sync_morph_from_active_tab(state);
-                        sync_wt_position_from_osc(state);
+                        sync_wt_from_osc(state, 256);
                         sync_morph_to_active_tab(state);
                     }
                     if result.changed {
-                        sync_wt_position_from_osc(state);
+                        sync_wt_from_osc(state, 256);
                         sync_morph_from_active_tab(state);
                         state.wt_morph_amount = morph_amount_for_position(
                             state.wt_morph_a,

@@ -6,6 +6,7 @@ mod schema;
 
 pub use schema::*;
 
+use crate::performance::PerformanceSettings;
 use serde_json::Value;
 
 use migrate::{migrate_fx_bypass, migrate_v1_to_v2};
@@ -71,6 +72,12 @@ impl Patch {
                 fm_source: default_fm_none(),
                 fm_ratio: default_fm_ratio(),
                 fm_index: 0.0,
+                wave_quant: default_wave_quant(),
+                wave_slot: default_wave_slot(),
+                wave_slot_fine: 0.0,
+                wave_slots: Vec::new(),
+                wave_layers: Vec::new(),
+                stack_mode: default_stack_mode(),
             }],
             filter: Filter::default(),
             filter2: default_filter2(),
@@ -85,6 +92,7 @@ impl Patch {
             sub_level: 0.0,
             noise_level: 0.0,
             unison_stereo_spread: default_unison_spread(),
+            performance: PerformanceSettings::default(),
         }
     }
 
@@ -108,6 +116,12 @@ impl Patch {
                 fm_source: default_fm_none(),
                 fm_ratio: default_fm_ratio(),
                 fm_index: 0.0,
+                wave_quant: default_wave_quant(),
+                wave_slot: default_wave_slot(),
+                wave_slot_fine: 0.0,
+                wave_slots: Vec::new(),
+                wave_layers: Vec::new(),
+                stack_mode: default_stack_mode(),
             });
         }
         if let Some(first) = self.oscillators.first_mut() {
@@ -124,6 +138,13 @@ impl Patch {
             if let Some(id) = osc.wavetable_id.as_deref() {
                 if !ids.iter().any(|existing: &String| existing == id) {
                     ids.push(id.to_string());
+                }
+            }
+            for layer in &osc.wave_layers {
+                if let Some(id) = layer.wavetable_id.as_deref() {
+                    if !ids.iter().any(|existing: &String| existing == id) {
+                        ids.push(id.to_string());
+                    }
                 }
             }
         }

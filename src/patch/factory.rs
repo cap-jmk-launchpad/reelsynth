@@ -1,8 +1,147 @@
 //! Factory preset constructors.
 
+use crate::fx::EffectSlot;
 use super::schema::*;
 
+/// Curated 16-slot map for the factory lead preset (saw_morph bank).
+fn factory_lead_wave_slots() -> Vec<WaveSlot> {
+    let mut slots: Vec<WaveSlot> = (0..16)
+        .map(|i| WaveSlot {
+            frame: i as f32 * 255.0 / 15.0,
+            label: String::new(),
+        })
+        .collect();
+    slots[0].label = "Saw".into();
+    slots[0].frame = 0.0;
+    slots[4].label = "Blend".into();
+    slots[7].label = "Lead".into();
+    slots[7].frame = 108.0;
+    slots[11].label = "Soft".into();
+    slots[15].label = "Sine".into();
+    slots[15].frame = 255.0;
+    slots
+}
+
 impl Patch {
+    /// Default launch preset: fast attack lead with key-tracked dual filter and curated mod matrix.
+    pub fn factory_lead() -> Self {
+        Self {
+            schema: SCHEMA_V2.into(),
+            name: "Factory Lead".into(),
+            wavetable_id: Some("saw_morph".into()),
+            oscillators: vec![Oscillator {
+                osc_type: "wavetable".into(),
+                level: 0.9,
+                position: 108.0,
+                morph_a: 0.0,
+                morph_b: 180.0,
+                morph_amount: 0.0,
+                unison: 3,
+                detune: 10.0,
+                pan: 0.0,
+                wavetable_id: Some("saw_morph".into()),
+                wave_slot: 7,
+                wave_slots: factory_lead_wave_slots(),
+                wave_layers: vec![
+                    WaveLayer {
+                        source_type: "saw".into(),
+                        level: 0.65,
+                        ..WaveLayer::default()
+                    },
+                    WaveLayer {
+                        source_type: "sine".into(),
+                        level: 0.35,
+                        ..WaveLayer::default()
+                    },
+                    WaveLayer {
+                        source_type: "wavetable".into(),
+                        level: 0.22,
+                        wt_position: 108.0,
+                        wavetable_id: Some("saw_morph".into()),
+                        ..WaveLayer::default()
+                    },
+                ],
+                stack_mode: "add".into(),
+                ..Oscillator::default_va()
+            }],
+            filter: Filter {
+                cutoff: 1200.0,
+                resonance: 0.38,
+                key_tracking: 0.58,
+                drive: 0.12,
+                ..Filter::default()
+            },
+            filter2: Filter {
+                cutoff: 2800.0,
+                resonance: 0.22,
+                filter_type: "highpass".into(),
+                key_tracking: 0.45,
+                drive: 0.0,
+            },
+            envelope: Envelope {
+                attack: 0.004,
+                decay: 0.28,
+                sustain: 0.62,
+                release: 0.38,
+            },
+            filter_envelope: Envelope {
+                attack: 0.006,
+                decay: 0.32,
+                sustain: 0.28,
+                release: 0.45,
+            },
+            lfo: Lfo {
+                rate: 0.35,
+                depth: 0.12,
+                target: "osc1_position".into(),
+                shape: default_lfo_shape(),
+            },
+            mod_matrix: vec![
+                ModSlot {
+                    source: "lfo1".into(),
+                    target: "osc1_position".into(),
+                    amount: 0.15,
+                    enabled: true,
+                },
+                ModSlot {
+                    source: "velocity".into(),
+                    target: "osc1_level".into(),
+                    amount: 0.35,
+                    enabled: true,
+                },
+                ModSlot {
+                    source: "filt_env".into(),
+                    target: "filter_cutoff".into(),
+                    amount: 0.25,
+                    enabled: true,
+                },
+            ],
+            effects: vec![
+                EffectSlot {
+                    effect_type: crate::fx::EffectType::Chorus,
+                    bypassed: false,
+                    mix: 0.22,
+                    ..EffectSlot::chorus()
+                },
+                EffectSlot {
+                    effect_type: crate::fx::EffectType::Delay,
+                    bypassed: false,
+                    mix: 0.18,
+                    time_ms: 120.0,
+                    ..EffectSlot::delay()
+                },
+                EffectSlot {
+                    effect_type: crate::fx::EffectType::Reverb,
+                    bypassed: true,
+                    ..EffectSlot::reverb()
+                },
+            ],
+            sub_level: 0.12,
+            unison_stereo_spread: 0.75,
+            ..Self::default_mono()
+        }
+    }
+
     pub fn factory_va_bass() -> Self {
         Self {
             schema: SCHEMA_V2.into(),
@@ -82,10 +221,7 @@ impl Patch {
                 detune: 12.0,
                 pan: 0.0,
                 wavetable_id: Some("saw_morph".into()),
-                pulse_width: default_pulse_width(),
-                fm_source: default_fm_none(),
-                fm_ratio: default_fm_ratio(),
-                fm_index: 0.0,
+                ..Oscillator::default_va()
             }],
             filter: Filter {
                 cutoff: 2800.0,

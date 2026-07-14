@@ -46,7 +46,7 @@ pub fn default_mod_slots() -> Vec<ModSlotUi> {
         ModSlotUi {
             source: "LFO 1",
             target: "WT Pos",
-            amount: 32,
+            amount: 15,
             curve: "Lin",
             enabled: true,
             polarity: ModPolarity::Bipolar,
@@ -54,7 +54,7 @@ pub fn default_mod_slots() -> Vec<ModSlotUi> {
         ModSlotUi {
             source: "Env 2",
             target: "Cutoff",
-            amount: 68,
+            amount: 25,
             curve: "Exp",
             enabled: true,
             polarity: ModPolarity::Positive,
@@ -62,47 +62,7 @@ pub fn default_mod_slots() -> Vec<ModSlotUi> {
         ModSlotUi {
             source: "Velo",
             target: "Level",
-            amount: 45,
-            curve: "Lin",
-            enabled: true,
-            polarity: ModPolarity::Positive,
-        },
-        ModSlotUi {
-            source: "ModWh",
-            target: "Res",
-            amount: -18,
-            curve: "Lin",
-            enabled: true,
-            polarity: ModPolarity::Negative,
-        },
-        ModSlotUi {
-            source: "After",
-            target: "Pitch",
-            amount: 12,
-            curve: "Lin",
-            enabled: true,
-            polarity: ModPolarity::Bipolar,
-        },
-        ModSlotUi {
-            source: "LFO 2",
-            target: "Pan",
-            amount: 40,
-            curve: "Lin",
-            enabled: true,
-            polarity: ModPolarity::Bipolar,
-        },
-        ModSlotUi {
-            source: "Step",
-            target: "WT Pos",
-            amount: 100,
-            curve: "Step",
-            enabled: true,
-            polarity: ModPolarity::Positive,
-        },
-        ModSlotUi {
-            source: "Rand",
-            target: "Detune",
-            amount: 8,
+            amount: 35,
             curve: "Lin",
             enabled: true,
             polarity: ModPolarity::Positive,
@@ -262,7 +222,8 @@ fn ui_source_to_engine(label: &str) -> Option<String> {
         match label {
             "LFO 1" => "lfo1",
             "LFO 2" => "lfo2",
-            "Env 2" | "Env 1" => "env",
+            "Env 2" => "filt_env",
+            "Env 1" => "env",
             "Velo" => "velocity",
             "ModWh" => "modwheel",
             "After" => "aftertouch",
@@ -282,7 +243,8 @@ fn engine_source_to_ui(source: &str) -> &'static str {
     match source {
         "lfo1" | "lfo" => "LFO 1",
         "lfo2" => "LFO 2",
-        "env1" | "env" => "Env 2",
+        "filt_env" | "env2" => "Env 2",
+        "env1" | "env" => "Env 1",
         "velocity" | "vel" => "Velo",
         "modwheel" => "ModWh",
         "aftertouch" => "After",
@@ -300,6 +262,8 @@ fn ui_target_to_engine(label: &str) -> Option<String> {
     Some(
         match label {
             "WT Pos" => "osc1_position",
+            "WT Fine" => "osc1_position",
+            "WT Slot" => "osc1_wave_slot",
             "Cutoff" => "filter_cutoff",
             "Res" => "filter_resonance",
             "FM Idx" => "osc1_fm_index",
@@ -314,6 +278,7 @@ fn ui_target_to_engine(label: &str) -> Option<String> {
 
 fn engine_target_to_ui(target: &str) -> &'static str {
     match target {
+        t if t.ends_with("_wave_slot") => "WT Slot",
         t if t.ends_with("_position") => "WT Pos",
         "filter_cutoff" => "Cutoff",
         "filter_resonance" => "Res",
@@ -328,6 +293,52 @@ fn engine_target_to_ui(target: &str) -> &'static str {
 #[cfg(test)]
 mod bridge_tests {
     use super::*;
+
+    #[test]
+    fn wt_fine_target_maps() {
+        let routes = vec![ModSlotUi {
+            source: "LFO 2",
+            target: "WT Fine",
+            amount: 8,
+            curve: "Lin",
+            enabled: true,
+            polarity: ModPolarity::Bipolar,
+        }];
+        let slots = mod_slots_to_patch(&routes);
+        assert_eq!(slots[0].target, "osc1_position");
+    }
+
+    #[test]
+    fn wt_slot_target_maps() {
+        let routes = vec![ModSlotUi {
+            source: "LFO 1",
+            target: "WT Slot",
+            amount: 10,
+            curve: "Lin",
+            enabled: true,
+            polarity: ModPolarity::Bipolar,
+        }];
+        let slots = mod_slots_to_patch(&routes);
+        assert_eq!(slots[0].target, "osc1_wave_slot");
+        let restored = mod_slots_from_patch(&slots);
+        assert_eq!(restored[0].target, "WT Slot");
+    }
+
+    #[test]
+    fn env2_maps_to_filt_env() {
+        let routes = vec![ModSlotUi {
+            source: "Env 2",
+            target: "Cutoff",
+            amount: 25,
+            curve: "Exp",
+            enabled: true,
+            polarity: ModPolarity::Positive,
+        }];
+        let slots = mod_slots_to_patch(&routes);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].source, "filt_env");
+        assert_eq!(slots[0].target, "filter_cutoff");
+    }
 
     #[test]
     fn round_trip_mod_route() {

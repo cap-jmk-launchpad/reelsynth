@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use reelsynth::{ScopeLiveTaps, WavetableBank};
+use reelsynth::{Patch, ScopeLiveTaps, WavetableBank};
 
-use crate::fx_rack::{default_effect_slots, EffectSlotUi};
+use crate::fx_rack::{effect_slots_from_patch, EffectSlotUi};
 use crate::mod_matrix::{default_mod_slots, ModSlotUi};
 use crate::oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
 use crate::scope_strip::ScopeStripState;
-use crate::wt::{morph_amount_for_position, WtEditTool};
+use crate::wt::{morph_amount_for_position, position_from_osc_ui, WtEditTool};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShellConfig {
@@ -31,6 +31,8 @@ pub struct ShellActions {
     pub import_serum_fxp: bool,
     pub frame_edited: bool,
     pub midi_device_selected: Option<usize>,
+    pub chord_degree_on: Option<usize>,
+    pub chord_degree_off: Option<usize>,
 }
 
 pub struct ShellMidiDevices<'a> {
@@ -97,6 +99,10 @@ pub struct UiState {
     pub mod_route_total: usize,
     pub keys_down: HashSet<u8>,
     pub piano_visible: bool,
+    pub performance: crate::performance::PerformanceUi,
+    pub scale_lock_midi: bool,
+    pub active_chord_degree: Option<usize>,
+    pub active_chord_token: Option<u64>,
     pub preset_name: String,
     pub preset_category: String,
     pub status: String,
@@ -142,8 +148,9 @@ impl UiState {
     }
 
     fn default_oscillators() -> Vec<OscillatorUi> {
+        let lead = Patch::factory_lead();
         vec![
-            OscillatorUi::new_active(),
+            OscillatorUi::from_patch(&lead.oscillators[0]),
             OscillatorUi::new_silent(),
             OscillatorUi::new_silent(),
         ]
@@ -152,51 +159,58 @@ impl UiState {
 
 impl Default for UiState {
     fn default() -> Self {
+        let lead = Patch::factory_lead();
+        let lead_osc = OscillatorUi::from_patch(&lead.oscillators[0]);
+        let wt_pos = position_from_osc_ui(&lead_osc, 256);
         Self {
-            wt_position: 108.0,
+            wt_position: wt_pos,
             wt_bank_name: "Saw Morph".into(),
             wt_edit_tool: WtEditTool::Select,
             wt_morph_a: 0.0,
-            wt_morph_b: 255.0,
-            wt_morph_amount: morph_amount_for_position(0.0, 255.0, 108.0),
+            wt_morph_b: 180.0,
+            wt_morph_amount: morph_amount_for_position(0.0, 180.0, wt_pos),
             oscillators: Self::default_oscillators(),
             osc_tab: 0,
-            unison_stereo_spread: 0.7,
-            sub_level: 0.0,
-            noise_level: 0.0,
+            unison_stereo_spread: lead.unison_stereo_spread,
+            sub_level: lead.sub_level,
+            noise_level: lead.noise_level,
             macro_values: [0.5; 4],
-            filter_cutoff: 1200.0,
-            filter_resonance: 0.3,
-            filter_key_tracking: 0.5,
-            filter_drive: 0.0,
-            filter2_cutoff: 2400.0,
-            filter2_resonance: 0.25,
-            filter2_mode: 0,
-            filter2_drive: 0.0,
+            filter_cutoff: lead.filter.cutoff,
+            filter_resonance: lead.filter.resonance,
+            filter_key_tracking: lead.filter.key_tracking,
+            filter_drive: lead.filter.drive,
+            filter2_cutoff: lead.filter2.cutoff,
+            filter2_resonance: lead.filter2.resonance,
+            filter2_mode: 1,
+            filter2_drive: lead.filter2.drive,
             filter_mode: 0,
-            env_attack: 0.012,
-            env_decay: 0.22,
-            env_sustain: 0.6,
-            env_release: 0.4,
-            filt_env_attack: 0.005,
-            filt_env_decay: 0.35,
-            filt_env_sustain: 0.2,
-            filt_env_release: 0.5,
-            lfo_rate: 2.4,
-            lfo_depth: 0.0,
+            env_attack: lead.envelope.attack,
+            env_decay: lead.envelope.decay,
+            env_sustain: lead.envelope.sustain,
+            env_release: lead.envelope.release,
+            filt_env_attack: lead.filter_envelope.attack,
+            filt_env_decay: lead.filter_envelope.decay,
+            filt_env_sustain: lead.filter_envelope.sustain,
+            filt_env_release: lead.filter_envelope.release,
+            lfo_rate: lead.lfo.rate,
+            lfo_depth: lead.lfo.depth,
             lfo_shape: 0,
-            lfo2_rate: 1.0,
-            lfo2_depth: 0.0,
+            lfo2_rate: lead.lfo2.rate,
+            lfo2_depth: lead.lfo2.depth,
             lfo2_shape: 0,
             mod_matrix_open: true,
             fx_rack_open: true,
             mod_routes: default_mod_slots(),
-            fx_slots: default_effect_slots(),
+            fx_slots: effect_slots_from_patch(&lead.effects),
             mod_route_total: 24,
             keys_down: HashSet::new(),
             piano_visible: true,
-            preset_name: "Factory Lead".into(),
-            preset_category: "Bass · Wavetable · Saw Morph".into(),
+            performance: crate::performance::PerformanceUi::from_settings(&lead.performance),
+            scale_lock_midi: false,
+            active_chord_degree: None,
+            active_chord_token: None,
+            preset_name: lead.name.clone(),
+            preset_category: "Lead · Wavetable · Saw Morph".into(),
             status: "Audio OK — click keys or use QWERTY row (Z–M)".into(),
             midi_device: "Default".into(),
         }

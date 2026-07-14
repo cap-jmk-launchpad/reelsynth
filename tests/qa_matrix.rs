@@ -16,3 +16,11 @@ mod scopes;
 mod modulation;
 #[path = "qa/integration.rs"]
 mod integration;
+#[path = "qa/pitch_grid.rs"]
+mod pitch_grid;
+#[path = "qa/invariants.rs"]
+mod invariants;
+#[path = "qa/matrix_factory_lead.rs"]
+mod matrix_factory_lead;
+#[path = "qa/sweep_smoke.rs"]
+mod sweep_smoke;

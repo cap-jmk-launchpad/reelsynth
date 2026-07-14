@@ -6,6 +6,7 @@ use crate::{
     mod_slots_from_patch, mod_slots_to_patch, osc_type_from_index, OscillatorUi, UiState,
     warp_mode_from_index, warp_mode_index,
 };
+use crate::wt::position_from_osc_ui;
 
 pub fn lfo_shape_from_index(idx: usize) -> &'static str {
     match idx {
@@ -69,6 +70,10 @@ fn osc_ui_to_patch(osc: &OscillatorUi) -> Oscillator {
         fm_source: fm_source_from_index(osc.fm_source).into(),
         fm_ratio: osc.fm_ratio,
         fm_index: osc.fm_index,
+        wave_quant: osc.wave_quant,
+        wave_slot: osc.wave_slot,
+        wave_slot_fine: osc.wave_slot_fine,
+        wave_slots: osc.wave_slots.clone(),
         ..Oscillator::default_va()
     };
     if osc.morph_amount > 0.0 {
@@ -96,7 +101,10 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
     state.wt_position = patch
         .oscillators
         .first()
-        .map(|o| o.position)
+        .map(|o| {
+            let ui = OscillatorUi::from_patch(o);
+            position_from_osc_ui(&ui, 256)
+        })
         .unwrap_or(0.0);
 
     if patch.oscillators.is_empty() {
@@ -149,6 +157,7 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
     state.mod_routes = mod_slots_from_patch(&patch.mod_matrix);
     state.mod_route_total = state.mod_routes.len().max(24);
     state.fx_slots = effect_slots_from_patch(&patch.effects);
+    state.performance = crate::performance::PerformanceUi::from_settings(&patch.performance);
 }
 
 pub fn patch_from_state(state: &UiState, base: &Patch) -> Patch {
@@ -193,6 +202,7 @@ pub fn patch_from_state(state: &UiState, base: &Patch) -> Patch {
     patch.noise_level = state.noise_level;
     patch.mod_matrix = mod_slots_to_patch(&state.mod_routes);
     patch.effects = effect_slots_to_patch(&state.fx_slots);
+    patch.performance = state.performance.to_settings();
     patch
 }
 
@@ -200,6 +210,37 @@ pub fn patch_from_state(state: &UiState, base: &Patch) -> Patch {
 mod tests {
     use super::*;
     use reelsynth::patch::Patch;
+
+    #[test]
+    fn performance_settings_roundtrip() {
+        let mut original = Patch::factory_lead();
+        original.performance.root = 9;
+        original.performance.scale = reelsynth::Scale::Mixolydian;
+        original.performance.layout = reelsynth::PerformanceLayout::Scale;
+        let mut state = UiState::default();
+        sync_state_from_patch(&mut state, &original);
+        assert_eq!(state.performance.root, 9);
+        assert_eq!(state.performance.scale, 8);
+        let restored = patch_from_state(&state, &Patch::default_mono());
+        assert_eq!(restored.performance.root, 9);
+        assert_eq!(restored.performance.scale, reelsynth::Scale::Mixolydian);
+        assert_eq!(restored.performance.layout, reelsynth::PerformanceLayout::Scale);
+    }
+
+    #[test]
+    fn factory_lead_wave_slot_roundtrip() {
+        let original = Patch::factory_lead();
+        let mut state = UiState::default();
+        sync_state_from_patch(&mut state, &original);
+        assert_eq!(state.oscillators[0].wave_quant, 16);
+        assert_eq!(state.oscillators[0].wave_slot, 7);
+        assert_eq!(state.oscillators[0].wave_slots.len(), 16);
+        assert_eq!(state.oscillators[0].wave_slots[7].label, "Lead");
+        let restored = patch_from_state(&state, &Patch::default_mono());
+        assert_eq!(restored.oscillators[0].wave_slot, 7);
+        assert_eq!(restored.oscillators[0].wave_slots.len(), 16);
+        assert!((restored.oscillators[0].wave_slots[7].frame - 108.0).abs() < 0.01);
+    }
 
     #[test]
     fn factory_va_bass_roundtrip() {

@@ -15,6 +15,7 @@ use crate::wavetable::WavetableBank;
         VoiceSampleContext {
             banks: std::slice::from_ref(bank),
             bank_for_osc: &|_| 0,
+            wt_ids: &[],
             patch,
             freq,
             gate,

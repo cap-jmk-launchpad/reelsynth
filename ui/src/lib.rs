@@ -7,6 +7,7 @@ mod layout_audit;
 mod mod_matrix;
 mod osc_column;
 mod oscillator_ui;
+mod performance;
 mod scope_strip;
 mod shell;
 mod state;
@@ -43,6 +44,7 @@ pub use osc_column::{
     warp_mode_index, OscColumnInput, OscColumnResult, OscColumnState,
 };
 pub use oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
+pub use performance::PerformanceUi;
 pub use scope_strip::{draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_STRIP_HEIGHT};
 pub use shell::draw_shell;
 pub use state::{

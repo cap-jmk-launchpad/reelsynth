@@ -1,4 +1,5 @@
 pub mod wavetable;
+pub mod performance;
 pub mod patch;
 pub mod osc;
 pub mod fm;
@@ -10,12 +11,19 @@ pub mod export;
 pub mod engine;
 pub mod ffi;
 pub mod lfo;
+pub mod wt_quant;
 pub mod modulation;
 pub mod oversample;
 
+pub use performance::{
+    note_in_scale, resolve_chord, resolve_diatonic_chord, scale_degree_to_midi, snap_note,
+    ChordQuality, ChordSet, ChordVoicing, PerformanceLayout, PerformanceSettings, Scale,
+    ScaleBehavior,
+};
 pub use wavetable::WavetableBank;
 pub use fx::{default_effects, effects_from_bypass, EffectSlot, EffectType, FxBypass, FxChain};
-pub use patch::{Envelope, Macro, ModSlot, Patch};
+pub use patch::{Envelope, Macro, ModSlot, Oscillator, Patch, WaveLayer, WaveSlot};
+pub use wt_quant::{generate_even_wave_slots, resolve_wt_position, resolved_wave_slots};
 pub use voice::{render_note, render_note_single_bank};
 pub use scope::{
     render_combined_osc_cycle, render_osc_cycle_at_index, render_scope_previews,

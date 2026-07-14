@@ -1,6 +1,6 @@
 //! Per-oscillator UI state (unlimited count).
 
-use reelsynth::patch::Oscillator;
+use reelsynth::patch::{Oscillator, WaveSlot};
 
 use crate::osc_column::{fm_algorithm_index, fm_source_index, osc_type_index, warp_mode_index};
 
@@ -24,6 +24,10 @@ pub struct OscillatorUi {
     pub morph_a: f32,
     pub morph_b: f32,
     pub morph_amount: f32,
+    pub wave_quant: u8,
+    pub wave_slot: u8,
+    pub wave_slot_fine: f32,
+    pub wave_slots: Vec<WaveSlot>,
 }
 
 impl Default for OscillatorUi {
@@ -51,6 +55,10 @@ impl OscillatorUi {
             morph_a: 0.0,
             morph_b: 255.0,
             morph_amount: 0.0,
+            wave_quant: 16,
+            wave_slot: 7,
+            wave_slot_fine: 0.0,
+            wave_slots: Vec::new(),
         }
     }
 
@@ -59,7 +67,19 @@ impl OscillatorUi {
             level: 0.85,
             unison: 3,
             position: 108.0,
+            wave_quant: 16,
+            wave_slot: 7,
             ..Self::new_silent()
+        }
+    }
+
+    pub fn effective_wave_quant(&self) -> u8 {
+        if self.wave_quant > 0 {
+            self.wave_quant
+        } else if !self.wave_slots.is_empty() {
+            self.wave_slots.len().min(255) as u8
+        } else {
+            16
         }
     }
 
@@ -81,6 +101,10 @@ impl OscillatorUi {
             morph_a: osc.morph_a,
             morph_b: osc.morph_b,
             morph_amount: osc.morph_amount,
+            wave_quant: osc.wave_quant,
+            wave_slot: osc.wave_slot,
+            wave_slot_fine: osc.wave_slot_fine,
+            wave_slots: osc.wave_slots.clone(),
         }
     }
 }

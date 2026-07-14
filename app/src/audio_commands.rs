@@ -59,6 +59,12 @@ pub(crate) enum AudioCmd {
         bank: WavetableBank,
     },
     UpdateBank(WavetableBank),
+    NoteOnFreq {
+        channel: u8,
+        note: u8,
+        freq: f32,
+        velocity: f32,
+    },
 }
 
 
@@ -154,6 +160,12 @@ pub(crate) fn drain_commands(
                     *g = bank;
                 }
             }
+            Ok(AudioCmd::NoteOnFreq {
+                channel,
+                note,
+                freq,
+                velocity,
+            }) => engine.note_on_freq(channel, note, freq, velocity),
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => break,
         }

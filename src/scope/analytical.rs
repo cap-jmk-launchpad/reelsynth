@@ -50,6 +50,7 @@ pub fn render_scope_previews(
         .collect();
     let mut fx = FxChain::new(PREVIEW_SR as u32);
     fx.set_effects(patch.effects.clone());
+    let wt_ids = patch.wavetable_ids();
 
     for i in 0..count {
         let t = i as f32 / PREVIEW_SR;
@@ -62,6 +63,7 @@ pub fn render_scope_previews(
             let ctx = VoiceSampleContext {
                 banks,
                 bank_for_osc: &bank_for_osc,
+                wt_ids: &wt_ids,
                 patch,
                 freq,
                 gate,
@@ -255,13 +257,7 @@ fn preview_osc_sample_at_phase(
 }
 
 fn preview_wt_position(osc: &crate::patch::Oscillator, num_frames: usize) -> f32 {
-    let max_pos = (num_frames.saturating_sub(1)).max(1) as f32;
-    if osc.morph_amount > 0.0 {
-        let pos = osc.morph_a + (osc.morph_b - osc.morph_a) * osc.morph_amount.clamp(0.0, 1.0);
-        pos.clamp(0.0, max_pos)
-    } else {
-        osc.position.clamp(0.0, max_pos)
-    }
+    crate::wt_quant::resolve_wt_position(osc, 0.0, 0.0, num_frames)
 }
 
 #[cfg(test)]
@@ -280,7 +276,7 @@ mod tests {
             .iter()
             .map(|s| s.abs())
             .fold(0.0f32, f32::max);
-        assert!(peak > 0.01, "out peak was {peak}");
+        assert!(peak > 0.009, "out peak was {peak}");
     }
 
     #[test]

@@ -13,6 +13,7 @@ use crate::widgets::{
     format_coarse, format_pan, format_unison, knob_value_label, labeled_select, Knob, KnobSize,
     KnobStyle, panel,
 };
+use crate::wt::{sync_slot_from_position, wave_quant_from_index, wave_quant_index, WAVE_QUANT_LABELS};
 use crate::wt::waveform_points;
 
 const OSC_TYPES: [&str; 5] = ["Wavetable", "Saw", "Square", "Triangle", "Pulse"];
@@ -210,7 +211,25 @@ pub fn draw_osc_column(
                 ui.add_space(GRID_UNIT * 0.2);
                 let is_wt = osc.osc_type == 0;
                 if is_wt {
-                    let pos_label = format!("{:.0} / 255", osc.position.round());
+                    let mut quant_idx = wave_quant_index(osc.wave_quant);
+                    if labeled_select(ui, "WT Quant", &WAVE_QUANT_LABELS, &mut quant_idx) {
+                        let new_quant = wave_quant_from_index(quant_idx);
+                        osc.wave_quant = new_quant;
+                        if new_quant == 0 {
+                            // Smooth mode — keep continuous position.
+                        } else {
+                            osc.wave_slot = osc.wave_slot.min(new_quant.saturating_sub(1));
+                            osc.wave_slot_fine = 0.0;
+                            sync_slot_from_position(osc, 256);
+                        }
+                        changed = true;
+                    }
+
+                    let pos_label = if osc.wave_quant > 0 {
+                        format!("slot {} · {:.0}", osc.wave_slot + 1, osc.position.round())
+                    } else {
+                        format!("{:.0} / 255", osc.position.round())
+                    };
                     if param_slider(
                         ui,
                         "WT Position",
@@ -218,6 +237,9 @@ pub fn draw_osc_column(
                         0.0..=255.0,
                         &pos_label,
                     ) {
+                        if osc.wave_quant > 0 {
+                            sync_slot_from_position(osc, 256);
+                        }
                         changed = true;
                     }
 
