@@ -4,7 +4,7 @@ use egui::{Color32, FontId, Rect, Ui};
 use reelsynth::{EffectSlot, EffectType};
 use reelsynth_ui_theme::Tokens;
 
-use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, sidebar_panel_chrome_height};
+use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, sidebar_fx_slot_height, sidebar_panel_chrome_height};
 use crate::region::region;
 use crate::widgets::{
     button_icon, button_toggle, card_stroke, collapsible_panel, menu_selectable, reel_combo,
@@ -186,7 +186,7 @@ pub fn draw_effect_rack(
     )
 }
 
-/// Narrow-column layout: 2-column grid of effect slots (left osc column).
+/// Narrow-column layout: vertical scrollable FX chain (left osc column).
 pub fn draw_effect_rack_sidebar(
     ui: &mut Ui,
     rect: Rect,
@@ -198,7 +198,7 @@ pub fn draw_effect_rack_sidebar(
         rect,
         &mut state,
         scale,
-        RackLayout::Grid2x2,
+        RackLayout::VerticalChain,
         RackChrome::NativePanel,
     )
 }
@@ -206,7 +206,7 @@ pub fn draw_effect_rack_sidebar(
 #[derive(Clone, Copy)]
 enum RackLayout {
     Horizontal,
-    Grid2x2,
+    VerticalChain,
 }
 
 #[derive(Clone, Copy)]
@@ -253,14 +253,13 @@ fn draw_effect_rack_inner(
                 ui.add_space(4.0);
             }
 
-            ui.set_min_height(body_h);
             ui.set_max_height(body_h);
             match layout {
                 RackLayout::Horizontal => {
                     draw_effect_rack_horizontal(ui, slots, scale, metrics, &mut changed);
                 }
-                RackLayout::Grid2x2 => {
-                    draw_effect_rack_grid(ui, slots, scale, metrics, &mut changed, body_h);
+                RackLayout::VerticalChain => {
+                    draw_effect_rack_chain(ui, slots, scale, &mut changed, body_h);
                 }
             }
         };
@@ -311,68 +310,79 @@ fn draw_effect_rack_horizontal(
     });
 }
 
-fn draw_effect_rack_grid(
+fn draw_effect_rack_chain(
     ui: &mut Ui,
     slots: &mut Vec<EffectSlotUi>,
     scale: UiScale,
-    metrics: FxMetrics,
     changed: &mut bool,
     body_h: f32,
 ) {
     let s = scale.ui();
-    let gap = GRID_UNIT * s * 0.75;
-    let total_w = ui.available_width();
-    let col_w = ((total_w - gap) * 0.5).max(72.0 * s);
-    let controls_h = FX_FOOTER_HEIGHT * s;
-    let cell_count = slots.len() + 1;
-    let rows = cell_count.div_ceil(2);
-    let row_gap_total = gap * 0.5 * (rows.saturating_sub(1) as f32);
-    let min_card = (FX_TITLE_HEIGHT + FX_PARAM_ROW_HEIGHT + 6.0) * s;
-    let row_h = ((body_h - row_gap_total) / rows as f32).clamp(min_card + controls_h + gap * 0.5, 80.0 * s);
-    let card_h = (row_h - gap * 0.5 - controls_h).max(min_card);
-    let column_h = card_h + gap * 0.5 + controls_h;
-    let grid_metrics = FxMetrics {
-        slot_width: col_w,
-        card_height: card_h,
-        controls_height: controls_h,
-        column_height: column_h,
-        add_width: col_w,
-        header_h: metrics.header_h,
-    };
+    let gap = GRID_UNIT * s * 0.5;
+    let slot_h = sidebar_fx_slot_height(s);
+    let card_body = (FX_TITLE_HEIGHT + FX_PARAM_ROW_HEIGHT + 6.0) * s;
 
-    for row in 0..rows {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for col in 0..2 {
-                let cell = row * 2 + col;
-                ui.allocate_ui_with_layout(
-                    egui::vec2(col_w, column_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_min_width(col_w);
-                        ui.set_max_width(col_w);
-                        if cell < slots.len() {
-                            if draw_fx_slot_column(ui, slots, cell, grid_metrics)
-                                .changed
-                            {
-                                *changed = true;
-                            }
-                        } else if cell == slots.len() {
-                            if draw_add_slot(ui, grid_metrics).clicked() {
-                                slots.push(EffectSlotUi::from_slot(
-                                    &EffectSlot::chorus(),
-                                ));
-                                *changed = true;
-                            }
-                        }
-                    },
-                );
+    egui::ScrollArea::vertical()
+        .id_salt("fx_sidebar_chain_scroll")
+        .max_height(body_h)
+        .auto_shrink([false; 2])
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            for idx in 0..slots.len() {
+                let slot_w = ui.available_width();
+                let metrics = FxMetrics {
+                    slot_width: slot_w,
+                    card_height: card_body,
+                    controls_height: FX_FOOTER_HEIGHT * s,
+                    column_height: slot_h,
+                    add_width: slot_w,
+                    header_h: 0.0,
+                };
+                if draw_fx_slot_column(ui, slots, idx, metrics).changed {
+                    *changed = true;
+                }
+                if idx + 1 < slots.len() {
+                    ui.add_space(gap);
+                }
+            }
+            if !slots.is_empty() {
+                ui.add_space(gap);
+            }
+            if draw_add_slot_row(ui, ui.available_width(), s).clicked() {
+                slots.push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
+                *changed = true;
             }
         });
-        if row + 1 < rows {
-            ui.add_space(gap * 0.5);
-        }
+}
+
+fn draw_add_slot_row(ui: &mut Ui, width: f32, scale: f32) -> egui::Response {
+    let tokens = Tokens::default();
+    let h = 28.0 * scale;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter_at(rect);
+        let stroke = card_stroke(false, response.hovered(), &tokens);
+        let fill = if response.hovered() {
+            tokens.surface2
+        } else {
+            tokens.bg
+        };
+        painter.rect_filled(rect, RADIUS_SM, fill);
+        painter.rect_stroke(rect, RADIUS_SM, egui::Stroke::new(1.0_f32, stroke));
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "+ Add effect",
+            FontId::proportional(11.0),
+            if response.hovered() {
+                tokens.text
+            } else {
+                tokens.text_secondary
+            },
+        );
     }
+    response
 }
 
 struct FxSlotResult {
@@ -590,11 +600,12 @@ fn draw_fx_slot_column(
                     changed = true;
                     return;
                 }
+                let combo_w = (ui.available_width() - 56.0).max(48.0);
                 reel_combo(
                     ui,
                     format!("fx_type_{idx}"),
                     select_value_text(slots[idx].effect_type.label()),
-                    metrics.slot_width - 56.0,
+                    combo_w,
                     |ui| {
                         for ty in EffectType::ALL {
                             if menu_selectable(

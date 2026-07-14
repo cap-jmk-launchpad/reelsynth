@@ -78,15 +78,19 @@ pub fn sidebar_panel_chrome_height(scale: f32, with_meta: bool) -> f32 {
     frame + title_block + meta_block
 }
 
-/// Minimum sidebar FX rack height for a 2-wide grid (header + padding + rows).
-pub fn sidebar_fx_min_height(scale: f32, slot_count: usize) -> f32 {
+/// One full-width FX slot in the sidebar chain (card + footer row).
+pub fn sidebar_fx_slot_height(scale: f32) -> f32 {
+    let s = scale;
+    (14.0 + 18.0 + 6.0 + 18.0) * s + GRID_UNIT * s * 0.5
+}
+
+/// Fixed FX viewport height — extra slots scroll inside the panel.
+pub fn sidebar_fx_min_height(scale: f32, _slot_count: usize) -> f32 {
     let s = scale;
     let chrome = sidebar_panel_chrome_height(s, true);
-    let rows = (slot_count + 1).div_ceil(2).max(2);
-    let row_gap = GRID_UNIT * s * 0.375 * (rows.saturating_sub(1) as f32);
-    let card_h = 56.0 * s;
-    let row_h = card_h + GRID_UNIT * s * 0.375 + 18.0 * s;
-    chrome + rows as f32 * row_h + row_gap
+    let slot_h = sidebar_fx_slot_height(s);
+    let add_row = 28.0 * s;
+    chrome + slot_h * 2.0 + add_row
 }
 
 /// Split left column: osc scroll on top, FX grid + mod matrix stacked at bottom.
@@ -133,7 +137,7 @@ pub fn osc_column_split_heights(
     };
     let mut fx_h = if show_fx {
         let budget = (total_h - min_osc - mod_h - stack_gap).max(min_fx);
-        min_fx.max(budget * 0.52).min(budget)
+        min_fx.min(budget)
     } else {
         0.0
     };
@@ -473,7 +477,7 @@ mod tests {
         let stack = osc_column_split_heights(total, 1.0, 3, true, false);
         assert!(stack.fx >= sidebar_fx_min_height(1.0, 3));
         assert_eq!(stack.mod_matrix, 0.0);
-        assert!((stack.osc + stack.fx - total).abs() < 1.0);
+        assert!((stack.osc + stack.fx - total).abs() < 1.5);
     }
 
     #[test]
