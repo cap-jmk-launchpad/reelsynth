@@ -119,15 +119,37 @@ pub(super) fn draw_center(
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         let view = WtView2d {
-                            position: state.wt_position,
+                            position: &mut state.wt_position,
                             bank: bank.as_deref_mut(),
                             bank_name: Some(bank_name.as_str()),
                             tool: &mut state.wt_edit_tool,
+                            morph_amount: Some(&mut state.wt_morph_amount),
+                            patch: Some(preview_patch),
+                            macro_values: Some(&state.macro_values),
                             animate: true,
                             time: time as f32,
                         };
-                        if view.show(ui).frame_edited {
+                        let view2d_resp = view.show(ui);
+                        if view2d_resp.frame_edited {
                             actions.frame_edited = true;
+                        }
+                        if view2d_resp.changed() {
+                            if view2d_resp.morph_changed {
+                                state.wt_position = morph_position(
+                                    state.wt_morph_a,
+                                    state.wt_morph_b,
+                                    state.wt_morph_amount,
+                                );
+                            } else if view2d_resp.position_changed {
+                                state.wt_morph_amount = morph_amount_for_position(
+                                    state.wt_morph_a,
+                                    state.wt_morph_b,
+                                    state.wt_position,
+                                );
+                            }
+                            sync_osc_position_from_wt(state);
+                            sync_morph_from_active_tab(state);
+                            actions.params_changed = true;
                         }
                     },
                 );

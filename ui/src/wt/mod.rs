@@ -1,4 +1,5 @@
 mod banks;
+mod mod_preview;
 mod morph;
 mod strip;
 mod toolbar;

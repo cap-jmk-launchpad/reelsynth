@@ -1,22 +1,35 @@
-use egui::{Color32, Pos2, Rect, Sense, Shape, Ui, Vec2};
+use egui::{CursorIcon, Pos2, Rect, Sense, Shape, Ui, Vec2};
+use reelsynth::patch::Patch;
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
 use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT};
 use crate::region::region;
 
+use super::mod_preview::{has_position_mod_routes, preview_mod_sources, preview_position_mod};
 use super::toolbar::{WtEditTool, WtToolbar};
 use super::waveform::{frame_index, peak_point, waveform_points};
 
 pub struct WtView2dResponse {
     pub frame_edited: bool,
+    pub position_changed: bool,
+    pub morph_changed: bool,
+}
+
+impl WtView2dResponse {
+    pub fn changed(&self) -> bool {
+        self.position_changed || self.morph_changed
+    }
 }
 
 pub struct WtView2d<'a> {
-    pub position: f32,
+    pub position: &'a mut f32,
     pub bank: Option<&'a mut WavetableBank>,
     pub bank_name: Option<&'a str>,
     pub tool: &'a mut WtEditTool,
+    pub morph_amount: Option<&'a mut f32>,
+    pub patch: Option<&'a Patch>,
+    pub macro_values: Option<&'a [f32; 4]>,
     pub animate: bool,
     pub time: f32,
 }
@@ -31,11 +44,91 @@ impl WtView2d<'_> {
             Sense::hover(),
         );
 
+        let mut frame_edited = false;
+        let mut position_changed = false;
+        let mut morph_changed = false;
+
         if !ui.is_rect_visible(rect) {
             return WtView2dResponse {
-                frame_edited: false,
+                frame_edited,
+                position_changed,
+                morph_changed,
             };
         }
+
+        let plot_top = rect.min.y + WT_TOOLBAR_HEIGHT;
+        let plot_rect = Rect::from_min_max(
+            egui::pos2(rect.min.x, plot_top),
+            rect.max,
+        );
+        let inner = plot_rect.shrink2(egui::vec2(8.0, 12.0));
+        let mid_y = inner.center().y;
+
+        let num_frames = self
+            .bank
+            .as_ref()
+            .map(|b| b.num_frames)
+            .unwrap_or(256)
+            .max(1);
+        let max_pos = (num_frames - 1) as f32;
+
+        if *self.tool != WtEditTool::Pencil {
+            let sense = Sense::click_and_drag();
+            let response = ui.allocate_rect(inner, sense);
+            if response.dragged() {
+                let delta = response.drag_delta();
+                if delta.x.abs() > 0.0 {
+                    let px_per_frame = inner.width() / max_pos.max(1.0);
+                    let next = (*self.position + delta.x / px_per_frame).clamp(0.0, max_pos);
+                    if (next - *self.position).abs() > 0.01 {
+                        *self.position = next;
+                        position_changed = true;
+                    }
+                }
+                if delta.y.abs() > 0.0 {
+                    if let Some(morph) = self.morph_amount {
+                        let delta_amount = -delta.y / inner.height();
+                        let next = (*morph + delta_amount).clamp(0.0, 1.0);
+                        if (next - *morph).abs() > f32::EPSILON {
+                            *morph = next;
+                            morph_changed = true;
+                        }
+                    }
+                }
+            } else if response.clicked() {
+                if let Some(pos) = response.interact_pointer_pos() {
+                    if inner.contains(pos) {
+                        let next = position_from_plot_x(inner, pos.x, num_frames);
+                        if (next - *self.position).abs() > 0.01 {
+                            *self.position = next;
+                            position_changed = true;
+                        }
+                    }
+                }
+            }
+            if response.hovered() {
+                ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+            }
+        }
+
+        let frame_idx = self
+            .bank
+            .as_ref()
+            .map(|b| frame_index(*self.position, b.num_frames))
+            .unwrap_or(0);
+
+        let pos_mod = if let (Some(patch), Some(macros)) = (self.patch, self.macro_values) {
+            let sources = preview_mod_sources(patch, self.time, macros);
+            preview_position_mod(patch, &sources, macros)
+        } else {
+            0.0
+        };
+        let modulated_pos = (*self.position + pos_mod).clamp(0.0, max_pos);
+        let modulated_frame_idx = self
+            .bank
+            .as_ref()
+            .map(|b| frame_index(modulated_pos, b.num_frames))
+            .unwrap_or(0);
 
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, RADIUS_SM, tokens.bg);
@@ -45,19 +138,6 @@ impl WtView2d<'_> {
             egui::Stroke::new(1.0_f32, tokens.border),
         );
 
-        let frame_idx = self
-            .bank
-            .as_ref()
-            .map(|b| frame_index(self.position, b.num_frames))
-            .unwrap_or(0);
-
-        let mut frame_edited = false;
-        let plot_top = rect.min.y + WT_TOOLBAR_HEIGHT;
-        let plot_rect = Rect::from_min_max(
-            egui::pos2(rect.min.x, plot_top),
-            rect.max,
-        );
-
         region(
             ui,
             Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top)),
@@ -65,9 +145,6 @@ impl WtView2d<'_> {
                 WtToolbar::show(ui, self.tool);
             },
         );
-
-        let inner = plot_rect.shrink2(egui::vec2(8.0, 12.0));
-        let mid_y = inner.center().y;
 
         let wave = if let Some(bank) = self.bank.as_ref() {
             let frame = bank.frame(frame_idx);
@@ -96,13 +173,56 @@ impl WtView2d<'_> {
             }
         }
 
+        if pos_mod.abs() > 0.01 {
+            if let Some(bank) = self.bank.as_ref() {
+                let ghost_frame = bank.frame(modulated_frame_idx);
+                let ghost = waveform_points(ghost_frame, inner, 256, 0.42);
+                if ghost.len() >= 2 {
+                    let ghost_stroke = accent_ui.gamma_multiply(0.45);
+                    let mut ghost_fill = ghost.clone();
+                    ghost_fill.push(Pos2::new(inner.max.x, mid_y));
+                    ghost_fill.push(Pos2::new(inner.min.x, mid_y));
+                    painter.add(Shape::convex_polygon(
+                        ghost_fill,
+                        tokens.accent.gamma_multiply(0.12),
+                        egui::Stroke::NONE,
+                    ));
+                    painter.add(Shape::line(
+                        ghost,
+                        egui::Stroke::new(1.5_f32, ghost_stroke),
+                    ));
+                }
+            }
+
+            let marker_x = egui::lerp(
+                inner.min.x..=inner.max.x,
+                (modulated_pos / max_pos.max(1.0)).clamp(0.0, 1.0),
+            );
+            painter.line_segment(
+                [
+                    Pos2::new(marker_x, inner.min.y),
+                    Pos2::new(marker_x, inner.max.y),
+                ],
+                egui::Stroke::new(1.0_f32, accent_ui.gamma_multiply(0.55)),
+            );
+        }
+
         painter.line_segment(
             [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
             egui::Stroke::new(1.0_f32, tokens.border),
         );
 
         let label = if let Some(name) = self.bank_name {
-            format!("2D Waveform · {name} · frame {frame_idx}")
+            if pos_mod.abs() > 0.01 {
+                format!(
+                    "2D Waveform · {name} · frame {frame_idx} → {:.0}",
+                    modulated_pos
+                )
+            } else {
+                format!("2D Waveform · {name} · frame {frame_idx}")
+            }
+        } else if pos_mod.abs() > 0.01 {
+            format!("2D Waveform · frame {frame_idx} → {:.0}", modulated_pos)
         } else {
             format!("2D Waveform · frame {frame_idx}")
         };
@@ -130,8 +250,26 @@ impl WtView2d<'_> {
             }
         }
 
-        WtView2dResponse { frame_edited }
+        if self.animate {
+            if let Some(patch) = self.patch {
+                if has_position_mod_routes(patch) {
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+
+        WtView2dResponse {
+            frame_edited,
+            position_changed,
+            morph_changed,
+        }
     }
+}
+
+fn position_from_plot_x(inner: Rect, x: f32, num_frames: usize) -> f32 {
+    let max_pos = (num_frames.saturating_sub(1)) as f32;
+    let t = ((x - inner.min.x) / inner.width()).clamp(0.0, 1.0);
+    t * max_pos
 }
 
 fn view_coords(inner: Rect, pos: Pos2) -> (f32, f32) {
@@ -149,4 +287,18 @@ fn placeholder_wave(inner: Rect, mid_y: f32) -> Vec<Pos2> {
             Pos2::new(x, y)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::Rect;
+
+    #[test]
+    fn position_from_plot_x_endpoints() {
+        let inner = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(200.0, 100.0));
+        assert!((position_from_plot_x(inner, inner.min.x, 256) - 0.0).abs() < 1e-4);
+        assert!((position_from_plot_x(inner, inner.max.x, 256) - 255.0).abs() < 1e-4);
+        assert!((position_from_plot_x(inner, inner.center().x, 256) - 127.5).abs() < 1.0);
+    }
 }

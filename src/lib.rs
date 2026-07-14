@@ -23,6 +23,8 @@ pub use scope::{
 };
 pub use scope::{ScopeLiveTaps, ScopeMonitor, ScopeRingBuffer, SCOPE_DISPLAY_LEN, SCOPE_RING_LEN};
 pub use engine::{BankSet, MidiEvent, SynthEngine, VoiceMpe};
+pub use lfo::{lfo_value, LfoRuntime};
+pub use modulation::{compute_macro_mods, compute_mods, merge_mods, ModSources};
 pub use export::{
     export_preset, export_reelpack, export_wavetable, load_preset, parse_targets,
     resolve_bank_for_preset, ExportOptions, ExportReport, ExportTarget,
