@@ -2,9 +2,20 @@ use egui::{Color32, Pos2, Rect, Sense, Shape, Ui, Vec2};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::ambient::peak_glow_color;
 use crate::layout::RADIUS_SM;
 
 use super::waveform::{frame_index, waveform_points};
+
+/// Slow height/depth breathing (~3s cycle).
+fn mesh_breath_scale(time: f32) -> f32 {
+    1.0 + (time * 2.0).sin() * 0.07
+}
+
+/// Gentle rib-line brightness oscillation (~3s cycle).
+fn mesh_rib_pulse(time: f32) -> f32 {
+    0.22 + 0.08 * (time * 2.0).sin().abs()
+}
 
 pub struct WtView3d<'a> {
     pub position: f32,
@@ -101,6 +112,9 @@ fn paint_mesh_from_bank(
     let mesh_left = rect.min.x + rect.width() * 0.08;
     let mesh_width = rect.width() * 0.84;
     let depth_pitch = rect.width() * 0.028;
+    let breath = mesh_breath_scale(time);
+    let base_amp = 0.30 * breath;
+    let depth_scale = 0.22 * breath;
 
     let mut slice_polylines: Vec<Vec<Pos2>> = Vec::with_capacity(num_slices);
 
@@ -109,7 +123,7 @@ fn paint_mesh_from_bank(
             .clamp(0, bank.num_frames.saturating_sub(1) as i32) as usize;
         let depth = (s as f32 / num_slices as f32 - 0.5).abs();
         let z_offset = (s as f32 - half as f32) * depth_pitch;
-        let y_offset = depth * rect.height() * 0.22;
+        let y_offset = depth * rect.height() * depth_scale;
 
         let slice_rect = Rect::from_min_max(
             Pos2::new(mesh_left + z_offset, rect.min.y + y_offset),
@@ -117,7 +131,7 @@ fn paint_mesh_from_bank(
         );
 
         let frame = bank.frame(fi);
-        let points = waveform_points(frame, slice_rect, 64, 0.30);
+        let points = waveform_points(frame, slice_rect, 64, base_amp);
         slice_polylines.push(points);
     }
 
@@ -136,7 +150,7 @@ fn paint_mesh_from_bank(
                 let pb = b[ib.min(b.len() - 1)];
                 painter.line_segment(
                     [pa, pb],
-                    egui::Stroke::new(0.75_f32, accent_ui.gamma_multiply(0.25)),
+                    egui::Stroke::new(0.75_f32, accent_ui.gamma_multiply(mesh_rib_pulse(time))),
                 );
             }
         }
@@ -150,11 +164,15 @@ fn paint_mesh_from_bank(
         let alpha = (1.0 - depth * 1.5).clamp(0.2, 1.0);
         let is_active = s == half;
         let color = if is_active {
-            accent
+            peak_glow_color(accent, time)
         } else {
             accent_ui.gamma_multiply(alpha)
         };
-        let width_stroke = if is_active { 2.0_f32 } else { 1.0_f32 };
+        let width_stroke = if is_active {
+            2.0_f32 + (time * 2.0).sin().abs() * 0.35
+        } else {
+            1.0_f32
+        };
         painter.add(Shape::line(
             points.clone(),
             egui::Stroke::new(width_stroke, color),
@@ -163,22 +181,28 @@ fn paint_mesh_from_bank(
 }
 
 fn paint_placeholder_mesh(painter: &egui::Painter, rect: Rect, time: f32, accent_ui: Color32) {
+    let breath = mesh_breath_scale(time);
+    let pulse = mesh_rib_pulse(time);
     for i in 0..10 {
         let t = i as f32 / 9.0;
-        let y_off = t * rect.height() * 0.32;
+        let y_off = t * rect.height() * 0.32 * breath;
         let x_off = (t - 0.5) * rect.width() * 0.22 + (time * 0.2 + t).sin() * 4.0;
         let points: Vec<Pos2> = (0..=40)
             .map(|j| {
                 let u = j as f32 / 40.0;
                 let x = rect.min.x + x_off + u * rect.width() * 0.78;
                 let y = rect.center().y + y_off
-                    + (u * std::f32::consts::TAU * 2.0 + t * 2.0).sin() * rect.height() * 0.18;
+                    + (u * std::f32::consts::TAU * 2.0 + t * 2.0).sin()
+                        * rect.height()
+                        * 0.18
+                        * breath;
                 Pos2::new(x, y)
             })
             .collect();
+        let alpha = (0.35 + t * 0.45) * (0.85 + pulse * 0.6);
         painter.add(Shape::line(
             points,
-            egui::Stroke::new(1.0_f32, accent_ui.gamma_multiply(0.35 + t * 0.45)),
+            egui::Stroke::new(1.0_f32, accent_ui.gamma_multiply(alpha)),
         ));
     }
 }
