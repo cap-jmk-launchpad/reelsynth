@@ -19,6 +19,17 @@ pub fn header_used_rect_id() -> egui::Id {
     egui::Id::new("reelsynth.audit.header_used_rect")
 }
 
+pub fn header_left_cluster_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.header_left_cluster_rect")
+}
+
+pub fn header_right_cluster_rect_id() -> egui::Id {
+    egui::Id::new("reelsynth.audit.header_right_cluster_rect")
+}
+
+/// Minimum horizontal gap between left and right header control clusters at default width.
+pub const HEADER_CLUSTER_MIN_GAP: f32 = 4.0;
+
 pub fn osc_used_rect_id() -> egui::Id {
     egui::Id::new("reelsynth.audit.osc_used_rect")
 }
@@ -316,6 +327,52 @@ pub fn audit_shell(layout: &ShellLayout, screen: Rect, options: ShellLayoutOptio
     assert!(layout.header.min.y >= screen.min.y - EPS);
 }
 
+/// Left and right header clusters must not overlap horizontally and should leave breathing room.
+pub fn audit_header_clusters(ctx: &egui::Context, header: Rect) {
+    const VERT_SLACK: f32 = 12.0;
+
+    ctx.data(|d| {
+        let (Some(left), Some(right)) = (
+            d.get_temp::<Rect>(header_left_cluster_rect_id()),
+            d.get_temp::<Rect>(header_right_cluster_rect_id()),
+        ) else {
+            panic!("header cluster rects not stored (left/right)");
+        };
+
+        for (name, cluster) in [("left cluster", left), ("right cluster", right)] {
+            assert!(
+                cluster.min.x >= header.min.x - EPS && cluster.max.x <= header.max.x + EPS,
+                "header: `{name}` extends outside horizontal bounds ({cluster:?} not in {header:?})"
+            );
+            assert!(
+                cluster.max.y <= header.max.y + VERT_SLACK,
+                "header: `{name}` extends too far below header ({cluster:?} header={header:?})"
+            );
+        }
+
+        let overlap = overlap_area(
+            Rect::from_min_max(
+                egui::pos2(left.min.x, header.min.y),
+                egui::pos2(left.max.x, header.max.y),
+            ),
+            Rect::from_min_max(
+                egui::pos2(right.min.x, header.min.y),
+                egui::pos2(right.max.x, header.max.y),
+            ),
+        );
+        assert!(
+            overlap <= EPS,
+            "header clusters overlap horizontally by {overlap:.1}px (left={left:?} right={right:?})"
+        );
+
+        let gap = right.min.x - left.max.x;
+        assert!(
+            gap >= HEADER_CLUSTER_MIN_GAP - EPS,
+            "header clusters too close: gap={gap:.1}px (min={HEADER_CLUSTER_MIN_GAP}, left={left:?} right={right:?})"
+        );
+    });
+}
+
 /// Audit center-column sub-regions inside the shrunk inner bounds.
 pub fn audit_center(
     center: Rect,
@@ -464,5 +521,13 @@ pub fn audit_center(
         audit_shell(&layout, screen, options);
         assert!(layout.mod_matrix.height() > 0.0);
         assert!(layout.fx_rack.height() > 0.0);
+    }
+
+    #[test]
+    fn header_cluster_gap_disjoint() {
+        let left = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 56.0));
+        let right = Rect::from_min_size(egui::pos2(410.0, 0.0), egui::vec2(200.0, 56.0));
+        assert_eq!(overlap_area(left, right), 0.0);
+        assert!(right.min.x - left.max.x >= HEADER_CLUSTER_MIN_GAP);
     }
 }

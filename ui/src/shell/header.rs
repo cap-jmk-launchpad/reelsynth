@@ -7,7 +7,8 @@ use crate::fx_rack::{draw_effect_rack_sidebar, EffectRackState};
 use crate::layout::{osc_column_split_heights, UiScale};
 use crate::mod_matrix::{draw_mod_matrix_sidebar, ModMatrixState};
 use crate::layout_audit::{
-    header_used_rect_id, osc_fx_allocated_rect_id, osc_fx_used_rect_id, osc_mod_allocated_rect_id,
+    header_left_cluster_rect_id, header_right_cluster_rect_id, header_used_rect_id,
+    osc_fx_allocated_rect_id, osc_fx_used_rect_id, osc_mod_allocated_rect_id,
     osc_mod_used_rect_id, osc_used_rect_id,
 };
 use crate::osc_column::{draw_osc_column, OscColumnInput, OscColumnState};
@@ -105,6 +106,11 @@ pub(super) fn draw_header(
                         });
                     });
 
+                    let left_cluster = ui.min_rect();
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(header_left_cluster_rect_id(), left_cluster);
+                    });
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.set_width(ui.available_width());
 
@@ -142,6 +148,11 @@ pub(super) fn draw_header(
                                     actions.midi_device_selected = Some(idx);
                                 }
                             }
+                        });
+
+                        let right_cluster = ui.min_rect();
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(header_right_cluster_rect_id(), right_cluster);
                         });
                     });
                 });

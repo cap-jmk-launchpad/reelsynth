@@ -3,7 +3,10 @@
 use egui::Ui;
 use reelsynth_ui_theme::Tokens;
 
-use crate::widgets::{button_toggle, menu_selectable, reel_combo, select_value_text, styled_menu_body};
+use crate::widgets::{
+    menu_divider, menu_section_label, menu_selectable, reel_combo, select_value_text,
+    styled_menu_body,
+};
 use crate::UiState;
 
 use super::{CHORD_DEGREE_LABELS, LAYOUT_NAMES, ROOT_NAMES, SCALE_NAMES};
@@ -24,78 +27,86 @@ impl Default for PerformanceHeaderActions {
     }
 }
 
-/// Key dropdown, scale dropdown, and Piano | Scale | Chords layout segment.
+fn performance_summary(state: &UiState) -> String {
+    let perf = &state.performance;
+    let root = ROOT_NAMES[perf.root.min(ROOT_NAMES.len().saturating_sub(1))];
+    let scale = SCALE_NAMES[perf.scale.min(SCALE_NAMES.len().saturating_sub(1))];
+    let layout = LAYOUT_NAMES[perf.layout.min(LAYOUT_NAMES.len().saturating_sub(1))];
+    let mut summary = format!("{root} · {scale} · {layout}");
+    if perf.layout == 2 {
+        if let Some(deg) = state.active_chord_degree {
+            let label = CHORD_DEGREE_LABELS[deg.min(CHORD_DEGREE_LABELS.len().saturating_sub(1))];
+            summary.push_str(" · ");
+            summary.push_str(label);
+        }
+    }
+    summary
+}
+
+/// Compact Performance dropdown: key, scale, layout, and chord degree when applicable.
 pub fn draw_performance_header(
     ui: &mut Ui,
     state: &mut UiState,
 ) -> PerformanceHeaderActions {
     let tokens = Tokens::default();
     let mut actions = PerformanceHeaderActions::default();
-    let perf = &mut state.performance;
+    let summary = performance_summary(state);
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
+    ui.label(
+        egui::RichText::new("Perf")
+            .size(10.0)
+            .color(tokens.text_muted),
+    );
+    reel_combo(ui, "perf_settings", select_value_text(&summary), 148.0, |ui| {
+        styled_menu_body(ui, |ui| {
+            let perf = &mut state.performance;
 
-        ui.label(
-            egui::RichText::new("Key")
-                .size(10.0)
-                .color(tokens.text_muted),
-        );
-        let root_label = ROOT_NAMES[perf.root.min(ROOT_NAMES.len().saturating_sub(1))];
-        reel_combo(ui, "perf_root", select_value_text(root_label), 56.0, |ui| {
-            styled_menu_body(ui, |ui| {
-                for (idx, name) in ROOT_NAMES.iter().enumerate() {
-                    if menu_selectable(ui, perf.root == idx, name).clicked() {
-                        perf.root = idx;
-                        actions.params_changed = true;
-                    }
+            menu_section_label(ui, "Key");
+            for (idx, name) in ROOT_NAMES.iter().enumerate() {
+                if menu_selectable(ui, perf.root == idx, name).clicked() {
+                    perf.root = idx;
+                    actions.params_changed = true;
                 }
-            });
-        });
-
-        ui.label(
-            egui::RichText::new("Scale")
-                .size(10.0)
-                .color(tokens.text_muted),
-        );
-        let scale_label = SCALE_NAMES[perf.scale.min(SCALE_NAMES.len().saturating_sub(1))];
-        reel_combo(ui, "perf_scale", select_value_text(scale_label), 120.0, |ui| {
-            styled_menu_body(ui, |ui| {
-                for (idx, name) in SCALE_NAMES.iter().enumerate() {
-                    if menu_selectable(ui, perf.scale == idx, name).clicked() {
-                        perf.scale = idx;
-                        actions.params_changed = true;
-                    }
-                }
-            });
-        });
-
-        ui.add_space(4.0);
-        for (idx, name) in LAYOUT_NAMES.iter().enumerate() {
-            if button_toggle(ui, name, perf.layout == idx).clicked() {
-                perf.layout = idx;
-                actions.params_changed = true;
             }
-        }
 
-        if perf.layout == 2 {
-            ui.add_space(4.0);
-            for (deg, label) in CHORD_DEGREE_LABELS.iter().enumerate() {
-                let active = state.active_chord_degree == Some(deg);
-                if button_toggle(ui, label, active).clicked() {
-                    if active {
-                        actions.chord_degree_off = Some(deg);
-                        state.active_chord_degree = None;
-                    } else {
-                        if let Some(prev) = state.active_chord_degree {
-                            actions.chord_degree_off = Some(prev);
+            menu_divider(ui);
+            menu_section_label(ui, "Scale");
+            for (idx, name) in SCALE_NAMES.iter().enumerate() {
+                if menu_selectable(ui, perf.scale == idx, name).clicked() {
+                    perf.scale = idx;
+                    actions.params_changed = true;
+                }
+            }
+
+            menu_divider(ui);
+            menu_section_label(ui, "Layout");
+            for (idx, name) in LAYOUT_NAMES.iter().enumerate() {
+                if menu_selectable(ui, perf.layout == idx, name).clicked() {
+                    perf.layout = idx;
+                    actions.params_changed = true;
+                }
+            }
+
+            if perf.layout == 2 {
+                menu_divider(ui);
+                menu_section_label(ui, "Chord degree");
+                for (deg, label) in CHORD_DEGREE_LABELS.iter().enumerate() {
+                    let active = state.active_chord_degree == Some(deg);
+                    if menu_selectable(ui, active, label).clicked() {
+                        if active {
+                            actions.chord_degree_off = Some(deg);
+                            state.active_chord_degree = None;
+                        } else {
+                            if let Some(prev) = state.active_chord_degree {
+                                actions.chord_degree_off = Some(prev);
+                            }
+                            actions.chord_degree_on = Some(deg);
+                            state.active_chord_degree = Some(deg);
                         }
-                        actions.chord_degree_on = Some(deg);
-                        state.active_chord_degree = Some(deg);
                     }
                 }
             }
-        }
+        });
     });
 
     actions

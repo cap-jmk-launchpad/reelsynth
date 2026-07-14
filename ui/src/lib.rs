@@ -24,9 +24,11 @@ pub use fx_rack::{
 };
 pub use layout::*;
 pub use layout_audit::{
-    audit_center, audit_osc_sidebar_stacks, audit_panel_utilization, audit_shell, center_morph_used_rect_id,
-    center_piano_used_rect_id, center_scope_used_rect_id, center_strip_used_rect_id,
-    center_used_rect_id, center_views_used_rect_id, footer_used_rect_id, header_used_rect_id,
+    audit_center, audit_header_clusters, audit_osc_sidebar_stacks, audit_panel_utilization,
+    audit_shell, center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
+    center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id, footer_used_rect_id,
+    header_left_cluster_rect_id, header_right_cluster_rect_id, header_used_rect_id,
+    HEADER_CLUSTER_MIN_GAP,
     fx_strip_used_rect_id, mod_strip_used_rect_id, osc_fx_allocated_rect_id, osc_fx_used_rect_id,
     osc_used_rect_id, overlap_area,
     piano_used_rect_id, rail_filter_allocated_rect_id, rail_filter_used_rect_id,

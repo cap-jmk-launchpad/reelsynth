@@ -6,15 +6,15 @@ use egui::Rect;
 use egui_kittest::Harness;
 use reelsynth::Patch;
 use reelsynth_ui::{
-    audit_center, audit_osc_sidebar_stacks, audit_panel_utilization, audit_shell, compute_center_regions, default_effect_slots,
-    draw_shell, embed_piano_in_center, osc_type_index, ShellLayout, ShellLayoutOptions,
-    ShellMidiDevices, center_morph_used_rect_id, center_piano_used_rect_id,
-    center_scope_used_rect_id, center_strip_used_rect_id, center_used_rect_id,
-    center_views_used_rect_id, footer_used_rect_id, fx_strip_used_rect_id, header_used_rect_id,
-    mod_strip_used_rect_id, osc_fx_allocated_rect_id, osc_fx_used_rect_id, osc_mod_allocated_rect_id,
-    osc_mod_used_rect_id, osc_used_rect_id,
-    rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id, ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH,
-    SPACE_SM, utilization,
+    audit_center, audit_header_clusters, audit_osc_sidebar_stacks, audit_panel_utilization,
+    audit_shell, compute_center_regions, default_effect_slots, draw_shell, embed_piano_in_center,
+    osc_type_index, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
+    center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
+    center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id, footer_used_rect_id,
+    fx_strip_used_rect_id, header_used_rect_id, mod_strip_used_rect_id,
+    osc_fx_allocated_rect_id, osc_fx_used_rect_id, osc_mod_allocated_rect_id, osc_mod_used_rect_id,
+    osc_used_rect_id, rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id,
+    ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH, APP_WIDTH, SPACE_SM, utilization,
 };
 use reelsynth_ui::widgets::{Knob, KnobSize, PianoKeyboard};
 use reelsynth_ui_theme;
@@ -520,4 +520,91 @@ fn panel_whitespace_utilization_at_1280x880() {
         utilization(mod_alloc, mod_used) >= PANEL_UTIL_MIN,
         "osc mod matrix under-utilized"
     );
+}
+
+#[test]
+fn header_control_clusters_no_overlap_at_default_width() {
+    run_header_cluster_audit(ShellHarnessTest {
+        fonts_applied: false,
+        state: UiState::default(),
+    });
+}
+
+#[test]
+fn header_control_clusters_no_overlap_chords_layout() {
+    let mut state = UiState::default();
+    state.performance.layout = 2;
+    state.active_chord_degree = Some(0);
+    run_header_cluster_audit(ShellHarnessTest {
+        fonts_applied: false,
+        state,
+    });
+}
+
+#[test]
+fn header_control_clusters_no_overlap_compose_mode() {
+    let mut state = UiState::default();
+    state.shell_mode = reelsynth_ui::ShellMode::Compose;
+    run_header_cluster_audit(ShellHarnessTest {
+        fonts_applied: false,
+        state,
+    });
+}
+
+fn run_header_cluster_audit(test: ShellHarnessTest) {
+    let config = ShellConfig {
+        show_wt_editor: true,
+        show_osc_column: true,
+        show_mod_matrix: true,
+        show_fx_rack: true,
+    };
+    let options = ShellLayoutOptions {
+        piano_visible: true,
+        show_osc_column: test.state.shell_mode != reelsynth_ui::ShellMode::Compose,
+        show_mod_matrix: test.state.shell_mode != reelsynth_ui::ShellMode::Compose,
+        mod_matrix_open: true,
+        show_fx_rack: test.state.shell_mode != reelsynth_ui::ShellMode::Compose,
+        fx_rack_open: true,
+    };
+    let screen = Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(APP_WIDTH, APP_HEIGHT_FULL),
+    );
+    let layout = ShellLayout::compute_with_options(screen, options);
+    audit_shell(&layout, screen, options);
+
+    let midi = ShellMidiDevices {
+        names: &["None".to_string(), "Virtual MIDI".to_string()],
+        selected: 0,
+    };
+    let preview = Patch::default_mono();
+
+    let mut harness = Harness::builder()
+        .with_size([APP_WIDTH, APP_HEIGHT_FULL])
+        .build_state(
+            |ctx, test| {
+                if !test.fonts_applied {
+                    reelsynth_ui_theme::apply(ctx);
+                    test.fonts_applied = true;
+                    return;
+                }
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let screen = ui.max_rect();
+                    let _actions = draw_shell(
+                        ui,
+                        screen,
+                        &mut test.state,
+                        None,
+                        &preview,
+                        &midi,
+                        &config,
+                        None,
+                        None,
+                    );
+                });
+            },
+            test,
+        );
+    harness.run();
+    audit_header_clusters(&harness.ctx, layout.header);
 }
