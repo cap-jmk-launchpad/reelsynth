@@ -51,6 +51,8 @@ pub struct ShellActions {
     /// Live note captured for MIDI recorder (Compose + armed track).
     pub compose_record_note_on: Option<(u8, f32)>,
     pub compose_record_note_off: Option<u8>,
+    /// Custom Hz performance input (freq, velocity).
+    pub note_on_freq: Option<(f32, f32)>,
 }
 
 pub struct ShellMidiDevices<'a> {
@@ -121,6 +123,8 @@ pub struct UiState {
     pub scale_lock_midi: bool,
     pub active_chord_degree: Option<usize>,
     pub active_chord_token: Option<u64>,
+    /// Custom frequency entry for direct-Hz performance audition.
+    pub custom_hz_input: String,
     pub preset_name: String,
     pub preset_category: String,
     pub status: String,
@@ -229,6 +233,7 @@ impl Default for UiState {
             scale_lock_midi: false,
             active_chord_degree: None,
             active_chord_token: None,
+            custom_hz_input: "440".into(),
             preset_name: lead.name.clone(),
             preset_category: "Lead · Wavetable · Saw Morph".into(),
             status: "Audio OK — click keys or use QWERTY row (Z–M)".into(),

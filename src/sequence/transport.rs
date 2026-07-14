@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::schema::MidiNote;
+
 /// Shared transport snapshot (readable from UI thread).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct TransportState {
@@ -12,6 +14,9 @@ pub struct TransportState {
     pub loop_start: f32,
     pub loop_end: f32,
     pub loop_enabled: bool,
+    /// In-progress recorded notes (engine recorder snapshot while recording).
+    #[serde(default)]
+    pub live_recorded: Vec<MidiNote>,
 }
 
 impl TransportState {

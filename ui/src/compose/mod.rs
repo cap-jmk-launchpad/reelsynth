@@ -59,6 +59,7 @@ pub struct ComposeUi {
     pub project: SequenceProject,
     pub transport: TransportUi,
     pub snap_division: QuantizeDivision,
+    pub snap_enabled: bool,
     pub selected_track: usize,
     pub selected_clip: Option<usize>,
     pub selected_notes: std::collections::HashSet<usize>,
@@ -66,8 +67,11 @@ pub struct ComposeUi {
     pub piano_roll_focused: bool,
     pub launched_scene: Option<usize>,
     pub active_scene_slots: Vec<Option<ClipRef>>,
+    pub automation_target: usize,
     pub history: CommandHistory,
     pub(crate) drag_state: Option<piano_roll::DragState>,
+    /// Live notes from engine recorder overlay (not yet committed to clip).
+    pub live_record_overlay: Vec<MidiNote>,
 }
 
 impl Default for ComposeUi {
@@ -76,6 +80,7 @@ impl Default for ComposeUi {
             project: SequenceProject::default(),
             transport: TransportUi::default(),
             snap_division: QuantizeDivision::Sixteenth,
+            snap_enabled: true,
             selected_track: 0,
             selected_clip: None,
             selected_notes: std::collections::HashSet::new(),
@@ -83,8 +88,10 @@ impl Default for ComposeUi {
             piano_roll_focused: false,
             launched_scene: None,
             active_scene_slots: Vec::new(),
+            automation_target: 0,
             history: CommandHistory::new(64),
             drag_state: None,
+            live_record_overlay: Vec::new(),
         }
     }
 }
@@ -95,6 +102,9 @@ impl ComposeUi {
     }
 
     pub fn snap_beats(&self, beats: f32) -> f32 {
+        if !self.snap_enabled {
+            return beats.max(0.0);
+        }
         let step = self.snap_division.beats_per_step();
         (beats / step).round() * step
     }
@@ -189,6 +199,10 @@ pub fn draw_compose_shell(
     let roll_actions = draw_piano_roll(ui, piano_rect, &mut state.compose);
     if roll_actions.sequence_changed {
         actions.sequence_changed = true;
+    }
+    if let Some((note, vel)) = roll_actions.audition_note {
+        actions.note_on = Some(note);
+        let _ = vel;
     }
 
     let scene_actions = draw_scene_grid(ui, scene_rect, &mut state.compose);

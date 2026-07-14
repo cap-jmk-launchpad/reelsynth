@@ -103,8 +103,12 @@ pub fn draw_transport_bar(
 
                     ui.separator();
 
+                    if button_toggle(ui, "Snap", compose.snap_enabled).clicked() {
+                        compose.snap_enabled = !compose.snap_enabled;
+                    }
+
                     ui.label(
-                        egui::RichText::new("Snap")
+                        egui::RichText::new("Grid")
                             .size(10.0)
                             .color(tokens.text_muted),
                     );
@@ -112,12 +116,17 @@ pub fn draw_transport_bar(
                         QuantizeDivision::Quarter,
                         QuantizeDivision::Eighth,
                         QuantizeDivision::Sixteenth,
+                        QuantizeDivision::ThirtySecond,
+                        QuantizeDivision::SixtyFourth,
                         QuantizeDivision::EighthTriplet,
+                        QuantizeDivision::SixteenthTriplet,
                     ] {
                         let label = match div {
                             QuantizeDivision::Quarter => "1/4",
                             QuantizeDivision::Eighth => "1/8",
                             QuantizeDivision::Sixteenth => "1/16",
+                            QuantizeDivision::ThirtySecond => "1/32",
+                            QuantizeDivision::SixtyFourth => "1/64",
                             QuantizeDivision::EighthTriplet => "1/8T",
                             QuantizeDivision::SixteenthTriplet => "1/16T",
                         };

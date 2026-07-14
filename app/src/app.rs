@@ -61,6 +61,14 @@ pub struct ReelSynthApp {
     osc_strip_state: OscStripPreviewState,
     performance: PerformanceInput,
     pending_record_sync: bool,
+    pending_record_notes: HashMap<u8, PendingRecordNote>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingRecordNote {
+    pitch: u8,
+    start_beats: f32,
+    velocity: f32,
 }
 
 impl ReelSynthApp {
@@ -105,23 +113,20 @@ impl ReelSynthApp {
             osc_strip_state: OscStripPreviewState::default(),
             performance: PerformanceInput::default(),
             pending_record_sync: false,
+            pending_record_notes: HashMap::new(),
         }
     }
 
-    fn compose_routes_to_recorder(&self) -> bool {
+    fn compose_is_recording(&self) -> bool {
         self.state.shell_mode == ShellMode::Compose
             && self.state.compose.transport.recording
             && self.state.compose.armed_track().is_some()
-            && self.audio.is_none()
     }
 
-    fn record_note_to_clip(&mut self, note: u8, velocity: f32) {
-        let Some(ti) = self.state.compose.armed_track() else {
-            return;
-        };
+    fn record_clip_target(&mut self) -> Option<(usize, usize)> {
+        let ti = self.state.compose.armed_track()?;
         let playhead = self.state.compose.transport.playhead_beats;
         let step = self.state.compose.snap_division.beats_per_step();
-        let snapped = self.state.compose.snap_beats(playhead);
 
         let ci = if let Some(ci) = self.state.compose.selected_clip {
             if ci < self.state.compose.project.tracks[ti].clips.len() {
@@ -134,6 +139,7 @@ impl ReelSynthApp {
         };
 
         let ci = ci.unwrap_or_else(|| {
+            let snapped = self.state.compose.snap_beats(playhead);
             let len = (self.state.compose.project.loop_region.end_beats - snapped).max(step);
             let clip = reelsynth_ui::Clip::new(snapped, len);
             self.state.compose.project.tracks[ti].clips.push(clip);
@@ -142,20 +148,66 @@ impl ReelSynthApp {
             self.state.compose.selected_clip = Some(idx);
             idx
         });
+        Some((ti, ci))
+    }
+
+    fn finalize_record_note(&mut self, pending: PendingRecordNote, end_beats: f32) {
+        let Some((ti, ci)) = self.record_clip_target() else {
+            return;
+        };
+        let step = self.state.compose.snap_division.beats_per_step();
+        let snapped_start = self.state.compose.snap_beats(pending.start_beats);
+        let mut duration = (end_beats - pending.start_beats).max(step);
+        if self.state.compose.snap_enabled {
+            duration = self.state.compose.snap_beats(duration).max(step);
+        }
+        let clip_len = self.state.compose.project.tracks[ti].clips[ci].length_beats;
+        let start = snapped_start.clamp(0.0, clip_len);
+        duration = duration.min(clip_len - start).max(step);
 
         use reelsynth_ui::MidiNote;
         self.state.compose.project.tracks[ti].clips[ci].notes.push(MidiNote {
-            pitch: note,
-            start_beats: snapped,
-            duration_beats: step,
-            velocity: velocity.clamp(0.01, 1.0),
+            pitch: pending.pitch,
+            start_beats: start,
+            duration_beats: duration,
+            velocity: pending.velocity,
         });
-        self.state.status = format!("Recorded {note} @ beat {snapped:.2}");
+        self.state.status = format!(
+            "Recorded {} @ beat {:.2} ({:.2} beats)",
+            pending.pitch, start, duration
+        );
+        if let Some(a) = &self.audio {
+            let seq = compose_to_patch_sequence(&self.state.compose);
+            a.send(AudioCmd::SetSequence(seq.clone()));
+            self.current_patch.sequence = seq;
+        }
+    }
+
+    fn record_note_on(&mut self, note: u8, velocity: f32) {
+        let playhead = self.state.compose.transport.playhead_beats;
+        self.pending_record_notes.insert(
+            note,
+            PendingRecordNote {
+                pitch: note,
+                start_beats: playhead,
+                velocity: velocity.clamp(0.01, 1.0),
+            },
+        );
+    }
+
+    fn record_note_off(&mut self, note: u8) {
+        if let Some(pending) = self.pending_record_notes.remove(&note) {
+            let end = self.state.compose.transport.playhead_beats;
+            self.finalize_record_note(pending, end);
+        }
     }
 
     fn handle_compose_note_on(&mut self, note: u8, velocity: f32) {
-        if self.compose_routes_to_recorder() {
-            self.record_note_to_clip(note, velocity);
+        if self.compose_is_recording() {
+            self.record_note_on(note, velocity);
+            if self.audio.is_some() {
+                self.engine_note_on(note, velocity);
+            }
             return;
         }
         if self.state.compose.piano_roll_focused
@@ -168,7 +220,11 @@ impl ReelSynthApp {
     }
 
     fn handle_compose_note_off(&mut self, note: u8) {
-        if self.compose_routes_to_recorder() {
+        if self.compose_is_recording() {
+            self.record_note_off(note);
+            if self.audio.is_some() {
+                self.engine_note_off(note);
+            }
             return;
         }
         self.performance_note_off(PerformanceKey::Note(note));
@@ -730,6 +786,11 @@ impl ReelSynthApp {
             self.state.compose.project.loop_region.end_beats = t.loop_end;
             self.state.compose.project.loop_region.enabled = t.loop_enabled;
             self.state.compose.project.bpm = t.bpm;
+            self.state.compose.live_record_overlay = if t.recording {
+                t.live_recorded.clone()
+            } else {
+                Vec::new()
+            };
         }
     }
 
@@ -780,6 +841,12 @@ impl ReelSynthApp {
         }
         if let Some(beats) = actions.transport_seek {
             audio.send(AudioCmd::SeekPlayhead(beats));
+        }
+        if let Some(_scene_idx) = actions.scene_launch {
+            let slots = self.state.compose.active_scene_slots.clone();
+            audio.send(AudioCmd::LaunchScene { slots });
+            self.state.compose.transport.playing = true;
+            self.state.compose.transport.playhead_beats = 0.0;
         }
         if actions.sequence_changed {
             let seq = compose_to_patch_sequence(&self.state.compose);
@@ -871,7 +938,22 @@ impl eframe::App for ReelSynthApp {
                 }
                 other => other,
             };
-            if let Some(a) = &self.audio {
+
+            if self.compose_is_recording() {
+                match event {
+                    MidiEvent::NoteOn { note, velocity, .. } => {
+                        self.handle_compose_note_on(note, velocity);
+                    }
+                    MidiEvent::NoteOff { note, .. } => {
+                        self.handle_compose_note_off(note);
+                    }
+                    other => {
+                        if let Some(a) = &self.audio {
+                            a.send(AudioCmd::Midi(other));
+                        }
+                    }
+                }
+            } else if let Some(a) = &self.audio {
                 a.send(AudioCmd::Midi(event));
             }
             if let MidiEvent::NoteOn { note, velocity, .. } = event {
@@ -1045,6 +1127,9 @@ impl eframe::App for ReelSynthApp {
                 if let Some(deg) = actions.chord_degree_off {
                     self.release_chord_degree(deg);
                     self.state.active_chord_degree = None;
+                }
+                if let Some((freq, vel)) = actions.note_on_freq {
+                    self.performance_note_on(PerformanceKey::Freq(freq), vel);
                 }
                 if actions.params_changed {
                     self.sync_params();

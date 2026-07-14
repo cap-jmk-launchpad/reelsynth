@@ -191,7 +191,7 @@ pub fn draw_shell(
         draw_piano_wrap(ui, layout.piano_wrap, state, &mut actions, layout.scale);
     }
 
-    draw_footer(ui, layout.footer, state);
+    draw_footer(ui, layout.footer, state, &mut actions);
 
     actions
 }

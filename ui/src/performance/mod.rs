@@ -1,7 +1,9 @@
 //! UI-facing performance settings (indices for dropdowns + labels).
 
+mod chord_grid;
 mod header;
 
+pub use chord_grid::{draw_chord_grid, ChordGridActions};
 pub use header::{draw_performance_header, PerformanceHeaderActions};
 
 use reelsynth::{

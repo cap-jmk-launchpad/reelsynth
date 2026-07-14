@@ -118,6 +118,8 @@ pub enum QuantizeDivision {
     Quarter,
     Eighth,
     Sixteenth,
+    ThirtySecond,
+    SixtyFourth,
     EighthTriplet,
     SixteenthTriplet,
 }
@@ -128,6 +130,8 @@ impl QuantizeDivision {
             Self::Quarter => 1.0,
             Self::Eighth => 0.5,
             Self::Sixteenth => 0.25,
+            Self::ThirtySecond => 0.125,
+            Self::SixtyFourth => 0.0625,
             Self::EighthTriplet => 1.0 / 3.0,
             Self::SixteenthTriplet => 1.0 / 6.0,
         }

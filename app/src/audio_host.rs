@@ -81,7 +81,15 @@ pub fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
                         );
                         engine.process_stereo(data);
                         if let Ok(mut t) = transport_for_audio.write() {
-                            *t = engine.transport().clone();
+                            let mut snap = engine.transport().clone();
+                            if snap.recording {
+                                let step = engine.patch().sequence.quantize.division.beats_per_step();
+                                snap.live_recorded =
+                                    engine.sequencer().recorder.snapshot(step);
+                            } else {
+                                snap.live_recorded.clear();
+                            }
+                            *t = snap;
                         }
                         if let Ok(mut s) = sequence_for_audio.write() {
                             *s = engine.patch().sequence.clone();
@@ -102,7 +110,15 @@ pub fn start_audio(sample_rate: u32) -> Result<AudioHandle, String> {
                         );
                         engine.process(data);
                         if let Ok(mut t) = transport_for_audio.write() {
-                            *t = engine.transport().clone();
+                            let mut snap = engine.transport().clone();
+                            if snap.recording {
+                                let step = engine.patch().sequence.quantize.division.beats_per_step();
+                                snap.live_recorded =
+                                    engine.sequencer().recorder.snapshot(step);
+                            } else {
+                                snap.live_recorded.clear();
+                            }
+                            *t = snap;
                         }
                         if let Ok(mut s) = sequence_for_audio.write() {
                             *s = engine.patch().sequence.clone();

@@ -2,7 +2,7 @@
 
 use crossbeam_channel::{Receiver, TryRecvError};
 use reelsynth::engine::MidiEvent;
-use reelsynth::sequence::TransportState;
+use reelsynth::sequence::{ClipRef, TransportState};
 use reelsynth::{Envelope, Macro, ModSlot, Patch, SequenceProject, SynthEngine, WavetableBank};
 use std::sync::{Arc, RwLock};
 
@@ -12,6 +12,9 @@ pub(crate) enum AudioCmd {
     TransportStop,
     TransportRecord {
         track: Option<usize>,
+    },
+    LaunchScene {
+        slots: Vec<Option<ClipRef>>,
     },
     SetBpm(f32),
     SeekPlayhead(f32),
@@ -101,6 +104,15 @@ pub(crate) fn drain_commands(
                 let mut seq = engine.patch().sequence.clone();
                 engine.sequencer_mut().stop_record_and_commit(&mut seq);
                 engine.patch_mut().sequence = seq;
+            }
+            Ok(AudioCmd::LaunchScene { slots }) => {
+                let offs = engine.sequencer().stop_note_offs();
+                for ev in offs {
+                    if let reelsynth::sequence::SchedEvent::NoteOff { channel, note, .. } = ev {
+                        engine.note_off(channel, note);
+                    }
+                }
+                engine.sequencer_mut().launch_scene(slots);
             }
             Ok(AudioCmd::TransportRecord { track }) => {
                 let mut seq = engine.patch().sequence.clone();

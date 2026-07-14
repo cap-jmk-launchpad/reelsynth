@@ -4,7 +4,7 @@ use super::automation::compute_automation_mods;
 use super::clock::SampleClock;
 use super::recorder::MidiRecorder;
 use super::scheduler::{NoteScheduler, SchedEvent, SEQ_CHANNEL};
-use super::schema::SequenceProject;
+use super::schema::{ClipRef, SequenceProject};
 use super::transport::TransportState;
 use std::collections::HashMap;
 
@@ -51,11 +51,13 @@ impl SequencerRuntime {
     }
 
     pub fn transport_play(&mut self) {
+        self.scheduler.set_session(None);
         self.transport.play();
     }
 
     pub fn transport_stop(&mut self) {
         self.scheduler.clear_active();
+        self.scheduler.set_session(None);
         self.transport.stop();
     }
 
@@ -66,19 +68,12 @@ impl SequencerRuntime {
     ) {
         self.transport.start_record();
         if let Some(ti) = track_idx.or_else(|| project.armed_track_index()) {
-            if let Some(target) = MidiRecorder::ensure_clip_at_playhead(
+            let _ = MidiRecorder::ensure_clip_at_playhead(
                 project,
                 ti,
                 self.transport.playhead_beats,
                 4.0,
-            ) {
-                let clip_start = project.tracks[ti]
-                    .clips
-                    .get(target.clip)
-                    .map(|c| c.start_beats)
-                    .unwrap_or(0.0);
-                self.recorder.arm(target, clip_start);
-            }
+            );
         }
     }
 
@@ -88,6 +83,18 @@ impl SequencerRuntime {
 
     pub fn seek_playhead(&mut self, beats: f32) {
         self.transport.seek(beats);
+    }
+
+    /// Launch a session scene — plays slot clips from beat 0 (session timeline).
+    pub fn launch_scene(&mut self, slots: Vec<Option<ClipRef>>) {
+        self.scheduler.clear_active();
+        self.scheduler.set_session(Some(slots));
+        self.transport.seek(0.0);
+        self.transport.play();
+    }
+
+    pub fn session_slots(&self) -> Option<&[Option<ClipRef>]> {
+        self.scheduler.session_slots()
     }
 
     /// Stop recording and commit notes to clip with project quantize grid.
@@ -159,7 +166,11 @@ impl SequencerRuntime {
     }
 
     pub fn automation_mods(&self, project: &SequenceProject) -> HashMap<String, f32> {
-        compute_automation_mods(project, &self.transport)
+        compute_automation_mods(
+            project,
+            &self.transport,
+            self.scheduler.session_slots(),
+        )
     }
 
     pub fn seq_channel() -> u8 {

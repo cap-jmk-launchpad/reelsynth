@@ -46,6 +46,21 @@ impl MidiRecorder {
         self.record_target.as_ref()
     }
 
+    /// Snapshot of committed + held notes for live piano-roll overlay.
+    pub fn snapshot(&self, default_step_beats: f32) -> Vec<MidiNote> {
+        let mut notes = self.recorded.clone();
+        let step = default_step_beats.max(0.0625);
+        for pending in &self.pending {
+            notes.push(MidiNote {
+                pitch: pending.pitch,
+                start_beats: pending.start_beats.max(0.0),
+                duration_beats: step,
+                velocity: pending.velocity,
+            });
+        }
+        notes
+    }
+
     /// Note on at absolute transport beat.
     pub fn note_on(&mut self, beat: f32, pitch: u8, velocity: f32) {
         if self.record_target.is_none() {

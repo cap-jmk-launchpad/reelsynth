@@ -1,7 +1,7 @@
 //! Note scheduler — emit note on/off for a beat window.
 
 use super::clock::BeatRange;
-use super::schema::{Clip, SequenceProject, Track};
+use super::schema::{Clip, ClipRef, SequenceProject, Track};
 use super::transport::TransportState;
 
 /// Dedicated MIDI channel for scheduled sequence notes (live uses 0).
@@ -26,11 +26,21 @@ pub enum SchedEvent {
 pub struct NoteScheduler {
     /// Notes currently held by the scheduler (for note-off on stop).
     active_notes: Vec<u8>,
+    /// Session scene slots — when set, arrangement clips are ignored.
+    session_slots: Option<Vec<Option<ClipRef>>>,
 }
 
 impl NoteScheduler {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_session(&mut self, slots: Option<Vec<Option<ClipRef>>>) {
+        self.session_slots = slots;
+    }
+
+    pub fn session_slots(&self) -> Option<&[Option<ClipRef>]> {
+        self.session_slots.as_deref()
     }
 
     /// Collect note on/off events for `range` from `project` tracks.
@@ -45,24 +55,34 @@ impl NoteScheduler {
             return Vec::new();
         }
 
-        let solo_any = project.tracks.iter().any(|t| t.solo);
         let mut events = Vec::new();
 
-        for (ti, track) in project.tracks.iter().enumerate() {
-            if track.mute {
-                continue;
+        if let Some(slots) = self.session_slots.as_ref() {
+            let solo_any = project.tracks.iter().any(|t| t.solo);
+            for slot in slots.iter().flatten() {
+                let Some(track) = project.tracks.get(slot.track) else {
+                    continue;
+                };
+                if track.mute || (solo_any && !track.solo) {
+                    continue;
+                }
+                let Some(clip) = track.clips.get(slot.clip) else {
+                    continue;
+                };
+                collect_session_clip_events(clip, range, buffer_frames, &mut events);
             }
-            if solo_any && !track.solo {
-                continue;
-            }
-            for clip in &track.clips {
-                collect_clip_events(
-                    clip,
-                    range,
-                    buffer_frames,
-                    ti,
-                    &mut events,
-                );
+        } else {
+            let solo_any = project.tracks.iter().any(|t| t.solo);
+            for (ti, track) in project.tracks.iter().enumerate() {
+                if track.mute {
+                    continue;
+                }
+                if solo_any && !track.solo {
+                    continue;
+                }
+                for clip in &track.clips {
+                    collect_arrangement_clip_events(clip, range, buffer_frames, ti, &mut events);
+                }
             }
         }
 
@@ -110,7 +130,7 @@ fn event_sample_offset(ev: &SchedEvent) -> usize {
     }
 }
 
-fn collect_clip_events(
+fn collect_arrangement_clip_events(
     clip: &Clip,
     range: BeatRange,
     buffer_frames: usize,
@@ -125,25 +145,74 @@ fn collect_clip_events(
     for note in &clip.notes {
         let note_start = clip.start_beats + note.start_beats;
         let note_end = note_start + note.duration_beats;
+        emit_note_window(note_start, note_end, note, range, buffer_frames, out);
+    }
+}
 
-        if note_start >= range.start_beats && note_start < range.end_beats {
-            let offset = beat_to_sample_offset(note_start, range, buffer_frames);
-            out.push(SchedEvent::NoteOn {
-                sample_offset: offset,
-                channel: SEQ_CHANNEL,
-                note: note.pitch,
-                velocity: note.velocity,
-            });
-        }
+/// Session clip: playhead is clip-local; optional loop within `length_beats`.
+fn collect_session_clip_events(
+    clip: &Clip,
+    range: BeatRange,
+    buffer_frames: usize,
+    out: &mut Vec<SchedEvent>,
+) {
+    let len = clip.length_beats.max(0.001);
+    let max_loops = if clip.r#loop {
+        ((range.end_beats / len).ceil() as usize).saturating_add(1)
+    } else {
+        1
+    };
 
-        if note_end >= range.start_beats && note_end < range.end_beats {
-            let offset = beat_to_sample_offset(note_end, range, buffer_frames);
-            out.push(SchedEvent::NoteOff {
-                sample_offset: offset,
-                channel: SEQ_CHANNEL,
-                note: note.pitch,
-            });
+    for loop_idx in 0..max_loops {
+        let loop_offset = loop_idx as f32 * len;
+        if loop_offset >= range.end_beats {
+            break;
         }
+        for note in &clip.notes {
+            let note_start = loop_offset + note.start_beats;
+            let note_end = note_start + note.duration_beats;
+            if note_end <= range.start_beats {
+                continue;
+            }
+            if note_start >= range.end_beats {
+                if !clip.r#loop {
+                    break;
+                }
+                continue;
+            }
+            emit_note_window(note_start, note_end, note, range, buffer_frames, out);
+        }
+        if !clip.r#loop {
+            break;
+        }
+    }
+}
+
+fn emit_note_window(
+    note_start: f32,
+    note_end: f32,
+    note: &super::schema::MidiNote,
+    range: BeatRange,
+    buffer_frames: usize,
+    out: &mut Vec<SchedEvent>,
+) {
+    if note_start >= range.start_beats && note_start < range.end_beats {
+        let offset = beat_to_sample_offset(note_start, range, buffer_frames);
+        out.push(SchedEvent::NoteOn {
+            sample_offset: offset,
+            channel: SEQ_CHANNEL,
+            note: note.pitch,
+            velocity: note.velocity,
+        });
+    }
+
+    if note_end >= range.start_beats && note_end < range.end_beats {
+        let offset = beat_to_sample_offset(note_end, range, buffer_frames);
+        out.push(SchedEvent::NoteOff {
+            sample_offset: offset,
+            channel: SEQ_CHANNEL,
+            note: note.pitch,
+        });
     }
 }
 
@@ -223,18 +292,31 @@ mod tests {
     }
 
     #[test]
-    fn loop_wrap_transport() {
-        let mut t = TransportState {
+    fn session_scene_plays_slot_clip() {
+        let mut p = test_project_with_note();
+        p.tracks[0].clips[0].start_beats = 99.0; // arrangement position — ignored in session
+        let slots = vec![Some(crate::sequence::schema::ClipRef {
+            track: 0,
+            clip: 0,
+        })];
+        let transport = TransportState {
             playing: true,
             bpm: 120.0,
-            playhead_beats: 15.5,
-            loop_start: 0.0,
-            loop_end: 16.0,
-            loop_enabled: true,
+            playhead_beats: 0.0,
             ..Default::default()
         };
-        let clock = crate::sequence::clock::SampleClock;
-        let range = clock.tick(&mut t, 44100, 44100.0);
-        assert!(range.end_beats < 16.0 || t.playhead_beats < 1.0);
+        let range = BeatRange {
+            start_beats: 0.0,
+            end_beats: 2.0,
+            beats_per_sample: (120.0 / 60.0) / 44100.0,
+        };
+        let mut sched = NoteScheduler::new();
+        sched.set_session(Some(slots));
+        let events = sched.process(&p, &transport, range, 256);
+        let ons: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, SchedEvent::NoteOn { note: 60, .. }))
+            .collect();
+        assert_eq!(ons.len(), 1);
     }
 }

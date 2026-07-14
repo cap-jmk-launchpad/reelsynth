@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::modulation::apply_target_scale;
 
-use super::schema::{AutomationPoint, Clip, SequenceProject, Track};
+use super::schema::{AutomationPoint, Clip, ClipRef, SequenceProject, Track};
 use super::transport::TransportState;
 
 /// Interpolate automation value at `beat` (0..1).
@@ -44,6 +44,7 @@ pub fn evaluate_lane(points: &[AutomationPoint], beat: f32) -> f32 {
 pub fn compute_automation_mods(
     project: &SequenceProject,
     transport: &TransportState,
+    session_slots: Option<&[Option<ClipRef>]>,
 ) -> HashMap<String, f32> {
     if !transport.playing {
         return HashMap::new();
@@ -52,20 +53,51 @@ pub fn compute_automation_mods(
     let solo_any = project.tracks.iter().any(|t| t.solo);
     let mut out = HashMap::new();
 
+    if let Some(slots) = session_slots {
+        for slot in slots.iter().flatten() {
+            let Some(track) = project.tracks.get(slot.track) else {
+                continue;
+            };
+            if track.mute || (solo_any && !track.solo) {
+                continue;
+            }
+            let Some(clip) = track.clips.get(slot.clip) else {
+                continue;
+            };
+            let local = session_local_beat(clip, playhead);
+            accumulate_clip_automation(clip, local, &mut out);
+        }
+        return out;
+    }
+
     for track in &project.tracks {
         if track.mute || (solo_any && !track.solo) {
             continue;
         }
         for clip in clips_at_playhead(track, playhead) {
-            for lane in &clip.automation {
-                let value = evaluate_lane(&lane.points, playhead - clip.start_beats);
-                let centered = (value - 0.5) * 2.0;
-                let delta = apply_target_scale(&lane.target, centered, 1.0);
-                *out.entry(lane.target.clone()).or_insert(0.0) += delta;
-            }
+            let local = playhead - clip.start_beats;
+            accumulate_clip_automation(clip, local, &mut out);
         }
     }
     out
+}
+
+fn session_local_beat(clip: &Clip, playhead: f32) -> f32 {
+    let len = clip.length_beats.max(0.001);
+    if clip.r#loop {
+        playhead % len
+    } else {
+        playhead.min(len)
+    }
+}
+
+fn accumulate_clip_automation(clip: &Clip, local_beat: f32, out: &mut HashMap<String, f32>) {
+    for lane in &clip.automation {
+        let value = evaluate_lane(&lane.points, local_beat);
+        let centered = (value - 0.5) * 2.0;
+        let delta = apply_target_scale(&lane.target, centered, 1.0);
+        *out.entry(lane.target.clone()).or_insert(0.0) += delta;
+    }
 }
 
 fn clips_at_playhead<'a>(track: &'a Track, playhead: f32) -> Vec<&'a Clip> {

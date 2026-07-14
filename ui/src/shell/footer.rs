@@ -4,7 +4,10 @@ use reelsynth_ui_theme::Tokens;
 use super::*;
 use crate::layout::UiScale;
 use crate::layout_audit::{footer_used_rect_id, piano_used_rect_id};
+use crate::performance::draw_chord_grid;
 use crate::region::region;
+use crate::widgets::button_ghost;
+use reelsynth::PerformanceLayout;
 
 pub(super) fn draw_level_meter(ui: &mut Ui) {
     let tokens = Tokens::default();
@@ -39,16 +42,29 @@ pub(super) fn draw_piano_wrap(
             .show(ui, |ui| {
                 let inner = ui.max_rect();
                 let perf = state.performance.to_settings();
-                let scale_fold = state.shell_mode == crate::state::ShellMode::Compose
-                    || perf.layout == reelsynth::PerformanceLayout::Scale;
-                let piano = PianoKeyboard::new(&state.keys_down)
-                    .with_scale_fold(perf.root, perf.scale, scale_fold);
-                let (_, piano) = piano.show_in_rect(ui, inner);
-                if let Some(n) = piano.note_on {
-                    actions.note_on = Some(n);
-                }
-                if let Some(n) = piano.note_off {
-                    actions.note_off = Some(n);
+                let chords_layout = state.shell_mode == crate::state::ShellMode::Design
+                    && perf.layout == PerformanceLayout::Chords;
+
+                if chords_layout {
+                    let grid_actions = draw_chord_grid(ui, inner, state);
+                    if let Some(deg) = grid_actions.chord_degree_on {
+                        actions.chord_degree_on = Some(deg);
+                    }
+                    if let Some(deg) = grid_actions.chord_degree_off {
+                        actions.chord_degree_off = Some(deg);
+                    }
+                } else {
+                    let scale_fold = state.shell_mode == crate::state::ShellMode::Compose
+                        || perf.layout == PerformanceLayout::Scale;
+                    let piano = PianoKeyboard::new(&state.keys_down)
+                        .with_scale_fold(perf.root, perf.scale, scale_fold);
+                    let (_, piano) = piano.show_in_rect(ui, inner);
+                    if let Some(n) = piano.note_on {
+                        actions.note_on = Some(n);
+                    }
+                    if let Some(n) = piano.note_off {
+                        actions.note_off = Some(n);
+                    }
                 }
             });
         let used = ui.min_rect();
@@ -57,7 +73,7 @@ pub(super) fn draw_piano_wrap(
     });
 }
 
-pub(super) fn draw_footer(ui: &mut Ui, rect: Rect, state: &UiState) {
+pub(super) fn draw_footer(ui: &mut Ui, rect: Rect, state: &mut UiState, actions: &mut ShellActions) {
     let tokens = Tokens::default();
     region(ui, rect, |ui| {
         ui.set_min_height(rect.height());
@@ -73,6 +89,31 @@ pub(super) fn draw_footer(ui: &mut Ui, rect: Rect, state: &UiState) {
                             .size(10.0)
                             .color(tokens.text_muted),
                     );
+
+                    ui.label(
+                        egui::RichText::new("Hz")
+                            .size(10.0)
+                            .color(tokens.text_muted),
+                    );
+                    let resp = ui.add(
+                        egui::TextEdit::singleline(&mut state.custom_hz_input)
+                            .desired_width(56.0)
+                            .font(FontId::monospace(10.0)),
+                    );
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if let Ok(freq) = state.custom_hz_input.trim().parse::<f32>() {
+                            if freq > 0.0 {
+                                actions.note_on_freq = Some((freq, 0.9));
+                            }
+                        }
+                    }
+                    if button_ghost(ui, "Play Hz").clicked() {
+                        if let Ok(freq) = state.custom_hz_input.trim().parse::<f32>() {
+                            if freq > 0.0 {
+                                actions.note_on_freq = Some((freq, 0.9));
+                            }
+                        }
+                    }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.set_width(ui.available_width());

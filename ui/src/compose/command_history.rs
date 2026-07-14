@@ -24,7 +24,7 @@ pub enum ComposeCommand {
     ResizeNotes {
         track: usize,
         clip: usize,
-        entries: Vec<(usize, f32)>,
+        entries: Vec<(usize, f32, f32, f32, f32)>,
     },
 }
 

@@ -41,6 +41,8 @@ fn effective_step(grid: &QuantizeGrid) -> f32 {
             QuantizeDivision::Quarter => QuantizeDivision::EighthTriplet,
             QuantizeDivision::Eighth => QuantizeDivision::EighthTriplet,
             QuantizeDivision::Sixteenth => QuantizeDivision::SixteenthTriplet,
+            QuantizeDivision::ThirtySecond => QuantizeDivision::SixteenthTriplet,
+            QuantizeDivision::SixtyFourth => QuantizeDivision::SixteenthTriplet,
             other => other,
         };
     }
@@ -73,5 +75,16 @@ mod tests {
         let q = quantize_note(&note, &grid);
         assert!((q.start_beats - 0.0).abs() < 1e-5 || (q.start_beats - 0.25).abs() < 1e-5);
         assert!(q.duration_beats >= 0.25);
+    }
+
+    #[test]
+    fn thirty_second_and_sixty_fourth_grid() {
+        assert!((QuantizeDivision::ThirtySecond.beats_per_step() - 0.125).abs() < 1e-5);
+        assert!((QuantizeDivision::SixtyFourth.beats_per_step() - 0.0625).abs() < 1e-5);
+        let grid = QuantizeGrid {
+            division: QuantizeDivision::SixtyFourth,
+            triplet: false,
+        };
+        assert!((snap_beat(0.08, &grid) - 0.0625).abs() < 1e-5);
     }
 }

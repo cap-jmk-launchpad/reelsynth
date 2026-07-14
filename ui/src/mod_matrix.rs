@@ -261,6 +261,13 @@ fn engine_source_to_ui(source: &str) -> &'static str {
     }
 }
 
+pub const AUTOMATION_TARGET_LABELS: &[&str] = &["Cutoff", "WT Pos"];
+
+/// Map UI automation target label to engine mod-matrix id.
+pub fn automation_target_to_engine(label: &str) -> String {
+    ui_target_to_engine(label).unwrap_or_else(|| "filter_cutoff".into())
+}
+
 fn ui_target_to_engine(label: &str) -> Option<String> {
     Some(
         match label {
