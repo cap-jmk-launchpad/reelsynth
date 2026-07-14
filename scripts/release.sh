@@ -36,7 +36,8 @@ EOF
 
 build_release() {
   echo "==> Building release binaries (target: $TARGET)"
-  cargo build --release -p reelsynth-app -p reelsynth --bin reelsynth-export
+  cargo build --release -p reelsynth-app
+  cargo build --release -p reelsynth --bin reelsynth-export
   cargo build --release -p reelsynth-plugin --bin reelsynth-plugin-editor 2>/dev/null || \
     echo "    (plugin editor optional — skipped if unavailable)"
 }

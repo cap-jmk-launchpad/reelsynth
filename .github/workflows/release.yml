@@ -70,8 +70,8 @@ jobs:
           if [[ -n "${{ matrix.rust_target }}" ]]; then
             TARGET_FLAG="--target ${{ matrix.rust_target }}"
           fi
-          cargo build --release $TARGET_FLAG \
-            -p reelsynth-app -p reelsynth --bin reelsynth-export
+          cargo build --release $TARGET_FLAG -p reelsynth-app
+          cargo build --release $TARGET_FLAG -p reelsynth --bin reelsynth-export
           cargo build --release $TARGET_FLAG \
             -p reelsynth-plugin --bin reelsynth-plugin-editor || true
 
@@ -79,7 +79,8 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          cargo build --release -p reelsynth-app -p reelsynth --bin reelsynth-export
+          cargo build --release -p reelsynth-app
+          cargo build --release -p reelsynth --bin reelsynth-export
           cargo build --release -p reelsynth-plugin --bin reelsynth-plugin-editor
           if ($LASTEXITCODE -ne 0) { Write-Host "plugin editor optional — skipped" }
 
