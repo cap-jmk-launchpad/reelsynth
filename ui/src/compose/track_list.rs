@@ -3,6 +3,7 @@
 use egui::{Rect, Ui};
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{GRID_UNIT, SPACE_SM};
 use crate::region::region;
 use crate::widgets::button_tool;
@@ -44,6 +45,7 @@ pub fn draw_track_list(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Trac
                         ui.set_width(ui.available_width());
                         let track_count = compose.project.tracks.len();
                         for ti in 0..track_count {
+                            let row_before = ui.min_rect();
                             let selected = compose.selected_track == ti;
                             let (name, mute, solo, arm) = {
                                 let t = &compose.project.tracks[ti];
@@ -98,6 +100,12 @@ pub fn draw_track_list(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Trac
                                     actions.selection_changed = true;
                                 }
                             });
+                            record_region(
+                                ui.ctx(),
+                                AuditId::ComposeTrackRow(ti),
+                                row_before,
+                                ui.min_rect(),
+                            );
                         }
                     });
             });

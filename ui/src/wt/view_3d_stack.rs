@@ -6,6 +6,7 @@ use reelsynth::patch::WaveLayer;
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::RADIUS_SM;
 use crate::region::region;
 use crate::oscillator_ui::WaveLayerUi;
@@ -322,6 +323,13 @@ impl WtView3dStack<'_> {
                     ui.selectable_value(self.view_mode, WtView3dMode::Stack, "Stack");
                     ui.selectable_value(self.view_mode, WtView3dMode::Morph, "Morph");
                 });
+                let toggle_rect = ui.min_rect();
+                record_region(
+                    ui.ctx(),
+                    AuditId::CenterWt3dModeToggle,
+                    toggle_rect,
+                    toggle_rect,
+                );
             },
         );
 
@@ -382,6 +390,8 @@ impl WtView3dStack<'_> {
         );
 
         ui.ctx().request_repaint();
+
+        record_region(ui.ctx(), AuditId::CenterWt3dStack, rect, rect);
 
         WtView3dStackResponse {
             layer_selected,

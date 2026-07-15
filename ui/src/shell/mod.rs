@@ -9,6 +9,7 @@ use egui::{Rect, Ui};
 use reelsynth::Patch;
 use reelsynth_ui_theme::Tokens;
 
+use crate::audit_registry::{record_region, AuditId};
 use crate::compose::draw_compose_shell;
 use crate::fx_rack::{draw_effect_rack, EffectRackState};
 use crate::layout::{embed_piano_in_center, ShellLayout, ShellLayoutOptions};
@@ -193,6 +194,20 @@ pub fn draw_shell(
     }
 
     draw_footer(ui, layout.footer, state, &mut actions);
+
+    let ctx = ui.ctx();
+    record_region(ctx, AuditId::ShellHeader, layout.header, layout.header);
+    record_region(ctx, AuditId::ShellMain, layout.main, layout.main);
+    record_region(ctx, AuditId::ShellFooter, layout.footer, layout.footer);
+    if layout.mod_matrix.is_positive() {
+        record_region(ctx, AuditId::ShellModStrip, layout.mod_matrix, layout.mod_matrix);
+    }
+    if layout.fx_rack.is_positive() {
+        record_region(ctx, AuditId::ShellFxStrip, layout.fx_rack, layout.fx_rack);
+    }
+    if state.piano_visible && layout.piano_wrap.is_positive() {
+        record_region(ctx, AuditId::ShellPianoWrap, layout.piano_wrap, layout.piano_wrap);
+    }
 
     actions
 }

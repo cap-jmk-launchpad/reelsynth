@@ -3,6 +3,7 @@
 use egui::{Rect, Sense, Ui};
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::GRID_UNIT;
 use crate::region::region;
 
@@ -52,7 +53,8 @@ pub fn draw_scene_grid(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Scen
                                 .size(9.0)
                                 .color(tokens.text_secondary),
                         );
-                        for slot in scene.slots.iter().take(track_count) {
+                        for (ti, slot) in scene.slots.iter().take(track_count).enumerate() {
+                            let cell_idx = si * track_count + ti;
                             let filled = slot.is_some();
                             let launched = compose.launched_scene == Some(si);
                             let (cell_rect, resp) = ui.allocate_exact_size(
@@ -86,6 +88,12 @@ pub fn draw_scene_grid(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Scen
                                 compose.active_scene_slots = scene.slots.clone();
                                 actions.scene_launched = Some(si);
                             }
+                            record_region(
+                                ui.ctx(),
+                                AuditId::ComposeSceneCell(cell_idx),
+                                cell_rect,
+                                cell_rect,
+                            );
                         }
                     });
                 }

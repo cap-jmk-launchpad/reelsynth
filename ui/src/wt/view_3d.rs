@@ -2,6 +2,7 @@ use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Shape, Ui, Vec2};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::RADIUS_SM;
 
 use crate::state::WtView3dMode;
@@ -164,6 +165,13 @@ impl WtView3d<'_> {
                         ui.selectable_value(mode, WtView3dMode::Stack, "Stack");
                         ui.selectable_value(mode, WtView3dMode::Morph, "Morph");
                     });
+                    let toggle_rect = ui.min_rect();
+                    record_region(
+                        ui.ctx(),
+                        AuditId::CenterWt3dModeToggle,
+                        toggle_rect,
+                        toggle_rect,
+                    );
                 },
             );
         }
@@ -225,6 +233,8 @@ impl WtView3d<'_> {
                 });
             }
         }
+
+        record_region(ui.ctx(), AuditId::CenterWt3dMorph, rect, rect);
 
         WtView3dResponse {
             position_changed,

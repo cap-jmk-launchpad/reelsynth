@@ -3,6 +3,7 @@ use reelsynth::patch::{Patch, WaveSlot};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT};
 use crate::oscillator_ui::WaveLayerUi;
 use crate::region::region;
@@ -92,11 +93,13 @@ impl WtView2d<'_> {
             .max(1);
         let max_pos = (num_frames - 1) as f32;
 
+        let toolbar_rect = Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top));
         let toolbar_resp = region(
             ui,
-            Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top)),
+            toolbar_rect,
             |ui| WtToolbar::show_with_analyze(ui, self.tool),
         );
+        record_region(ui.ctx(), AuditId::CenterWt2dToolbar, toolbar_rect, toolbar_rect);
         if let WtToolbarResponse {
             analyze_requested: req,
             ..
@@ -313,6 +316,7 @@ impl WtView2d<'_> {
 
         if *self.tool == WtEditTool::Curve && self.wave_quant > 0 {
             if !self.wave_slots.is_empty() {
+                let curve_before = inner;
                 let curve = CurveEditor {
                     plot_rect: inner,
                     wave_quant: self.wave_quant,
@@ -321,11 +325,13 @@ impl WtView2d<'_> {
                 if curve.show(ui).changed {
                     slots_changed = true;
                 }
+                record_region(ui.ctx(), AuditId::CenterWt2dCurveEditor, curve_before, inner);
             }
         }
 
         if *self.tool == WtEditTool::Shape {
             if let Some(bank) = self.bank.as_mut() {
+                let shape_before = inner;
                 let shape = ShapeEditor {
                     plot_rect: inner,
                     bank,
@@ -335,6 +341,7 @@ impl WtView2d<'_> {
                 if shape.show(ui).frame_edited {
                     frame_edited = true;
                 }
+                record_region(ui.ctx(), AuditId::CenterWt2dShapeEditor, shape_before, inner);
             }
         }
 
@@ -349,6 +356,9 @@ impl WtView2d<'_> {
                 }
             }
         }
+
+        record_region(ui.ctx(), AuditId::CenterWt2d, rect, rect);
+        record_region(ui.ctx(), AuditId::CenterWt2dPlot, plot_rect, plot_rect);
 
         WtView2dResponse {
             frame_edited,

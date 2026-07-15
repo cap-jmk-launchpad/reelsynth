@@ -3,6 +3,7 @@ use reelsynth::Patch;
 use reelsynth_ui_theme::Tokens;
 
 use super::*;
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::fx_rack::{draw_effect_rack_sidebar, EffectRackState};
 use crate::layout::{osc_column_split_heights, UiScale};
 use crate::mod_matrix::{draw_mod_matrix_sidebar, ModMatrixState};
@@ -36,32 +37,42 @@ pub(super) fn draw_header(
                     ui.set_min_height(rect.height());
                     ui.spacing_mut().item_spacing.x = GRID_UNIT;
 
-                    ui.label(
+                    let brand = ui.label(
                         egui::RichText::new("ReelSynth")
                             .font(heading_font(14.0))
                             .color(tokens.text)
                             .extra_letter_spacing(0.04),
                     );
+                    record_used(ui.ctx(), AuditId::HeaderBrand, brand.rect);
 
                     ui.add_space(GRID_UNIT);
 
-                    if button_ghost(ui, "Open").clicked() {
+                    let open = button_ghost(ui, "Open");
+                    if open.clicked() {
                         actions.open_preset = true;
                     }
-                    if button_ghost(ui, "Save").clicked() {
+                    record_used(ui.ctx(), AuditId::HeaderOpenBtn, open.rect);
+
+                    let save = button_ghost(ui, "Save");
+                    if save.clicked() {
                         actions.save_preset = true;
                     }
+                    record_used(ui.ctx(), AuditId::HeaderSaveBtn, save.rect);
 
                     ui.add_space(GRID_UNIT);
 
-                    if button_toggle(ui, "Design", state.shell_mode == ShellMode::Design).clicked()
-                    {
+                    let design = button_toggle(ui, "Design", state.shell_mode == ShellMode::Design);
+                    if design.clicked() {
                         state.shell_mode = ShellMode::Design;
                     }
-                    if button_toggle(ui, "Compose", state.shell_mode == ShellMode::Compose).clicked()
-                    {
+                    record_used(ui.ctx(), AuditId::HeaderModeDesign, design.rect);
+
+                    let compose_btn =
+                        button_toggle(ui, "Compose", state.shell_mode == ShellMode::Compose);
+                    if compose_btn.clicked() {
                         state.shell_mode = ShellMode::Compose;
                     }
+                    record_used(ui.ctx(), AuditId::HeaderModeCompose, compose_btn.rect);
 
                     ui.add_space(GRID_UNIT);
                     let perf_actions = draw_performance_header(ui, state);
@@ -71,7 +82,7 @@ pub(super) fn draw_header(
                     actions.chord_degree_on = perf_actions.chord_degree_on;
                     actions.chord_degree_off = perf_actions.chord_degree_off;
 
-                    ui.menu_button(header_menu_label("WT"), |ui| {
+                    let wt_menu = ui.menu_button(header_menu_label("WT"), |ui| {
                         styled_menu_body(ui, |ui| {
                         if menu_action(ui, "Open .reelwt…").clicked() {
                             actions.import_wt_file = true;
@@ -105,11 +116,18 @@ pub(super) fn draw_header(
                         }
                         });
                     });
+                    record_used(ui.ctx(), AuditId::HeaderWtMenu, wt_menu.response.rect);
 
                     let left_cluster = ui.min_rect();
                     ui.ctx().data_mut(|d| {
                         d.insert_temp(header_left_cluster_rect_id(), left_cluster);
                     });
+                    record_region(
+                        ui.ctx(),
+                        AuditId::HeaderLeftCluster,
+                        left_cluster,
+                        left_cluster,
+                    );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.set_width(ui.available_width());
@@ -125,7 +143,7 @@ pub(super) fn draw_header(
                                 3.0,
                                 Color32::from_rgb(0x4a, 0xde, 0x80),
                             );
-                            ui.label(
+                            let _status = ui.label(
                                 egui::RichText::new(truncate_status(&state.status, 48))
                                     .font(FontId::monospace(11.0))
                                     .color(tokens.text_muted),
@@ -136,12 +154,14 @@ pub(super) fn draw_header(
                         if toggle.clicked() {
                             state.piano_visible = !state.piano_visible;
                         }
+                        record_used(ui.ctx(), AuditId::HeaderPianoToggle, toggle.rect);
 
                         let midi_label = midi
                             .names
                             .get(midi.selected)
                             .map(String::as_str)
                             .unwrap_or("MIDI");
+                        let midi_before = ui.min_rect();
                         reel_combo(ui, "s1_midi_device", select_value_text(midi_label), 148.0, |ui| {
                             for (idx, name) in midi.names.iter().enumerate() {
                                 if menu_selectable(ui, midi.selected == idx, name).clicked() {
@@ -149,11 +169,23 @@ pub(super) fn draw_header(
                                 }
                             }
                         });
+                        record_region(
+                            ui.ctx(),
+                            AuditId::HeaderMidiCombo,
+                            midi_before,
+                            ui.min_rect(),
+                        );
 
                         let right_cluster = ui.min_rect();
                         ui.ctx().data_mut(|d| {
                             d.insert_temp(header_right_cluster_rect_id(), right_cluster);
                         });
+                        record_region(
+                            ui.ctx(),
+                            AuditId::HeaderRightCluster,
+                            right_cluster,
+                            right_cluster,
+                        );
                     });
                 });
             });
@@ -330,6 +362,7 @@ pub(super) fn draw_osc(
                 d.insert_temp(osc_fx_allocated_rect_id(), fx_rect);
                 d.insert_temp(osc_fx_used_rect_id(), used);
             });
+            record_region(ui.ctx(), AuditId::OscFxPanel, fx_rect, used);
         }
 
 
@@ -352,9 +385,11 @@ pub(super) fn draw_osc(
                 d.insert_temp(osc_mod_allocated_rect_id(), mod_rect);
                 d.insert_temp(osc_mod_used_rect_id(), used);
             });
+            record_region(ui.ctx(), AuditId::OscModPanel, mod_rect, used);
         }
 
         let used = ui.min_rect().intersect(rect);
         ui.ctx().data_mut(|d| d.insert_temp(osc_used_rect_id(), used));
+        record_region(ui.ctx(), AuditId::OscColumn, rect, used);
     });
 }

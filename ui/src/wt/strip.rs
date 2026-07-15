@@ -3,6 +3,7 @@ use reelsynth::patch::{Oscillator, WaveSlot};
 use reelsynth::{resolve_wt_position, WavetableBank};
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{RADIUS_SM, WT_STRIP_HEIGHT};
 
 use super::waveform::waveform_points;
@@ -232,6 +233,7 @@ fn paint_strip(
                 );
             }
         }
+        record_used(ui.ctx(), AuditId::CenterWtStripCell(i), cell);
     }
 
     let playhead_x = inner.min.x + norm_pos * inner.width();

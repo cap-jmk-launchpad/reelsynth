@@ -1,16 +1,18 @@
-use egui::{Grid, Rect, Ui};
+use egui::{Grid, Pos2, Rect, Ui};
 use reelsynth_ui_theme::Tokens;
 
 use super::*;
 use super::footer::{draw_level_meter, format_cutoff};
 use super::header::sync_osc_position_from_wt;
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{CENTER_GAP, UiScale};
 use crate::layout_audit::{
     rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id,
 };
 use crate::region::region;
 use crate::widgets::{
-    labeled_select, tab_bar, Knob, KnobResponse, KnobSize, KnobStyle, panel, panel_disabled,
+    labeled_select, panel_audit, tab_bar, Knob, KnobResponse, KnobSize, KnobStyle, panel,
+    panel_disabled,
 };
 
 pub(super) fn draw_rail(
@@ -44,6 +46,7 @@ pub(super) fn draw_rail(
 
         let used = ui.min_rect().intersect(rect);
         ui.ctx().data_mut(|d| d.insert_temp(rail_used_rect_id(), used));
+        record_region(ui.ctx(), AuditId::RailColumn, rect, used);
     });
 }
 
@@ -81,16 +84,20 @@ fn draw_rail_panels(
         });
     }
 
-    panel(ui, "Filter", |ui| {
+    panel_audit(ui, "Filter", Some(AuditId::RailPanelFilter), |ui| {
         let filter_body_top = ui.cursor().min.y;
         if config.show_osc_column {
+            let tabs_start = ui.cursor().min;
             let prev = state.filter_mode;
             tab_bar(ui, &["LP", "HP", "BP", "Notch"], &mut state.filter_mode);
+            record_row(ui.ctx(), AuditId::RailFilterTabs, ui, tabs_start);
             if prev != state.filter_mode {
                 actions.params_changed = true;
             }
             ui.add_space(GRID_UNIT * s * 0.75);
+            let knobs_start = ui.cursor().min;
             draw_filter_knobs_compact(ui, state, actions, s);
+            record_row(ui.ctx(), AuditId::RailFilterKnobs, ui, knobs_start);
         } else {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(SPACE_SM * s, SPACE_SM * s);
@@ -111,8 +118,8 @@ fn draw_rail_panels(
     });
 
     if config.show_osc_column {
-        panel(ui, "Filter Envelope", |ui| {
-            adsr_graph(
+        panel_audit(ui, "Filter Envelope", Some(AuditId::RailPanelFiltEnv), |ui| {
+            let graph = adsr_graph(
                 ui,
                 state.filt_env_attack,
                 state.filt_env_decay,
@@ -120,7 +127,9 @@ fn draw_rail_panels(
                 state.filt_env_release,
                 s * 0.85,
             );
+            record_used(ui.ctx(), AuditId::RailFiltEnvGraph, graph.rect);
             ui.add_space(GRID_UNIT * s * 0.5);
+            let knobs_start = ui.cursor().min;
             env_knobs(
                 ui,
                 &mut state.filt_env_attack,
@@ -130,10 +139,11 @@ fn draw_rail_panels(
                 actions,
                 s,
             );
+            record_row(ui.ctx(), AuditId::RailFiltEnvKnobs, ui, knobs_start);
         });
 
-        panel(ui, "Amp Envelope", |ui| {
-            adsr_graph(
+        panel_audit(ui, "Amp Envelope", Some(AuditId::RailPanelAmpEnv), |ui| {
+            let graph = adsr_graph(
                 ui,
                 state.env_attack,
                 state.env_decay,
@@ -141,7 +151,9 @@ fn draw_rail_panels(
                 state.env_release,
                 s * 0.85,
             );
+            record_used(ui.ctx(), AuditId::RailAmpEnvGraph, graph.rect);
             ui.add_space(GRID_UNIT * s * 0.5);
+            let knobs_start = ui.cursor().min;
             env_knobs(
                 ui,
                 &mut state.env_attack,
@@ -151,12 +163,14 @@ fn draw_rail_panels(
                 actions,
                 s,
             );
+            record_row(ui.ctx(), AuditId::RailAmpEnvKnobs, ui, knobs_start);
         });
 
-        panel(ui, "LFOs", |ui| {
+        panel_audit(ui, "LFOs", Some(AuditId::RailPanelLfos), |ui| {
             ui.spacing_mut().item_spacing.y = GRID_UNIT * s;
             let narrow = ui.available_width() < 180.0 * s;
             if narrow {
+                let lfo1_start = ui.cursor().min;
                 lfo_block(
                     ui,
                     "LFO 1",
@@ -167,6 +181,17 @@ fn draw_rail_panels(
                     actions,
                     s,
                 );
+                let lfo1_used = ui.min_rect();
+                let lfo1_alloc = Rect::from_min_max(lfo1_start, lfo1_used.max);
+                if lfo1_alloc.is_positive() && lfo1_used.is_positive() {
+                    record_region(
+                        ui.ctx(),
+                        AuditId::RailLfo1Block,
+                        lfo1_alloc,
+                        lfo1_used,
+                    );
+                }
+                let lfo2_start = ui.cursor().min;
                 lfo_block(
                     ui,
                     "LFO 2",
@@ -177,6 +202,16 @@ fn draw_rail_panels(
                     actions,
                     s,
                 );
+                let lfo2_used = ui.min_rect();
+                let lfo2_alloc = Rect::from_min_max(lfo2_start, lfo2_used.max);
+                if lfo2_alloc.is_positive() && lfo2_used.is_positive() {
+                    record_region(
+                        ui.ctx(),
+                        AuditId::RailLfo2Block,
+                        lfo2_alloc,
+                        lfo2_used,
+                    );
+                }
             } else {
                 ui.spacing_mut().item_spacing.x = SPACE_SM * s;
                 let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
@@ -185,6 +220,7 @@ fn draw_rail_panels(
                         egui::vec2(w, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
+                            let lfo1_start = ui.cursor().min;
                             lfo_block(
                                 ui,
                                 "LFO 1",
@@ -195,12 +231,23 @@ fn draw_rail_panels(
                                 actions,
                                 s,
                             );
+                            let lfo1_used = ui.min_rect();
+                            let lfo1_alloc = Rect::from_min_max(lfo1_start, lfo1_used.max);
+                            if lfo1_alloc.is_positive() && lfo1_used.is_positive() {
+                                record_region(
+                                    ui.ctx(),
+                                    AuditId::RailLfo1Block,
+                                    lfo1_alloc,
+                                    lfo1_used,
+                                );
+                            }
                         },
                     );
                     ui.allocate_ui_with_layout(
                         egui::vec2(w, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
+                            let lfo2_start = ui.cursor().min;
                             lfo_block(
                                 ui,
                                 "LFO 2",
@@ -211,6 +258,16 @@ fn draw_rail_panels(
                                 actions,
                                 s,
                             );
+                            let lfo2_used = ui.min_rect();
+                            let lfo2_alloc = Rect::from_min_max(lfo2_start, lfo2_used.max);
+                            if lfo2_alloc.is_positive() && lfo2_used.is_positive() {
+                                record_region(
+                                    ui.ctx(),
+                                    AuditId::RailLfo2Block,
+                                    lfo2_alloc,
+                                    lfo2_used,
+                                );
+                            }
                         },
                     );
                 });
@@ -218,7 +275,9 @@ fn draw_rail_panels(
         });
 
         if ui.available_height() > 40.0 * s {
+            let meter_start = ui.cursor().min;
             draw_level_meter(ui);
+            record_row(ui.ctx(), AuditId::RailLevelMeter, ui, meter_start);
         }
     } else {
         panel_disabled(ui, "Amp Envelope", |ui| {
@@ -248,6 +307,14 @@ fn draw_rail_panels(
                 }
             });
         });
+    }
+}
+
+fn record_row(ctx: &egui::Context, id: AuditId, ui: &Ui, start: egui::Pos2) {
+    let end_y = ui.cursor().min.y;
+    let rect = egui::Rect::from_min_max(start, egui::pos2(ui.max_rect().max.x, end_y.max(start.y)));
+    if rect.is_positive() {
+        record_region(ctx, id, rect, rect);
     }
 }
 

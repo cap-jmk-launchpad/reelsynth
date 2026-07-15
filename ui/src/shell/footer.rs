@@ -2,6 +2,7 @@ use egui::{Rect, Ui};
 use reelsynth_ui_theme::Tokens;
 
 use super::*;
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::UiScale;
 use crate::layout_audit::{footer_used_rect_id, piano_used_rect_id};
 use crate::performance::draw_arp_panel;
@@ -47,7 +48,14 @@ pub(super) fn draw_piano_wrap(
                     && perf.layout == PerformanceLayout::Chords;
 
                 if chords_layout {
+                    let grid_before = ui.min_rect();
                     let grid_actions = draw_chord_grid(ui, inner, state);
+                    record_region(
+                        ui.ctx(),
+                        AuditId::FooterChordGrid,
+                        grid_before,
+                        ui.min_rect(),
+                    );
                     if let Some(deg) = grid_actions.chord_degree_on {
                         actions.chord_degree_on = Some(deg);
                     }
@@ -60,6 +68,12 @@ pub(super) fn draw_piano_wrap(
                     let piano = PianoKeyboard::new(&state.keys_down)
                         .with_scale_fold(perf.root, perf.scale, scale_fold);
                     let (_, piano) = piano.show_in_rect(ui, inner);
+                    record_region(
+                        ui.ctx(),
+                        AuditId::FooterPianoCompact,
+                        inner,
+                        ui.min_rect().intersect(inner),
+                    );
                     if let Some(n) = piano.note_on {
                         actions.note_on = Some(n);
                     }
@@ -124,7 +138,7 @@ pub(super) fn draw_footer(ui: &mut Ui, rect: Rect, state: &mut UiState, actions:
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.set_width(ui.available_width());
                         let wt = state.wt_position.round() as i32;
-                        ui.label(
+                        let status = ui.label(
                             egui::RichText::new(format!(
                                 "WT {wt} · Cutoff {}",
                                 format_cutoff(state.filter_cutoff)
@@ -132,6 +146,7 @@ pub(super) fn draw_footer(ui: &mut Ui, rect: Rect, state: &mut UiState, actions:
                             .font(FontId::monospace(10.0))
                             .color(tokens.text_muted),
                         );
+                        record_used(ui.ctx(), AuditId::FooterStatus, status.rect);
                     });
                 });
             });

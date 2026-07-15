@@ -7,6 +7,7 @@ use reelsynth::{
 };
 use reelsynth_ui_theme::Tokens;
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{GRID_UNIT, RADIUS_SM, SPACE_SM};
 use crate::region::region;
 use crate::wt::waveform_points;
@@ -61,7 +62,7 @@ pub fn draw_scope_strip(ui: &mut Ui, rect: Rect, input: ScopeStripInput<'_>) {
 
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
-                draw_wave_scope_cell(
+                let osc_cell = draw_wave_scope_cell(
                     ui,
                     &previews.osc,
                     STAGE_LABELS[0],
@@ -69,8 +70,9 @@ pub fn draw_scope_strip(ui: &mut Ui, rect: Rect, input: ScopeStripInput<'_>) {
                     cell_w,
                     cell_h,
                 );
+                record_used(ui.ctx(), AuditId::CenterScopeCellOsc, osc_cell);
                 draw_arrow(ui, cell_h);
-                draw_wave_scope_cell(
+                let filt_cell = draw_wave_scope_cell(
                     ui,
                     &previews.filter,
                     STAGE_LABELS[1],
@@ -78,8 +80,9 @@ pub fn draw_scope_strip(ui: &mut Ui, rect: Rect, input: ScopeStripInput<'_>) {
                     cell_w,
                     cell_h,
                 );
+                record_used(ui.ctx(), AuditId::CenterScopeCellFilter, filt_cell);
                 draw_arrow(ui, cell_h);
-                draw_wave_scope_cell(
+                let fx_cell = draw_wave_scope_cell(
                     ui,
                     &previews.fx,
                     STAGE_LABELS[2],
@@ -87,8 +90,9 @@ pub fn draw_scope_strip(ui: &mut Ui, rect: Rect, input: ScopeStripInput<'_>) {
                     cell_w,
                     cell_h,
                 );
+                record_used(ui.ctx(), AuditId::CenterScopeCellFx, fx_cell);
                 draw_arrow(ui, cell_h);
-                draw_spectrum_scope_cell(
+                let out_cell = draw_spectrum_scope_cell(
                     ui,
                     &previews.out,
                     STAGE_LABELS[3],
@@ -96,8 +100,10 @@ pub fn draw_scope_strip(ui: &mut Ui, rect: Rect, input: ScopeStripInput<'_>) {
                     cell_w,
                     cell_h,
                 );
+                record_used(ui.ctx(), AuditId::CenterScopeCellOut, out_cell);
             });
         });
+        record_region(ui.ctx(), AuditId::CenterScope, inner, ui.min_rect());
     });
 }
 
@@ -148,11 +154,11 @@ fn draw_wave_scope_cell(
     accent: Color32,
     width: f32,
     height: f32,
-) {
+) -> Rect {
     let tokens = Tokens::default();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     if !ui.is_rect_visible(rect) {
-        return;
+        return rect;
     }
 
     let painter = ui.painter_at(rect);
@@ -185,6 +191,7 @@ fn draw_wave_scope_cell(
             egui::Stroke::new(0.5_f32, tokens.border),
         );
     }
+    rect
 }
 
 fn draw_spectrum_scope_cell(
@@ -194,11 +201,11 @@ fn draw_spectrum_scope_cell(
     accent: Color32,
     width: f32,
     height: f32,
-) {
+) -> Rect {
     let tokens = Tokens::default();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     if !ui.is_rect_visible(rect) {
-        return;
+        return rect;
     }
 
     let painter = ui.painter_at(rect);
@@ -216,7 +223,7 @@ fn draw_spectrum_scope_cell(
     let bars_rect = rect.shrink2(egui::vec2(6.0, 16.0));
     let magnitudes = spectrum_magnitudes(&tap.samples, SPECTRUM_BARS);
     if magnitudes.is_empty() {
-        return;
+        return rect;
     }
 
     let bar_gap = 1.5;
@@ -231,6 +238,7 @@ fn draw_spectrum_scope_cell(
         );
         painter.rect_filled(bar, 1.0, trace_color(accent.gamma_multiply(0.55 + mag * 0.45)));
     }
+    rect
 }
 
 fn trace_color(color: Color32) -> Color32 {

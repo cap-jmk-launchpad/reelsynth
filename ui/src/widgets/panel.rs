@@ -1,12 +1,23 @@
 use egui::{Color32, FontId, Frame, Margin, Ui};
 use reelsynth_ui_theme::{heading_font, ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, AuditId};
 use crate::layout::{RADIUS_SM, SPACE_SM};
 
 /// Branded section frame matching `.rs-panel`.
 pub fn panel<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    panel_audit(ui, title, None, add_contents)
+}
+
+/// Like [`panel`] but records the panel rect under `audit_id` when provided.
+pub fn panel_audit<R>(
+    ui: &mut Ui,
+    title: &str,
+    audit_id: Option<AuditId>,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
     let tokens = Tokens::default();
-    Frame {
+    let inner = Frame {
         fill: tokens.bg_muted,
         stroke: egui::Stroke::new(1.0_f32, tokens.border),
         rounding: egui::Rounding::same(RADIUS_SM),
@@ -26,8 +37,12 @@ pub fn panel<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> 
         );
         ui.add_space(6.0);
         add_contents(ui)
-    })
-    .inner
+    });
+    if let Some(id) = audit_id {
+        let r = inner.response.rect;
+        record_region(ui.ctx(), id, r, r);
+    }
+    inner.inner
 }
 
 /// Disabled panel wrapper matching `.rs-group--disabled`.
@@ -44,8 +59,19 @@ pub fn sidebar_panel<R>(
     meta: &str,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> R {
+    sidebar_panel_audit(ui, title, meta, None, add_contents)
+}
+
+/// Like [`sidebar_panel`] but records the panel rect under `audit_id` when provided.
+pub fn sidebar_panel_audit<R>(
+    ui: &mut Ui,
+    title: &str,
+    meta: &str,
+    audit_id: Option<AuditId>,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
     let tokens = Tokens::default();
-    panel(ui, title, |ui| {
+    panel_audit(ui, title, audit_id, |ui| {
         if !meta.is_empty() {
             ui.horizontal(|ui| {
                 ui.with_layout(

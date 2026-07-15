@@ -4,6 +4,7 @@ use reelsynth::Patch;
 use super::*;
 use super::header::{sync_morph_from_active_tab, sync_osc_from_wt, sync_wt_from_osc};
 use crate::ambient::paint_ambient_waves;
+use crate::audit_registry::{record_region, AuditId};
 use crate::center_layout::compute_center_regions;
 use crate::layout::{embed_piano_in_center, ShellLayoutOptions, UiScale};
 use crate::layout_audit::{
@@ -87,6 +88,7 @@ pub(super) fn draw_center(
             let used = ui.min_rect();
             ui.ctx()
                 .data_mut(|d| d.insert_temp(center_scope_used_rect_id(), used));
+            record_region(ui.ctx(), AuditId::CenterScope, scope_rect, used);
             });
         }
 
@@ -105,9 +107,10 @@ pub(super) fn draw_center(
                 sync_morph_from_active_tab(state);
                 actions.params_changed = true;
             }
-            let used = ui.min_rect();
+            let used = ui.min_rect().intersect(morph_rect);
             ui.ctx()
                 .data_mut(|d| d.insert_temp(center_morph_used_rect_id(), used));
+            record_region(ui.ctx(), AuditId::CenterWtMorph, morph_rect, used);
             });
         }
 
@@ -231,13 +234,21 @@ pub(super) fn draw_center(
             let used = ui.min_rect();
             ui.ctx()
                 .data_mut(|d| d.insert_temp(center_views_used_rect_id(), used));
+            record_region(ui.ctx(), AuditId::CenterWtViews, views_rect, used);
             });
         }
 
         if state.analyze_dialog_open {
+            let dialog_before = ui.min_rect();
             if draw_analyze_dialog(ui, state, bank.as_deref(), num_frames) {
                 actions.params_changed = true;
             }
+            record_region(
+                ui.ctx(),
+                AuditId::CenterWt2dAnalyzeDialog,
+                dialog_before,
+                ui.min_rect(),
+            );
         }
 
         if piano_rect.is_positive() && state.piano_visible {
@@ -253,6 +264,7 @@ pub(super) fn draw_center(
                 let used = ui.min_rect();
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(center_piano_used_rect_id(), used));
+                record_region(ui.ctx(), AuditId::CenterPiano, piano_rect, used);
             });
         }
 
@@ -278,15 +290,17 @@ pub(super) fn draw_center(
                 sync_morph_from_active_tab(state);
                 actions.params_changed = true;
             }
-            let used = ui.min_rect();
+            let used = ui.min_rect().intersect(strip_rect);
             ui.ctx()
                 .data_mut(|d| d.insert_temp(center_strip_used_rect_id(), used));
+            record_region(ui.ctx(), AuditId::CenterWtStrip, strip_rect, used);
             });
         }
 
         let used = ui.min_rect();
         ui.ctx()
             .data_mut(|d| d.insert_temp(center_used_rect_id(), used));
+        record_region(ui.ctx(), AuditId::CenterColumn, rect, used);
 
         if config.show_osc_column || config.show_wt_editor {
             ui.ctx().request_repaint();

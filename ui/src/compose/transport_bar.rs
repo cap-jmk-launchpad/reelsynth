@@ -4,6 +4,7 @@ use egui::{Rect, Ui};
 use reelsynth::QuantizeDivision;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{GRID_UNIT, SPACE_SM};
 use crate::region::region;
 use crate::widgets::{button_toggle, button_tool};
@@ -43,11 +44,14 @@ pub fn draw_transport_bar(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = GRID_UNIT * 0.5;
 
-                    if button_tool(ui, "▶", false, true).clicked() {
+                    let play = button_tool(ui, "▶", false, true);
+                    if play.clicked() {
                         compose.transport.playing = true;
                         compose.transport.recording = false;
                         actions.play = true;
                     }
+                    record_used(ui.ctx(), AuditId::ComposeTransportPlay, play.rect);
+
                     if button_tool(ui, "■", compose.transport.playing, true).clicked() {
                         compose.transport.playing = false;
                         compose.transport.recording = false;
@@ -82,6 +86,7 @@ pub fn draw_transport_bar(
 
                     ui.separator();
 
+                    let bpm_before = ui.min_rect();
                     ui.label(
                         egui::RichText::new("BPM")
                             .size(10.0)
@@ -100,9 +105,16 @@ pub fn draw_transport_bar(
                         compose.project.bpm = bpm;
                         actions.params_changed = true;
                     }
+                    record_region(
+                        ui.ctx(),
+                        AuditId::ComposeTransportBpm,
+                        bpm_before,
+                        ui.min_rect(),
+                    );
 
                     ui.separator();
 
+                    let snap_before = ui.min_rect();
                     if button_toggle(ui, "Snap", compose.snap_enabled).clicked() {
                         compose.snap_enabled = !compose.snap_enabled;
                     }
@@ -136,6 +148,12 @@ pub fn draw_transport_bar(
                             actions.params_changed = true;
                         }
                     }
+                    record_region(
+                        ui.ctx(),
+                        AuditId::ComposeTransportSnap,
+                        snap_before,
+                        ui.min_rect(),
+                    );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let beats = compose.transport.playhead_beats;

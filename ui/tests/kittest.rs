@@ -13,9 +13,9 @@ use reelsynth::Patch;
 use reelsynth_ui::{
     audit_center, audit_header_clusters, audit_osc_sidebar_stacks, audit_panel_utilization,
     audit_shell, audit_theme_tokens, compute_center_regions, count_base_audit_variants,
-    default_effect_slots, draw_shell, embed_piano_in_center, osc_type_index,
-    REGISTRY_VARIANT_COUNT, ShellLayout, ShellLayoutOptions, ShellMidiDevices, ShellMode,
-    WtView3dMode,
+    default_effect_slots, draw_shell, embed_piano_in_center, osc_type_index, record_region,
+    record_used, AuditId, REGISTRY_VARIANT_COUNT, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
+    ShellMode, WtView3dMode,
     center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
     center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id, footer_used_rect_id,
     fx_strip_used_rect_id, header_used_rect_id, mod_strip_used_rect_id,
@@ -23,7 +23,7 @@ use reelsynth_ui::{
     osc_used_rect_id, rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id,
     ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH, APP_WIDTH, SPACE_SM, utilization,
 };
-use reelsynth_ui::widgets::{Knob, KnobSize, PianoKeyboard};
+use reelsynth_ui::widgets::{adsr_graph, button_ghost, button_toggle, labeled_select, panel_audit, reel_combo, select_value_text, tab_bar, Knob, KnobSize, PianoKeyboard};
 use reelsynth_ui_theme;
 
 #[test]
@@ -831,14 +831,88 @@ fn widget_knob_sizes() {
     let mut harness = Harness::builder()
         .with_size([120.0, 120.0])
         .build_ui(|ui| {
+            reelsynth_ui_theme::apply(ui.ctx());
             let mut v = 0.5_f32;
-            Knob::new(&mut v, 0.0..=1.0, "Sm")
+            let sm = Knob::new(&mut v, 0.0..=1.0, "Sm")
                 .size(KnobSize::Sm)
                 .show(ui);
-            Knob::new(&mut v, 0.0..=1.0, "Md")
+            record_used(ui.ctx(), AuditId::WidgetKnobSm, sm.response.rect);
+            let md = Knob::new(&mut v, 0.0..=1.0, "Md")
                 .size(KnobSize::Md)
                 .show(ui);
+            record_used(ui.ctx(), AuditId::WidgetKnobMd, md.response.rect);
+            let lg = Knob::new(&mut v, 0.0..=1.0, "Lg")
+                .size(KnobSize::Lg)
+                .show(ui);
+            record_used(ui.ctx(), AuditId::WidgetKnobLg, lg.response.rect);
         });
+    harness.run();
+}
+
+#[test]
+fn widget_audit_registry_harness() {
+    struct FontState {
+        applied: bool,
+    }
+    let mut harness = Harness::builder()
+        .with_size([480.0, 320.0])
+        .build_state(
+            |ctx, state| {
+                if !state.applied {
+                    reelsynth_ui_theme::apply(ctx);
+                    state.applied = true;
+                    return;
+                }
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    panel_audit(ui, "Panel", Some(AuditId::WidgetPanel), |ui| {
+                        let ghost = button_ghost(ui, "Ghost");
+                        record_used(ui.ctx(), AuditId::WidgetButtonGhost, ghost.rect);
+                        let toggle = button_toggle(ui, "Toggle", true);
+                        record_used(ui.ctx(), AuditId::WidgetButtonToggle, toggle.rect);
+                        let mut idx = 0usize;
+                        let select_before = ui.min_rect();
+                        labeled_select(ui, "Type", &["A", "B"], &mut idx);
+                        record_region(
+                            ui.ctx(),
+                            AuditId::WidgetLabeledSelect,
+                            select_before,
+                            ui.min_rect(),
+                        );
+                        let combo_before = ui.min_rect();
+                        reel_combo(ui, "test_combo", select_value_text("Opt"), 120.0, |ui| {
+                            let _ = ui.label("item");
+                        });
+                        record_region(
+                            ui.ctx(),
+                            AuditId::WidgetReelCombo,
+                            combo_before,
+                            ui.min_rect(),
+                        );
+                        let mut tab = 0usize;
+                        let tabs_before = ui.min_rect();
+                        tab_bar(ui, &["One", "Two"], &mut tab);
+                        record_region(
+                            ui.ctx(),
+                            AuditId::WidgetTabBar,
+                            tabs_before,
+                            ui.min_rect(),
+                        );
+                        let graph_before = ui.min_rect();
+                        adsr_graph(ui, 0.01, 0.2, 0.7, 0.3, 1.0);
+                        record_region(
+                            ui.ctx(),
+                            AuditId::WidgetAdsrGraph,
+                            graph_before,
+                            ui.min_rect(),
+                        );
+                    });
+                    panel_audit(ui, "Sidebar", Some(AuditId::WidgetSidebarPanel), |ui| {
+                        ui.label("meta");
+                    });
+                });
+            },
+            FontState { applied: false },
+        );
     harness.run();
 }
 

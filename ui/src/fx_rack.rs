@@ -4,11 +4,12 @@ use egui::{Color32, FontId, Rect, Ui};
 use reelsynth::{EffectSlot, EffectType};
 use reelsynth_ui_theme::Tokens;
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, sidebar_fx_slot_height, sidebar_panel_chrome_height};
 use crate::region::region;
 use crate::widgets::{
     button_icon, button_toggle, card_stroke, collapsible_panel, menu_selectable, reel_combo,
-    select_value_text, sidebar_panel,
+    select_value_text, sidebar_panel, sidebar_panel_audit,
 };
 
 const FX_FOOTER_HEIGHT: f32 = 18.0;
@@ -269,12 +270,20 @@ fn draw_effect_rack_inner(
                 collapsible_panel(ui, "Effects", &meta, open, body);
             }
             RackChrome::NativePanel => {
-                sidebar_panel(ui, "Effects", &meta, body);
+                sidebar_panel_audit(ui, "Effects", &meta, Some(AuditId::OscFxPanel), body);
             }
         }
+        record_region(ui.ctx(), AuditId::OscFxPanel, rect, ui.min_rect().intersect(rect));
     });
 
     FxRackResult { changed }
+}
+
+fn record_fx_add_btn(ctx: &egui::Context, ui: &Ui, rect: egui::Rect) {
+    let visible = rect.intersect(ui.clip_rect());
+    if visible.is_positive() {
+        record_region(ctx, AuditId::OscFxAddBtn, visible, visible);
+    }
 }
 
 fn draw_effect_rack_horizontal(
@@ -303,10 +312,12 @@ fn draw_effect_rack_horizontal(
                 *changed = true;
             }
         }
-        if draw_add_slot(ui, flex_metrics).clicked() {
+        let add = draw_add_slot(ui, flex_metrics);
+        if add.clicked() {
             slots.push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
             *changed = true;
         }
+        record_fx_add_btn(ui.ctx(), ui, add.rect);
     });
 }
 
@@ -348,10 +359,12 @@ fn draw_effect_rack_chain(
             if !slots.is_empty() {
                 ui.add_space(gap);
             }
-            if draw_add_slot_row(ui, ui.available_width(), s).clicked() {
+            let add = draw_add_slot_row(ui, ui.available_width(), s);
+            if add.clicked() {
                 slots.push(EffectSlotUi::from_slot(&EffectSlot::chorus()));
                 *changed = true;
             }
+            record_fx_add_btn(ui.ctx(), ui, add.rect);
         });
 }
 
@@ -628,6 +641,30 @@ fn draw_fx_slot_column(
             },
         );
     });
+
+    let slot_rect = column.response.rect;
+    record_region(ui.ctx(), AuditId::OscFxSlot(idx), slot_rect, slot_rect);
+    let header_h = 20.0_f32;
+    let header_rect = egui::Rect::from_min_max(
+        slot_rect.min,
+        egui::pos2(slot_rect.max.x, slot_rect.min.y + header_h),
+    );
+    record_region(
+        ui.ctx(),
+        AuditId::OscFxSlotHeader(idx),
+        header_rect,
+        header_rect,
+    );
+    let params_rect = egui::Rect::from_min_max(
+        egui::pos2(slot_rect.min.x, slot_rect.min.y + header_h),
+        slot_rect.max,
+    );
+    record_region(
+        ui.ctx(),
+        AuditId::OscFxSlotParams(idx),
+        params_rect,
+        params_rect,
+    );
 
     let _ = column;
     FxSlotResult { changed }

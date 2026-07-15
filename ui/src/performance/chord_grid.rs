@@ -3,6 +3,7 @@
 use egui::{Rect, Sense, Ui, Vec2};
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::performance::CHORD_DEGREE_LABELS;
 use crate::UiState;
 
@@ -70,6 +71,7 @@ pub fn draw_chord_grid(ui: &mut Ui, rect: Rect, state: &mut UiState) -> ChordGri
                         state.active_chord_degree = Some(deg);
                     }
                 }
+                record_used(ui.ctx(), AuditId::FooterChordPad(deg), cell);
             }
         });
     });

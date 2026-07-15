@@ -3,6 +3,8 @@
 use egui::Ui;
 use reelsynth_ui_theme::Tokens;
 
+use crate::audit_registry::{record_region, AuditId};
+
 use crate::widgets::{
     menu_divider, menu_section_label, menu_selectable, reel_combo, select_value_text,
     styled_menu_body,
@@ -52,12 +54,13 @@ pub fn draw_performance_header(
     let mut actions = PerformanceHeaderActions::default();
     let summary = performance_summary(state);
 
+    let perf_start = ui.cursor().min;
     ui.label(
         egui::RichText::new("Perf")
             .size(10.0)
             .color(tokens.text_muted),
     );
-    reel_combo(ui, "perf_settings", select_value_text(&summary), 148.0, |ui| {
+    let combo = reel_combo(ui, "perf_settings", select_value_text(&summary), 148.0, |ui| {
         styled_menu_body(ui, |ui| {
             let perf = &mut state.performance;
 
@@ -108,6 +111,13 @@ pub fn draw_performance_header(
             }
         });
     });
+    let perf_rect = egui::Rect::from_min_max(
+        egui::pos2(perf_start.x, ui.min_rect().min.y),
+        combo.response.rect.max,
+    );
+    if perf_rect.is_positive() {
+        record_region(ui.ctx(), AuditId::HeaderPerformance, perf_rect, perf_rect);
+    }
 
     actions
 }

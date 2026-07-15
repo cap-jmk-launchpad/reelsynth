@@ -4,6 +4,7 @@ use egui::{Pos2, Rect, Sense, Ui, Vec2};
 use reelsynth::{Clip, SequenceProject};
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::GRID_UNIT;
 use crate::region::region;
 
@@ -69,6 +70,7 @@ pub fn draw_arrangement(
                 Pos2::new(rect.max.x, row_y + TRACK_ROW_H),
             );
             for (ci, clip) in track.clips.iter().enumerate() {
+                let clip_rect = clip_block_rect(row_rect, clip, beat_w);
                 paint_clip(
                     &painter,
                     row_rect,
@@ -76,6 +78,12 @@ pub fn draw_arrangement(
                     beat_w,
                     ti == compose.selected_track && compose.selected_clip == Some(ci),
                     &tokens,
+                );
+                record_region(
+                    ui.ctx(),
+                    AuditId::ComposeArrangementClip(ci),
+                    clip_rect,
+                    clip_rect,
                 );
             }
         }
@@ -209,6 +217,15 @@ fn paint_grid(
     }
 }
 
+fn clip_block_rect(row: Rect, clip: &Clip, beat_w: f32) -> Rect {
+    let x0 = row.min.x + clip.start_beats * beat_w;
+    let w = clip.length_beats * beat_w;
+    Rect::from_min_max(
+        Pos2::new(x0 + 1.0, row.min.y + 2.0),
+        Pos2::new(x0 + w - 1.0, row.max.y - 2.0),
+    )
+}
+
 fn paint_clip(
     painter: &egui::Painter,
     row: Rect,
@@ -219,10 +236,8 @@ fn paint_clip(
 ) {
     let x0 = row.min.x + clip.start_beats * beat_w;
     let w = clip.length_beats * beat_w;
-    let clip_rect = Rect::from_min_max(
-        Pos2::new(x0 + 1.0, row.min.y + 2.0),
-        Pos2::new(x0 + w - 1.0, row.max.y - 2.0),
-    );
+    let _ = (x0, w);
+    let clip_rect = clip_block_rect(row, clip, beat_w);
     if clip_rect.width() < 2.0 {
         return;
     }

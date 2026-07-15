@@ -14,6 +14,7 @@ pub use transport_bar::TransportBarActions;
 use egui::{Rect, Ui};
 use reelsynth_ui_theme::Tokens;
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{GRID_UNIT, UiScale};
 use crate::region::region;
 use crate::state::{ShellActions, UiState};
@@ -143,6 +144,12 @@ pub fn draw_compose_shell(
     region(ui, transport_rect, |ui| {
         transport_actions = draw_transport_bar(ui, ui.max_rect(), &mut state.compose);
     });
+    record_region(
+        ui.ctx(),
+        AuditId::ComposeTransport,
+        transport_rect,
+        transport_rect,
+    );
     if transport_actions.play {
         actions.transport_play = true;
     }
@@ -169,6 +176,12 @@ pub fn draw_compose_shell(
     );
 
     let track_actions = draw_track_list(ui, track_rect, &mut state.compose);
+    record_region(
+        ui.ctx(),
+        AuditId::ComposeTrackList,
+        track_rect,
+        track_rect,
+    );
     if track_actions.track_state_changed {
         actions.sequence_changed = true;
     }
@@ -195,6 +208,12 @@ pub fn draw_compose_shell(
     );
 
     let arr_actions = draw_arrangement(ui, arrangement_rect, &mut state.compose);
+    record_region(
+        ui.ctx(),
+        AuditId::ComposeArrangement,
+        arrangement_rect,
+        arrangement_rect,
+    );
     if arr_actions.sequence_changed {
         actions.sequence_changed = true;
     }
@@ -203,6 +222,12 @@ pub fn draw_compose_shell(
     }
 
     let roll_actions = draw_piano_roll(ui, piano_rect, &mut state.compose);
+    record_region(
+        ui.ctx(),
+        AuditId::ComposePianoRoll,
+        piano_rect,
+        piano_rect,
+    );
     if roll_actions.sequence_changed {
         actions.sequence_changed = true;
     }
@@ -218,6 +243,12 @@ pub fn draw_compose_shell(
     }
 
     let scene_actions = draw_scene_grid(ui, scene_rect, &mut state.compose);
+    record_region(
+        ui.ctx(),
+        AuditId::ComposeSceneGrid,
+        scene_rect,
+        scene_rect,
+    );
     if scene_actions.scene_launched.is_some() {
         actions.scene_launch = scene_actions.scene_launched;
     }

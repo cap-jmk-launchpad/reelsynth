@@ -4,9 +4,13 @@ use egui::{Color32, FontId, Rect, Ui};
 use reelsynth::ModSlot;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, sidebar_panel_chrome_height};
 use crate::region::region;
-use crate::widgets::{button_ghost, button_toggle, card_stroke, collapsible_panel, sidebar_panel};
+use crate::widgets::{
+    button_ghost, button_toggle, card_stroke, collapsible_panel, sidebar_panel,
+    sidebar_panel_audit,
+};
 
 const POLARITY_POSITIVE: Color32 = Color32::from_rgb(0x4a, 0xde, 0x80);
 const POLARITY_NEGATIVE: Color32 = Color32::from_rgb(0xf8, 0x71, 0x71);
@@ -146,8 +150,8 @@ fn draw_mod_matrix_inner(
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.spacing_mut().item_spacing.y = row_gap;
-                    for route in routes.iter_mut().take(max_rows) {
-                        if draw_mod_row(ui, route, row_h).changed {
+                    for (row_idx, route) in routes.iter_mut().take(max_rows).enumerate() {
+                        if draw_mod_row(ui, route, row_h, row_idx).changed {
                             changed = true;
                         }
                     }
@@ -158,17 +162,24 @@ fn draw_mod_matrix_inner(
             ModChrome::Collapsible => {
                 collapsible_panel(ui, "Modulation Matrix", &meta, open, |ui| {
                     ui.spacing_mut().item_spacing.y = row_gap;
-                    for route in routes.iter_mut().take(max_rows) {
-                        if draw_mod_row(ui, route, row_h).changed {
+                    for (row_idx, route) in routes.iter_mut().take(max_rows).enumerate() {
+                        if draw_mod_row(ui, route, row_h, row_idx).changed {
                             changed = true;
                         }
                     }
                 });
             }
             ModChrome::NativePanel => {
-                sidebar_panel(ui, "Modulation Matrix", &meta, body);
+                sidebar_panel_audit(
+                    ui,
+                    "Modulation Matrix",
+                    &meta,
+                    Some(AuditId::OscModPanel),
+                    body,
+                );
             }
         }
+        record_region(ui.ctx(), AuditId::OscModPanel, rect, ui.min_rect().intersect(rect));
     });
 
     ModMatrixResult { changed }
@@ -374,7 +385,7 @@ struct ModRowResult {
     changed: bool,
 }
 
-fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32) -> ModRowResult {
+fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32, row_idx: usize) -> ModRowResult {
     let tokens = Tokens::default();
     let mut changed = false;
     let (rect, response) =
@@ -409,20 +420,30 @@ fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32) -> ModRowResult 
         ui.allocate_ui_at_rect(rect.shrink2(egui::vec2(GRID_UNIT, 2.0)), |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                ui.label(
+                let source = ui.label(
                     egui::RichText::new(route.source)
                         .font(FontId::monospace(10.0))
                         .color(label_color),
+                );
+                record_used(
+                    ui.ctx(),
+                    AuditId::OscModSourceSelect(row_idx),
+                    source.rect,
                 );
                 ui.label(
                     egui::RichText::new("→")
                         .size(10.0)
                         .color(tokens.text_secondary),
                 );
-                ui.label(
+                let target = ui.label(
                     egui::RichText::new(route.target)
                         .size(11.0)
                         .color(target_color),
+                );
+                record_used(
+                    ui.ctx(),
+                    AuditId::OscModTargetSelect(row_idx),
+                    target.rect,
                 );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -443,7 +464,7 @@ fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32) -> ModRowResult 
                     }
                     let (amount_text, amount_fill, amount_stroke) =
                         polarity_amount_style(route.polarity, &tokens);
-                    egui::Frame {
+                    let amount_frame = egui::Frame {
                         fill: amount_fill,
                         stroke: egui::Stroke::new(1.0_f32, amount_stroke),
                         rounding: egui::Rounding::same(4.0),
@@ -479,10 +500,21 @@ fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32) -> ModRowResult 
                             changed = true;
                         }
                     });
+                    let amount_rect = amount_frame.response.rect;
+                    if amount_rect.is_positive() {
+                        record_region(
+                            ui.ctx(),
+                            AuditId::OscModAmountDrag(row_idx),
+                            amount_rect,
+                            amount_rect,
+                        );
+                    }
                 });
             });
         });
     }
+
+    record_region(ui.ctx(), AuditId::OscModRow(row_idx), rect, rect);
 
     ModRowResult { changed }
 }

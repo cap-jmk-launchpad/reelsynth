@@ -4,6 +4,7 @@ use egui::{pos2, Color32, Pos2, Rect, Sense, Ui, Vec2};
 use reelsynth::{ArpEngine, AutomationLane, AutomationPoint, MidiNote};
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::GRID_UNIT;
 use crate::mod_matrix::{automation_target_to_engine, AUTOMATION_TARGET_LABELS};
 use crate::region::region;
@@ -82,6 +83,7 @@ pub fn draw_piano_roll(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Pian
         egui::Frame::none()
             .inner_margin(egui::Margin::symmetric(GRID_UNIT * 0.5, GRID_UNIT * 0.5))
             .show(ui, |ui| {
+                let toolbar_before = ui.min_rect();
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = GRID_UNIT * 0.5;
                     ui.label(
@@ -114,6 +116,12 @@ pub fn draw_piano_roll(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Pian
                         actions.open_arp_dialog = true;
                     }
                 });
+                record_region(
+                    ui.ctx(),
+                    AuditId::ComposeRollToolbar,
+                    toolbar_before,
+                    ui.min_rect(),
+                );
 
                 let clip_info = selected_clip_mut(compose);
                 if clip_info.is_none() {
@@ -159,6 +167,12 @@ pub fn draw_piano_roll(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Pian
                 if paint_velocity_lane(ui, vel_rect, compose, &tokens) {
                     actions.sequence_changed = true;
                 }
+                record_region(
+                    ui.ctx(),
+                    AuditId::ComposeRollVelocity,
+                    vel_rect,
+                    vel_rect,
+                );
 
                 let auto_rect = Rect::from_min_max(
                     pos2(vel_rect.min.x, vel_rect.max.y + GRID_UNIT * 0.5),
@@ -167,6 +181,28 @@ pub fn draw_piano_roll(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Pian
                 if paint_automation_lane(ui, auto_rect, compose, &tokens) {
                     actions.sequence_changed = true;
                 }
+                record_region(
+                    ui.ctx(),
+                    AuditId::ComposeRollAutomation,
+                    auto_rect,
+                    auto_rect,
+                );
+                record_region(
+                    ui.ctx(),
+                    AuditId::ComposeRollGrid,
+                    grid_rect,
+                    grid_rect,
+                );
+                let keys_rect = Rect::from_min_max(
+                    grid_rect.min,
+                    Pos2::new(grid_rect.min.x + KEY_LABEL_W, grid_rect.max.y),
+                );
+                record_region(
+                    ui.ctx(),
+                    AuditId::ComposeRollKeys,
+                    keys_rect,
+                    keys_rect,
+                );
             });
     });
 

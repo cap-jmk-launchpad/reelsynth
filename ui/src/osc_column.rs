@@ -6,12 +6,13 @@ use reelsynth::{
 };
 use reelsynth_ui_theme::Tokens;
 
+use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::layout::{CENTER_GAP, GRID_UNIT, SPACE_SM};
 use crate::oscillator_ui::{OscillatorUi, WaveLayerUi, MIN_OSCILLATORS};
 use crate::state::OscStripContext;
 use crate::widgets::{
     format_coarse, format_pan, format_unison, knob_value_label, labeled_select, Knob, KnobSize,
-    KnobStyle, panel,
+    KnobStyle, panel, panel_audit,
 };
 use crate::wt::{sync_slot_from_position, wave_quant_from_index, wave_quant_index, effective_quant_count, WAVE_QUANT_LABELS};
 use crate::wt::waveform_points;
@@ -175,8 +176,9 @@ pub fn draw_osc_column(
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = gap * 0.65;
 
-            panel(ui, "Oscillators", |ui| {
+            panel_audit(ui, "Oscillators", Some(AuditId::OscPanelOscillators), |ui| {
                 let previews = resolve_osc_previews(input.patch, input.preview);
+                let strip_start = ui.cursor().min;
                 let strip_result = draw_osc_scroll_strip(
                     ui,
                     state.oscillators,
@@ -206,15 +208,20 @@ pub fn draw_osc_column(
                     }
                 }
 
+                record_row(ui.ctx(), AuditId::OscStripCards, ui, strip_start);
+
                 ui.add_space(GRID_UNIT * 0.25);
 
                 let idx = (*state.osc_tab).min(state.oscillators.len().saturating_sub(1));
                 let osc = &mut state.oscillators[idx];
 
+                let type_start = ui.cursor().min;
                 if labeled_select(ui, "Type", &OSC_TYPES, &mut osc.osc_type) {
                     changed = true;
                 }
+                record_row(ui.ctx(), AuditId::OscTypeSelect, ui, type_start);
 
+                let knobs_start = ui.cursor().min;
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = SPACE_SM;
                     let level_text = format!("{:.2}", osc.level);
@@ -244,10 +251,12 @@ pub fn draw_osc_column(
                         changed = true;
                     }
                 });
+                record_row(ui.ctx(), AuditId::OscKnobsLevelPanCoarse, ui, knobs_start);
 
                 ui.add_space(GRID_UNIT * 0.2);
                 let is_wt = osc.osc_type == 0;
                 if is_wt {
+                    let quant_start = ui.cursor().min;
                     let mut quant_idx = wave_quant_index(osc.wave_quant);
                     if labeled_select(ui, "WT Quant", &WAVE_QUANT_LABELS, &mut quant_idx) {
                         let new_quant = wave_quant_from_index(quant_idx);
@@ -266,7 +275,9 @@ pub fn draw_osc_column(
                         }
                         changed = true;
                     }
+                    record_row(ui.ctx(), AuditId::OscWtQuant, ui, quant_start);
 
+                    let pos_start = ui.cursor().min;
                     let pos_label = if osc.wave_quant > 0 {
                         format!("slot {} · {:.0}", osc.wave_slot + 1, osc.position.round())
                     } else {
@@ -284,11 +295,15 @@ pub fn draw_osc_column(
                         }
                         changed = true;
                     }
+                    record_row(ui.ctx(), AuditId::OscWtPositionSlider, ui, pos_start);
 
+                    let warp_start = ui.cursor().min;
                     let warp_idx = &mut osc.warp_mode;
                     if labeled_select(ui, "Warp", &WARP_MODES, warp_idx) {
                         changed = true;
                     }
+                    record_row(ui.ctx(), AuditId::OscWarpSelect, ui, warp_start);
+                    let warp_amt_start = ui.cursor().min;
                     let warp_label_pct = osc.warp_amount * 100.0;
                     if param_slider(
                         ui,
@@ -299,10 +314,12 @@ pub fn draw_osc_column(
                     ) {
                         changed = true;
                     }
+                    record_row(ui.ctx(), AuditId::OscWarpAmtSlider, ui, warp_amt_start);
                 }
 
                 let is_pulse = matches!(osc.osc_type, 2 | 4);
                 if is_pulse {
+                    let pw_start = ui.cursor().min;
                     let pw_pct = osc.pulse_width * 100.0;
                     if param_slider(
                         ui,
@@ -313,15 +330,19 @@ pub fn draw_osc_column(
                     ) {
                         changed = true;
                     }
+                    record_row(ui.ctx(), AuditId::OscPulseWidth, ui, pw_start);
                 }
 
+                let unison_start = ui.cursor().min;
                 let unison_f = &mut (osc.unison as f32);
                 let unison_label = format_unison(osc.unison);
                 if param_slider(ui, "Unison", unison_f, 1.0..=8.0, &unison_label) {
                     osc.unison = unison_f.round().clamp(1.0, 8.0) as u32;
                     changed = true;
                 }
+                record_row(ui.ctx(), AuditId::OscUnisonSlider, ui, unison_start);
 
+                let spread_start = ui.cursor().min;
                 if param_slider(
                     ui,
                     "Spread",
@@ -331,10 +352,11 @@ pub fn draw_osc_column(
                 ) {
                     changed = true;
                 }
+                record_row(ui.ctx(), AuditId::OscSpreadSlider, ui, spread_start);
 
                 ui.add_space(GRID_UNIT * 0.5);
                 if ui.available_height() > min_section_h * 1.8 {
-                    panel(ui, "Stack", |ui| {
+                    panel_audit(ui, "Stack", Some(AuditId::OscPanelStack), |ui| {
                         let mut stack_mode_idx = stack_mode_index(&osc.stack_mode);
                         if labeled_select(ui, "Mode", &STACK_MODES, &mut stack_mode_idx) {
                             osc.stack_mode = stack_mode_from_index(stack_mode_idx).into();
@@ -354,6 +376,7 @@ pub fn draw_osc_column(
 
                         let mut remove_at = None;
                         for (li, layer) in osc.wave_layers.iter_mut().enumerate() {
+                            let row_start = ui.cursor().min;
                             let is_sel = selected == li;
                             ui.horizontal(|ui| {
                                 let label = format!("L{}", li + 1);
@@ -414,6 +437,7 @@ pub fn draw_osc_column(
                                 }
                             });
                             ui.add_space(GRID_UNIT * 0.15);
+                            record_row(ui.ctx(), AuditId::OscStackLayerRow(li), ui, row_start);
                         }
 
                         if let Some(idx) = remove_at {
@@ -430,7 +454,8 @@ pub fn draw_osc_column(
                 }
 
                 if ui.available_height() > min_section_h * 1.8 {
-                    panel(ui, "FM", |ui| {
+                    panel_audit(ui, "FM", Some(AuditId::OscPanelFm), |ui| {
+                        let algo_start = ui.cursor().min;
                         let algo_idx = &mut osc.fm_algorithm;
                         if labeled_select(ui, "Algo", &FM_ALGORITHMS, algo_idx) {
                             if *algo_idx == 0 {
@@ -440,6 +465,7 @@ pub fn draw_osc_column(
                             }
                             changed = true;
                         }
+                        record_row(ui.ctx(), AuditId::OscFmAlgorithm, ui, algo_start);
 
                         let src_idx = &mut osc.fm_source;
                         if labeled_select(ui, "Source", &FM_SOURCES, src_idx) {
@@ -448,6 +474,7 @@ pub fn draw_osc_column(
                             changed = true;
                         }
 
+                        let fm_knobs_start = ui.cursor().min;
                         ui.horizontal_centered(|ui| {
                             ui.spacing_mut().item_spacing.x = SPACE_SM;
                             let ratio_text = format!("{:.2}", osc.fm_ratio);
@@ -468,6 +495,7 @@ pub fn draw_osc_column(
                                 changed = true;
                             }
                         });
+                        record_row(ui.ctx(), AuditId::OscFmKnobs, ui, fm_knobs_start);
                     });
                 }
 
@@ -512,6 +540,9 @@ pub fn draw_osc_column(
             });
 
         });
+
+    let col_used = ui.min_rect();
+    record_region(ui.ctx(), AuditId::OscColumn, col_used, col_used);
 
     OscColumnResult {
         changed,
@@ -772,6 +803,18 @@ fn draw_osc_preview_card_with_remove(
     }
 
     (resp, remove_clicked)
+}
+
+fn row_rect(ui: &Ui, start: egui::Pos2) -> egui::Rect {
+    let end_y = ui.cursor().min.y;
+    egui::Rect::from_min_max(start, egui::pos2(ui.max_rect().max.x, end_y.max(start.y)))
+}
+
+fn record_row(ctx: &egui::Context, id: AuditId, ui: &Ui, start: egui::Pos2) {
+    let rect = row_rect(ui, start);
+    if rect.is_positive() {
+        record_region(ctx, id, rect, rect);
+    }
 }
 
 fn param_slider(
