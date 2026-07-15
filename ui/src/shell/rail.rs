@@ -126,6 +126,7 @@ fn draw_rail_panels(
                 &mut state.filt_env_sustain,
                 &mut state.filt_env_release,
                 s * 0.85,
+                "filt_env",
             );
             if graph.changed {
                 actions.params_changed = true;
@@ -141,6 +142,7 @@ fn draw_rail_panels(
                 &mut state.filt_env_release,
                 actions,
                 s,
+                "filt_env",
             );
             record_row(ui.ctx(), AuditId::RailFiltEnvKnobs, ui, knobs_start);
         });
@@ -153,6 +155,7 @@ fn draw_rail_panels(
                 &mut state.env_sustain,
                 &mut state.env_release,
                 s * 0.85,
+                "amp_env",
             );
             if graph.changed {
                 actions.params_changed = true;
@@ -168,6 +171,7 @@ fn draw_rail_panels(
                 &mut state.env_release,
                 actions,
                 s,
+                "amp_env",
             );
             record_row(ui.ctx(), AuditId::RailAmpEnvKnobs, ui, knobs_start);
         });
@@ -334,9 +338,10 @@ fn env_knobs(
     release: &mut f32,
     actions: &mut ShellActions,
     scale: f32,
+    id_salt: &str,
 ) {
     let gap = SPACE_SM * scale * 0.5;
-    Grid::new(ui.id().with("env_knobs"))
+    Grid::new(ui.id().with(id_salt).with("env_knobs"))
         .num_columns(2)
         .spacing([gap, gap])
         .min_col_width((ui.available_width() - gap) * 0.5)
@@ -370,6 +375,7 @@ fn env_knob_cell(
             .size(KnobSize::Sm)
             .scale(scale)
             .style(KnobStyle::Wired)
+            .show_wired_badge(false)
             .value_text(value_text)
             .show(ui)
     })
@@ -529,12 +535,14 @@ fn lfo_block(
     actions: &mut ShellActions,
     scale: f32,
 ) {
-    ui.label(
-        egui::RichText::new(title)
-            .size(10.0)
-            .color(Tokens::default().text_muted),
-    );
-    lfo_panel(ui, rate, depth, shape, style, actions, scale);
+    ui.push_id(title, |ui| {
+        ui.label(
+            egui::RichText::new(title)
+                .size(10.0)
+                .color(Tokens::default().text_muted),
+        );
+        lfo_panel(ui, rate, depth, shape, style, actions, scale);
+    });
 }
 
 fn lfo_panel(

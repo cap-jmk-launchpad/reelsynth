@@ -5,7 +5,7 @@ use reelsynth_ui_theme::Tokens;
 use super::*;
 use crate::audit_registry::{record_region, record_used, AuditId};
 use crate::fx_rack::{draw_effect_rack_sidebar, EffectRackState};
-use crate::layout::{osc_column_split_heights, UiScale};
+use crate::layout::{osc_column_split_heights, OSC_SIDEBAR_STACK_GAP, UiScale};
 use crate::mod_matrix::{draw_mod_matrix_sidebar, ModMatrixState};
 use crate::layout_audit::{
     header_left_cluster_rect_id, header_right_cluster_rect_id, header_used_rect_id,
@@ -285,7 +285,7 @@ pub(super) fn draw_osc(
         let mod_rect = if stack.mod_matrix > 0.0 {
             let mod_top = y
                 + if fx_rect.is_positive() {
-                    GRID_UNIT * s
+                    OSC_SIDEBAR_STACK_GAP * s
                 } else {
                     0.0
                 };

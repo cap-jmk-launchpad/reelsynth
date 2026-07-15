@@ -71,15 +71,16 @@ pub const OSC_COLUMN_MIN_SCROLL_HEIGHT: f32 = 112.0;
 /// Inner margin of native [`sidebar_panel`] frames.
 pub const SIDEBAR_PANEL_MARGIN: f32 = 6.0;
 /// Vertical gap between FX and mod matrix in the left column.
-pub const OSC_SIDEBAR_STACK_GAP: f32 = GRID_UNIT;
+pub const OSC_SIDEBAR_STACK_GAP: f32 = SPACE_SM;
 
 /// Title + meta chrome inside a native sidebar panel (frame margins extra).
+/// Reserved header band (22px) + body frame margins (6+6).
 pub fn sidebar_panel_chrome_height(scale: f32, with_meta: bool) -> f32 {
     let s = scale;
-    let frame = SIDEBAR_PANEL_MARGIN * 2.0 * s;
-    let title_block = 10.0 * s + 6.0 * s;
-    let meta_block = if with_meta { 12.0 * s + 4.0 * s } else { 0.0 };
-    frame + title_block + meta_block
+    let header = 22.0 * s;
+    let body_pad = 6.0 * 2.0 * s;
+    let _ = with_meta;
+    header + body_pad
 }
 
 /// Card body in the sidebar FX chain (header + 2 param rows + padding).

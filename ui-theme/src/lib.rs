@@ -51,6 +51,12 @@ pub fn apply(ctx: &egui::Context) {
     apply_tokens(&mut visuals, &tokens);
     ctx.set_visuals(visuals);
     apply_fonts(ctx);
+    // Flame / red ID-clash overlays are egui debug paint. Keep them off unless
+    // explicitly debugging (`REELSYNTH_UI_DEBUG=1`) so Design stays clean.
+    let ui_debug = std::env::var_os("REELSYNTH_UI_DEBUG").is_some();
+    ctx.options_mut(|o| {
+        o.warn_on_id_clash = ui_debug;
+    });
 }
 
 pub fn apply_tokens(visuals: &mut Visuals, t: &Tokens) {

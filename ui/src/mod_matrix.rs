@@ -386,6 +386,11 @@ struct ModRowResult {
 }
 
 fn draw_mod_row(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32, row_idx: usize) -> ModRowResult {
+    ui.push_id(("mod_row", row_idx), |ui| draw_mod_row_inner(ui, route, row_h, row_idx))
+        .inner
+}
+
+fn draw_mod_row_inner(ui: &mut Ui, route: &mut ModSlotUi, row_h: f32, row_idx: usize) -> ModRowResult {
     let tokens = Tokens::default();
     let mut changed = false;
     let (rect, response) =

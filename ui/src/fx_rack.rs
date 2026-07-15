@@ -289,6 +289,7 @@ fn draw_effect_rack_inner(
         let body = |ui: &mut Ui| {
             // Subtract CPU warning height from the scroll/slot budget so the
             // banner cannot collide with the first slot or double-count body_h.
+            ui.add_space(2.0 * scale.ui());
             let scroll_h = if active > CPU_WARN_ACTIVE_SLOTS {
                 let before = ui.cursor().min.y;
                 ui.label(
@@ -299,9 +300,9 @@ fn draw_effect_rack_inner(
                     .color(Color32::from_rgb(0xe8, 0xa8, 0x40)),
                 );
                 ui.add_space(4.0);
-                (body_h - (ui.cursor().min.y - before)).max(0.0)
+                (body_h - (ui.cursor().min.y - before) - 2.0 * scale.ui()).max(0.0)
             } else {
-                body_h
+                (body_h - 2.0 * scale.ui()).max(0.0)
             };
 
             ui.set_max_height(scroll_h);
@@ -699,6 +700,16 @@ fn draw_effect_params(
 }
 
 fn draw_fx_slot_column(
+    ui: &mut Ui,
+    slots: &mut Vec<EffectSlotUi>,
+    idx: usize,
+    metrics: FxMetrics,
+) -> FxSlotResult {
+    ui.push_id(("fx_slot", idx), |ui| draw_fx_slot_column_inner(ui, slots, idx, metrics))
+        .inner
+}
+
+fn draw_fx_slot_column_inner(
     ui: &mut Ui,
     slots: &mut Vec<EffectSlotUi>,
     idx: usize,

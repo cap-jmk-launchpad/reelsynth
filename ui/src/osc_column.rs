@@ -178,15 +178,17 @@ pub fn draw_osc_column(
     let mut changed = false;
     let mut osc_count_changed = false;
     let gap = CENTER_GAP * scale;
+    let section_gap = SPACE_SM * scale;
     let min_section_h = 72.0 * scale;
     let card_w = OSC_CARD_WIDTH * scale;
     let card_h = OSC_CARD_HEIGHT * scale;
 
     egui::Frame::none()
-        .inner_margin(egui::Margin::same(SPACE_SM * scale * 0.5))
+        .inner_margin(egui::Margin::same(SPACE_SM * scale))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = gap * 0.65;
+            // Match right-rail section rhythm (panel_audit gaps), not the tighter half-gap.
+            ui.spacing_mut().item_spacing.y = section_gap.max(gap);
 
             panel_audit(ui, "Oscillators", Some(AuditId::OscPanelOscillators), |ui| {
                 let previews = resolve_osc_previews(input.patch, input.preview);
@@ -403,6 +405,7 @@ pub fn draw_osc_column(
                         for (li, layer) in osc.wave_layers.iter_mut().enumerate() {
                             let row_start = ui.cursor().min;
                             let is_sel = selected == li;
+                            ui.push_id(("stack_layer", li), |ui| {
                             ui.horizontal(|ui| {
                                 let label = format!("L{}", li + 1);
                                 let btn = ui.selectable_label(is_sel, label);
@@ -481,6 +484,7 @@ pub fn draw_osc_column(
                             });
                             ui.add_space(GRID_UNIT * 0.15);
                             record_row(ui.ctx(), AuditId::OscStackLayerRow(li), ui, row_start);
+                            }); // push_id stack_layer
                         }
 
                         if let Some(idx) = remove_at {

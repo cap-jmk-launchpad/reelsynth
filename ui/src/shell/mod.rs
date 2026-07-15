@@ -64,6 +64,12 @@ pub fn draw_shell(
     let tokens = Tokens::default();
     let mut actions = ShellActions::default();
 
+    // Keep ID-clash flame overlays off unless explicitly debugging.
+    let ui_debug = std::env::var_os("REELSYNTH_UI_DEBUG").is_some();
+    ui.ctx().options_mut(|o| {
+        o.warn_on_id_clash = ui_debug;
+    });
+
     let painter = ui.painter_at(screen);
     let border = egui::Stroke::new(1.0_f32, tokens.border);
     painter.rect_filled(layout.header, 0.0, tokens.surface2);

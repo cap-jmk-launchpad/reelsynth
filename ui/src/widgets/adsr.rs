@@ -16,6 +16,9 @@ pub struct AdsrGraphResponse {
 }
 
 /// Draw an interactive ADSR envelope with draggable A / D / S / R control points.
+///
+/// `id_salt` must be unique per graph (e.g. `"filt_env"` / `"amp_env"`) so handles
+/// do not clash when multiple envelopes are on screen.
 pub fn adsr_graph(
     ui: &mut Ui,
     attack: &mut f32,
@@ -23,90 +26,94 @@ pub fn adsr_graph(
     sustain: &mut f32,
     release: &mut f32,
     scale: f32,
+    id_salt: impl std::hash::Hash,
 ) -> AdsrGraphResponse {
     let tokens = Tokens::default();
     let accent_ui = ACCENT_UI;
     let height = ADSR_GRAPH_HEIGHT * scale;
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
+    ui.push_id(id_salt, |ui| {
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
 
-    let mut changed = false;
+        let mut changed = false;
 
-    if ui.is_rect_visible(rect) {
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, tokens.surface2);
-        painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0_f32, tokens.border));
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 4.0, tokens.surface2);
+            painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0_f32, tokens.border));
 
-        let inner = rect.shrink(8.0);
-        let layout = adsr_layout(inner, *attack, *decay, *sustain, *release);
+            let inner = rect.shrink(8.0);
+            let layout = adsr_layout(inner, *attack, *decay, *sustain, *release);
 
-        let points = vec![
-            Pos2::new(inner.min.x, layout.bottom),
-            Pos2::new(layout.ax, layout.top),
-            Pos2::new(layout.dx, layout.sustain_y),
-            Pos2::new(layout.sx, layout.sustain_y),
-            Pos2::new(inner.max.x, layout.bottom),
-        ];
-        painter.add(Shape::line(
-            points,
-            egui::Stroke::new(2.0_f32, accent_ui),
-        ));
-
-        let handles = [
-            (Pos2::new(layout.ax, layout.top), AdsrHandle::Attack),
-            (
+            let points = vec![
+                Pos2::new(inner.min.x, layout.bottom),
+                Pos2::new(layout.ax, layout.top),
                 Pos2::new(layout.dx, layout.sustain_y),
-                AdsrHandle::DecaySustain,
-            ),
-            (
                 Pos2::new(layout.sx, layout.sustain_y),
-                AdsrHandle::SustainHold,
-            ),
-            (
-                Pos2::new(
-                    egui::lerp(layout.sx..=inner.max.x, 0.72),
-                    egui::lerp(layout.sustain_y..=layout.bottom, 0.72),
+                Pos2::new(inner.max.x, layout.bottom),
+            ];
+            painter.add(Shape::line(
+                points,
+                egui::Stroke::new(2.0_f32, accent_ui),
+            ));
+
+            let handles = [
+                (Pos2::new(layout.ax, layout.top), AdsrHandle::Attack),
+                (
+                    Pos2::new(layout.dx, layout.sustain_y),
+                    AdsrHandle::DecaySustain,
                 ),
-                AdsrHandle::Release,
-            ),
-        ];
+                (
+                    Pos2::new(layout.sx, layout.sustain_y),
+                    AdsrHandle::SustainHold,
+                ),
+                (
+                    Pos2::new(
+                        egui::lerp(layout.sx..=inner.max.x, 0.72),
+                        egui::lerp(layout.sustain_y..=layout.bottom, 0.72),
+                    ),
+                    AdsrHandle::Release,
+                ),
+            ];
 
-        for (pt, _handle) in handles {
-            painter.circle_filled(pt, HANDLE_RADIUS, tokens.accent);
-            painter.circle_stroke(
-                pt,
-                HANDLE_RADIUS,
-                egui::Stroke::new(1.0_f32, tokens.accent_on),
-            );
-        }
+            for (pt, _handle) in handles {
+                painter.circle_filled(pt, HANDLE_RADIUS, tokens.accent);
+                painter.circle_stroke(
+                    pt,
+                    HANDLE_RADIUS,
+                    egui::Stroke::new(1.0_f32, tokens.accent_on),
+                );
+            }
 
-        let hit = HANDLE_RADIUS + 4.0;
-        for (pt, handle) in handles.into_iter().rev() {
-            let handle_rect = egui::Rect::from_center_size(pt, Vec2::splat(hit * 2.0));
-            let id = ui.id().with(("adsr_handle", handle as u8));
-            let handle_resp = ui.interact(handle_rect, id, egui::Sense::drag());
-            if handle_resp.dragged() {
-                if let Some(pos) = handle_resp.interact_pointer_pos() {
-                    if apply_handle_drag(
-                        handle,
-                        inner,
-                        pos,
-                        attack,
-                        decay,
-                        sustain,
-                        release,
-                    ) {
-                        changed = true;
+            let hit = HANDLE_RADIUS + 4.0;
+            for (pt, handle) in handles.into_iter().rev() {
+                let handle_rect = egui::Rect::from_center_size(pt, Vec2::splat(hit * 2.0));
+                let id = ui.id().with(("adsr_handle", handle as u8));
+                let handle_resp = ui.interact(handle_rect, id, egui::Sense::drag());
+                if handle_resp.dragged() {
+                    if let Some(pos) = handle_resp.interact_pointer_pos() {
+                        if apply_handle_drag(
+                            handle,
+                            inner,
+                            pos,
+                            attack,
+                            decay,
+                            sustain,
+                            release,
+                        ) {
+                            changed = true;
+                        }
                     }
                 }
-            }
-            if handle_resp.hovered() || handle_resp.dragged() {
-                ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                if handle_resp.hovered() || handle_resp.dragged() {
+                    ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                }
             }
         }
-    }
 
-    AdsrGraphResponse { response, changed }
+        AdsrGraphResponse { response, changed }
+    })
+    .inner
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
