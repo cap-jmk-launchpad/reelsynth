@@ -42,10 +42,10 @@ pub const KNOB_MD: f32 = 44.0;
 pub const KNOB_LG: f32 = 52.0;
 pub const KNOB_COL_WIDTH: f32 = 56.0;
 
-pub const WT_STRIP_HEIGHT: f32 = 48.0;
-pub const WT_MORPH_HEIGHT: f32 = 20.0;
-pub const WT_TOOLBAR_HEIGHT: f32 = 24.0;
-pub const WT_VIEW_MIN_HEIGHT: f32 = 128.0;
+pub const WT_STRIP_HEIGHT: f32 = 56.0;
+pub const WT_MORPH_HEIGHT: f32 = 22.0;
+pub const WT_TOOLBAR_HEIGHT: f32 = 28.0;
+pub const WT_VIEW_MIN_HEIGHT: f32 = 140.0;
 
 pub const PIANO_HEIGHT: f32 = 128.0;
 pub const PIANO_WHITE_KEY_WIDTH: f32 = 28.0;

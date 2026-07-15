@@ -113,46 +113,59 @@ pub fn compute_center_regions(
             piano,
         }
     } else {
-        let views_h = if config.show_wt_editor {
-            (WT_VIEW_MIN_HEIGHT * scale + gap)
-                .min((inner.height() - scope_h - gap - strip_h - gap)
-                    .max(WT_VIEW_MIN_HEIGHT * scale * 0.5))
+        // Compact (no osc column): pack scope -> views -> morph -> strip so WT views
+        // expand into leftover height instead of leaving a dead black band.
+        let mut y = scope.max.y + gap;
+        let morph_h = if config.show_wt_editor {
+            morph_line_h
         } else {
             0.0
         };
-        let morph_block_h = if config.show_wt_editor {
-            morph_line_h + gap
+        let strip_needed = if config.show_wt_editor { strip_h } else { 0.0 };
+        let chrome_below = if config.show_wt_editor {
+            strip_needed
+                + morph_h
+                + gap
+                + if morph_h > EPS { gap } else { 0.0 }
+        } else {
+            0.0
+        };
+        let remaining = (inner.max.y - y).max(0.0);
+        let views_min = if config.show_wt_editor {
+            WT_VIEW_MIN_HEIGHT * scale * 0.5
+        } else {
+            0.0
+        };
+        let views_budget = (remaining - chrome_below).max(0.0);
+        let views_h = if config.show_wt_editor && views_budget > views_min {
+            views_budget
+        } else if config.show_wt_editor {
+            views_min.min(remaining)
         } else {
             0.0
         };
 
-        let wt_views = if config.show_wt_editor && views_h > EPS {
-            Rect::from_min_max(
-                egui::pos2(inner.min.x, inner.max.y - views_h),
-                inner.max,
-            )
+        let wt_views = if views_h > EPS {
+            let r = rect_row(inner, y, views_h);
+            y = r.max.y + gap;
+            r
         } else {
             Rect::NOTHING
         };
 
-        let morph = if config.show_wt_editor && morph_block_h > EPS {
-            Rect::from_min_max(
-                egui::pos2(inner.min.x, wt_views.min.y - morph_block_h),
-                egui::pos2(inner.max.x, wt_views.min.y - gap),
-            )
+        let morph = if config.show_wt_editor && morph_h > EPS {
+            let r = rect_row(inner, y, morph_h);
+            y = r.max.y + gap;
+            r
         } else {
             Rect::NOTHING
         };
 
-        let strip_top = if config.show_wt_editor {
-            morph.min.y - gap - strip_h
+        let wt_strip = if config.show_wt_editor && strip_needed > EPS {
+            rect_row(inner, y, strip_needed)
         } else {
-            inner.max.y - strip_h
+            Rect::NOTHING
         };
-        let wt_strip = Rect::from_min_max(
-            egui::pos2(inner.min.x, strip_top.max(scope.max.y + gap)),
-            egui::pos2(inner.max.x, strip_top + strip_h),
-        );
 
         CenterRegions {
             scope,
@@ -182,7 +195,9 @@ fn rect_row(inner: Rect, y: f32, height: f32) -> Rect {
 mod tests {
     use super::*;
     use crate::layout_audit::{audit_center, overlap_area};
-    use crate::layout::{APP_HEIGHT_FULL, APP_MIN_WIDTH, ShellLayout, ShellLayoutOptions, SPACE_SM};
+    use crate::layout::{
+        APP_HEIGHT_FULL, APP_MIN_WIDTH, CENTER_GAP, ShellLayout, ShellLayoutOptions, SPACE_SM,
+    };
 
     #[test]
     fn center_regions_no_overlap_at_min_window() {
@@ -226,6 +241,49 @@ mod tests {
         assert!(
             regions.wt_views.height() > layout.piano_wrap.height() * 0.5,
             "views should keep substantial height with full-width piano"
+        );
+    }
+
+    #[test]
+    fn compact_center_fills_views_without_dead_band() {
+        let screen = Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(APP_MIN_WIDTH, APP_HEIGHT_FULL),
+        );
+        let options = ShellLayoutOptions {
+            piano_visible: true,
+            show_osc_column: false,
+            show_mod_matrix: false,
+            mod_matrix_open: false,
+            show_fx_rack: false,
+            fx_rack_open: false,
+        };
+        let layout = ShellLayout::compute_with_options(screen, options);
+        let config = ShellConfig {
+            show_wt_editor: true,
+            show_osc_column: false,
+            show_mod_matrix: false,
+            show_fx_rack: false,
+        };
+        let scale = layout.scale.ui();
+        let inner = layout.center.shrink(SPACE_SM * scale);
+        let regions = compute_center_regions(inner, &config, scale, false);
+        assert!(regions.scope.is_positive());
+        assert!(regions.wt_views.is_positive());
+        assert!(regions.wt_strip.is_positive());
+        let gap_after_scope = regions.wt_views.min.y - regions.scope.max.y;
+        assert!(
+            gap_after_scope < CENTER_GAP * scale * 3.0 + 1.0,
+            "dead band after scope too large: {gap_after_scope}"
+        );
+        let covered = regions.scope.height()
+            + regions.wt_views.height()
+            + regions.morph.height()
+            + regions.wt_strip.height();
+        let util = covered / inner.height().max(1.0);
+        assert!(
+            util > 0.85,
+            "compact center should fill most of the column (util={util:.2})"
         );
     }
 
