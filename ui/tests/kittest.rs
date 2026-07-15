@@ -681,6 +681,17 @@ fn design_fx_sidebar_slots() {
 }
 
 #[test]
+fn design_osc_fx_sidebar() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.fx_slots.push(reelsynth_ui::EffectSlotUi::from_slot(
+        &reelsynth::fx::EffectSlot::delay(),
+    ));
+    scenario = scenario.size(APP_MIN_WIDTH, APP_HEIGHT_FULL);
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
 fn design_mod_matrix_rows() {
     let mut scenario = ShellAuditScenario::default();
     while scenario.state.mod_routes.len() < 4 {

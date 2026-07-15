@@ -108,6 +108,18 @@ Collapsible **Stack** panel on the active oscillator tab:
 
 Factory Lead loads with three stack layers (saw + sine + wavetable); save/reload preserves `wave_layers`.
 
+### Effects (osc column sidebar)
+
+When the osc column is visible, the **Effects** panel sits below the oscillator stack (above the mod matrix when both are open). Each slot is a full-width card in a vertical scroll chain:
+
+| Region | Contents |
+|--------|----------|
+| **Header** | Muted slot index (`FX 1`, …) and **On/Off** bypass toggle — effect name is **not** repeated here |
+| **Params** | Three parameters in a **2-row grid**: row 1 has two side-by-side cells (e.g. Mix + Rate); row 2 is the third param full-width. Labels sit **above** DragValues (10 px) with ≥72 px drag hit targets |
+| **Footer** | ◀ ▶ ✕ reorder/remove icons (fixed strip) plus effect **type combo** (Chorus, Delay, …) using remaining width |
+
+Slot height is sized for two readable param rows (~98 px at scale 1.0). The panel shows ~2¼ slots before scrolling; extra slots scroll inside the panel. The horizontal main FX rack (performance layout without osc column) keeps the compact single-row param layout unchanged.
+
 ---
 
 ## Center column

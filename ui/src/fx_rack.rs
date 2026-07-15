@@ -5,7 +5,10 @@ use reelsynth::{EffectSlot, EffectType};
 use reelsynth_ui_theme::Tokens;
 
 use crate::audit_registry::{record_region, record_used, AuditId};
-use crate::layout::{UiScale, GRID_UNIT, RADIUS_SM, sidebar_fx_slot_height, sidebar_panel_chrome_height};
+use crate::layout::{
+    UiScale, GRID_UNIT, RADIUS_SM, sidebar_fx_card_body_height, sidebar_fx_footer_height,
+    sidebar_fx_slot_height, sidebar_panel_chrome_height,
+};
 use crate::region::region;
 use crate::widgets::{
     button_icon, button_toggle, card_stroke, collapsible_panel, menu_selectable, reel_combo,
@@ -15,6 +18,21 @@ use crate::widgets::{
 const FX_FOOTER_HEIGHT: f32 = 18.0;
 const FX_TITLE_HEIGHT: f32 = 14.0;
 const FX_PARAM_ROW_HEIGHT: f32 = 18.0;
+
+const FX_SIDEBAR_TITLE_HEIGHT: f32 = 20.0;
+const FX_SIDEBAR_PARAM_ROW_HEIGHT: f32 = 22.0;
+const FX_SIDEBAR_FOOTER_HEIGHT: f32 = 22.0;
+const FX_SIDEBAR_LABEL_SIZE: f32 = 10.0;
+const FX_SIDEBAR_DRAG_MIN_WIDTH: f32 = 72.0;
+const FX_SIDEBAR_ICON_STRIP_WIDTH: f32 = 56.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FxParamLayout {
+    /// Horizontal main FX rack — single row of label+DragValue pairs.
+    CompactRow,
+    /// Osc-column vertical chain — 2-row stacked params, label above control.
+    SidebarStack,
+}
 
 pub const FX_SLOT_WIDTH: f32 = 148.0;
 pub const FX_SECTION_HEADER: f32 = 24.0;
@@ -28,6 +46,10 @@ struct FxMetrics {
     column_height: f32,
     add_width: f32,
     header_h: f32,
+    title_height: f32,
+    param_row_height: f32,
+    param_layout: FxParamLayout,
+    scale: f32,
 }
 
 impl FxMetrics {
@@ -49,6 +71,28 @@ impl FxMetrics {
             column_height: column_h,
             add_width: 40.0 * s,
             header_h,
+            title_height: FX_TITLE_HEIGHT * s,
+            param_row_height: FX_PARAM_ROW_HEIGHT * s,
+            param_layout: FxParamLayout::CompactRow,
+            scale: s,
+        }
+    }
+
+    fn sidebar_chain(scale: f32, slot_width: f32) -> Self {
+        let card_body = sidebar_fx_card_body_height(scale);
+        let footer_h = sidebar_fx_footer_height(scale);
+        let slot_h = sidebar_fx_slot_height(scale);
+        Self {
+            slot_width,
+            card_height: card_body,
+            controls_height: footer_h,
+            column_height: slot_h,
+            add_width: slot_width,
+            header_h: 0.0,
+            title_height: FX_SIDEBAR_TITLE_HEIGHT * scale,
+            param_row_height: FX_SIDEBAR_PARAM_ROW_HEIGHT * scale,
+            param_layout: FxParamLayout::SidebarStack,
+            scale,
         }
     }
 }
@@ -330,8 +374,6 @@ fn draw_effect_rack_chain(
 ) {
     let s = scale.ui();
     let gap = GRID_UNIT * s * 0.5;
-    let slot_h = sidebar_fx_slot_height(s);
-    let card_body = (FX_TITLE_HEIGHT + FX_PARAM_ROW_HEIGHT + 6.0) * s;
 
     egui::ScrollArea::vertical()
         .id_salt("fx_sidebar_chain_scroll")
@@ -341,14 +383,7 @@ fn draw_effect_rack_chain(
             ui.set_width(ui.available_width());
             for idx in 0..slots.len() {
                 let slot_w = ui.available_width();
-                let metrics = FxMetrics {
-                    slot_width: slot_w,
-                    card_height: card_body,
-                    controls_height: FX_FOOTER_HEIGHT * s,
-                    column_height: slot_h,
-                    add_width: slot_w,
-                    header_h: 0.0,
-                };
+                let metrics = FxMetrics::sidebar_chain(s, slot_w);
                 if draw_fx_slot_column(ui, slots, idx, metrics).changed {
                     *changed = true;
                 }
@@ -402,15 +437,22 @@ struct FxSlotResult {
     changed: bool,
 }
 
-fn fx_drag_pct(ui: &mut Ui, label: &str, value: &mut f32, max: f32) -> bool {
+fn fx_drag_pct(ui: &mut Ui, label: &str, value: &mut f32, max: f32, stacked: bool, cell_w: f32) -> bool {
     let tokens = Tokens::default();
     let mut pct = (*value * 100.0).clamp(0.0, max * 100.0);
     let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+    let label_size = if stacked { FX_SIDEBAR_LABEL_SIZE } else { 9.0 };
+    let row_h = if stacked {
+        FX_SIDEBAR_PARAM_ROW_HEIGHT
+    } else {
+        FX_PARAM_ROW_HEIGHT
+    };
+
+    let mut draw = |ui: &mut Ui| {
+        ui.spacing_mut().item_spacing.y = 1.0;
         ui.label(
             egui::RichText::new(label)
-                .size(9.0)
+                .size(label_size)
                 .color(tokens.text_muted),
         );
         if ui
@@ -424,7 +466,21 @@ fn fx_drag_pct(ui: &mut Ui, label: &str, value: &mut f32, max: f32) -> bool {
         {
             changed = true;
         }
-    });
+    };
+
+    if stacked {
+        ui.allocate_ui_with_layout(
+            egui::vec2(cell_w, row_h),
+            egui::Layout::top_down(egui::Align::LEFT),
+            draw,
+        );
+    } else {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            draw(ui);
+        });
+    }
+
     if changed {
         *value = (pct / 100.0).clamp(0.0, max);
     }
@@ -438,14 +494,23 @@ fn fx_drag_f32(
     range: std::ops::RangeInclusive<f32>,
     speed: f32,
     suffix: &str,
+    stacked: bool,
+    cell_w: f32,
 ) -> bool {
     let tokens = Tokens::default();
     let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+    let label_size = if stacked { FX_SIDEBAR_LABEL_SIZE } else { 9.0 };
+    let row_h = if stacked {
+        FX_SIDEBAR_PARAM_ROW_HEIGHT
+    } else {
+        FX_PARAM_ROW_HEIGHT
+    };
+
+    let mut draw = |ui: &mut Ui| {
+        ui.spacing_mut().item_spacing.y = 1.0;
         ui.label(
             egui::RichText::new(label)
-                .size(9.0)
+                .size(label_size)
                 .color(tokens.text_muted),
         );
         if ui
@@ -459,79 +524,158 @@ fn fx_drag_f32(
         {
             changed = true;
         }
-    });
+    };
+
+    if stacked {
+        ui.allocate_ui_with_layout(
+            egui::vec2(cell_w, row_h),
+            egui::Layout::top_down(egui::Align::LEFT),
+            draw,
+        );
+    } else {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            draw(ui);
+        });
+    }
     changed
 }
 
-fn draw_fx_slot_params(ui: &mut Ui, slot: &mut EffectSlotUi) -> bool {
+fn draw_fx_slot_params(ui: &mut Ui, slot: &mut EffectSlotUi, layout: FxParamLayout, scale: f32) -> bool {
     let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 3.0;
-        match slot.effect_type {
-            EffectType::Chorus => {
-                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
-                    changed = true;
-                }
-                if fx_drag_f32(ui, "Rate", &mut slot.rate, 0.05..=8.0, 0.02, "Hz") {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Depth", &mut slot.depth, 1.0) {
-                    changed = true;
-                }
+    match layout {
+        FxParamLayout::CompactRow => {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                changed |= draw_effect_params(ui, slot, false, 0.0);
+            });
+        }
+        FxParamLayout::SidebarStack => {
+            let avail_w = ui.available_width();
+            let gap = 4.0;
+            let half_w = ((avail_w - gap) * 0.5).max(FX_SIDEBAR_DRAG_MIN_WIDTH * scale);
+            let full_w = avail_w.max(FX_SIDEBAR_DRAG_MIN_WIDTH * scale);
+
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                changed |= draw_effect_params_row1(ui, slot, true, half_w);
+            });
+            ui.horizontal(|ui| {
+                changed |= draw_effect_params_row2(ui, slot, true, full_w);
+            });
+        }
+    }
+    changed
+}
+
+fn draw_effect_params_row1(
+    ui: &mut Ui,
+    slot: &mut EffectSlotUi,
+    stacked: bool,
+    cell_w: f32,
+) -> bool {
+    let mut changed = false;
+    match slot.effect_type {
+        EffectType::Chorus => {
+            if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0, stacked, cell_w) {
+                changed = true;
             }
-            EffectType::Delay => {
-                if fx_drag_f32(ui, "Time", &mut slot.time_ms, 1.0..=2000.0, 1.0, "ms") {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "FB", &mut slot.feedback, 0.95) {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
-                    changed = true;
-                }
-            }
-            EffectType::Reverb => {
-                if fx_drag_pct(ui, "Size", &mut slot.size, 1.0) {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Damp", &mut slot.damping, 1.0) {
-                    changed = true;
-                }
-            }
-            EffectType::Distortion => {
-                if fx_drag_pct(ui, "Drive", &mut slot.drive, 1.0) {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Tone", &mut slot.tone, 1.0) {
-                    changed = true;
-                }
-            }
-            EffectType::Compressor => {
-                if fx_drag_f32(
-                    ui,
-                    "Thr",
-                    &mut slot.threshold,
-                    -60.0..=0.0,
-                    0.25,
-                    "dB",
-                ) {
-                    changed = true;
-                }
-                if fx_drag_f32(ui, "Ratio", &mut slot.ratio, 1.0..=20.0, 0.05, ":1") {
-                    changed = true;
-                }
-                if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0) {
-                    changed = true;
-                }
+            if fx_drag_f32(ui, "Rate", &mut slot.rate, 0.05..=8.0, 0.02, "Hz", stacked, cell_w) {
+                changed = true;
             }
         }
-    });
+        EffectType::Delay => {
+            if fx_drag_f32(ui, "Time", &mut slot.time_ms, 1.0..=2000.0, 1.0, "ms", stacked, cell_w) {
+                changed = true;
+            }
+            if fx_drag_pct(ui, "FB", &mut slot.feedback, 0.95, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Reverb => {
+            if fx_drag_pct(ui, "Size", &mut slot.size, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+            if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Distortion => {
+            if fx_drag_pct(ui, "Drive", &mut slot.drive, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+            if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Compressor => {
+            if fx_drag_f32(
+                ui,
+                "Thr",
+                &mut slot.threshold,
+                -60.0..=0.0,
+                0.25,
+                "dB",
+                stacked,
+                cell_w,
+            ) {
+                changed = true;
+            }
+            if fx_drag_f32(ui, "Ratio", &mut slot.ratio, 1.0..=20.0, 0.05, ":1", stacked, cell_w) {
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+fn draw_effect_params_row2(
+    ui: &mut Ui,
+    slot: &mut EffectSlotUi,
+    stacked: bool,
+    cell_w: f32,
+) -> bool {
+    let mut changed = false;
+    match slot.effect_type {
+        EffectType::Chorus => {
+            if fx_drag_pct(ui, "Depth", &mut slot.depth, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Delay => {
+            if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Reverb => {
+            if fx_drag_pct(ui, "Damp", &mut slot.damping, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Distortion => {
+            if fx_drag_pct(ui, "Tone", &mut slot.tone, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+        EffectType::Compressor => {
+            if fx_drag_pct(ui, "Mix", &mut slot.mix, 1.0, stacked, cell_w) {
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+fn draw_effect_params(
+    ui: &mut Ui,
+    slot: &mut EffectSlotUi,
+    stacked: bool,
+    cell_w: f32,
+) -> bool {
+    let mut changed = draw_effect_params_row1(ui, slot, stacked, cell_w);
+    if draw_effect_params_row2(ui, slot, stacked, cell_w) {
+        changed = true;
+    }
     changed
 }
 
@@ -567,17 +711,26 @@ fn draw_fx_slot_column(
         }
         .show(ui, |ui| {
             ui.set_min_height(metrics.card_height - 6.0);
+            let show_slot_index = metrics.param_layout == FxParamLayout::SidebarStack;
             ui.horizontal(|ui| {
-                let title_color = if bypassed {
-                    tokens.text_secondary
+                if show_slot_index {
+                    ui.label(
+                        egui::RichText::new(format!("FX {}", idx + 1))
+                            .size(FX_SIDEBAR_LABEL_SIZE)
+                            .color(tokens.text_muted),
+                    );
                 } else {
-                    tokens.text
-                };
-                ui.label(
-                    egui::RichText::new(slots[idx].effect_type.label())
-                        .size(11.0)
-                        .color(title_color),
-                );
+                    let title_color = if bypassed {
+                        tokens.text_secondary
+                    } else {
+                        tokens.text
+                    };
+                    ui.label(
+                        egui::RichText::new(slots[idx].effect_type.label())
+                            .size(11.0)
+                            .color(title_color),
+                    );
+                }
                 ui.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),
                     |ui| {
@@ -590,11 +743,16 @@ fn draw_fx_slot_column(
                     },
                 );
             });
-            if draw_fx_slot_params(ui, &mut slots[idx]) {
+            if draw_fx_slot_params(ui, &mut slots[idx], metrics.param_layout, metrics.scale) {
                 changed = true;
             }
         });
 
+        let icon_strip = if metrics.param_layout == FxParamLayout::SidebarStack {
+            FX_SIDEBAR_ICON_STRIP_WIDTH * metrics.scale
+        } else {
+            56.0
+        };
         ui.allocate_ui_with_layout(
             egui::vec2(metrics.slot_width, metrics.controls_height),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -613,7 +771,7 @@ fn draw_fx_slot_column(
                     changed = true;
                     return;
                 }
-                let combo_w = (ui.available_width() - 56.0).max(48.0);
+                let combo_w = (ui.available_width() - icon_strip).max(48.0);
                 reel_combo(
                     ui,
                     format!("fx_type_{idx}"),
@@ -644,7 +802,8 @@ fn draw_fx_slot_column(
 
     let slot_rect = column.response.rect;
     record_region(ui.ctx(), AuditId::OscFxSlot(idx), slot_rect, slot_rect);
-    let header_h = 20.0_f32;
+    let header_h = metrics.title_height;
+    let footer_h = metrics.controls_height;
     let header_rect = egui::Rect::from_min_max(
         slot_rect.min,
         egui::pos2(slot_rect.max.x, slot_rect.min.y + header_h),
@@ -657,7 +816,7 @@ fn draw_fx_slot_column(
     );
     let params_rect = egui::Rect::from_min_max(
         egui::pos2(slot_rect.min.x, slot_rect.min.y + header_h),
-        slot_rect.max,
+        egui::pos2(slot_rect.max.x, slot_rect.max.y - footer_h),
     );
     record_region(
         ui.ctx(),
@@ -750,5 +909,23 @@ mod bridge_tests {
         assert!((engine.time_ms - 420.0).abs() < 1e-3);
         assert!((engine.feedback - 0.55).abs() < 1e-4);
         assert!((engine.mix - 0.6).abs() < 1e-4);
+    }
+
+    #[test]
+    fn sidebar_stack_fits_osc_column_width() {
+        use crate::layout::{OSC_COLUMN_WIDTH, sidebar_fx_card_body_height, sidebar_fx_slot_height};
+
+        let scale = 1.0;
+        let slot_w = OSC_COLUMN_WIDTH;
+        let gap = 4.0;
+        let half_w = ((slot_w - gap) * 0.5).max(FX_SIDEBAR_DRAG_MIN_WIDTH * scale);
+        assert!(
+            half_w * 2.0 + gap <= slot_w + 0.5,
+            "two stacked param cells must fit in {slot_w}px column (used {:.1})",
+            half_w * 2.0 + gap
+        );
+        let old_slot_h = (14.0 + 18.0 + 6.0 + 18.0) * scale + GRID_UNIT * scale * 0.5;
+        assert!(sidebar_fx_slot_height(scale) > old_slot_h);
+        assert!((sidebar_fx_card_body_height(scale) - 72.0 * scale).abs() < 0.5);
     }
 }

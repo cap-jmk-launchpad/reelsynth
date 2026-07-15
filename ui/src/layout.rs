@@ -82,10 +82,20 @@ pub fn sidebar_panel_chrome_height(scale: f32, with_meta: bool) -> f32 {
     frame + title_block + meta_block
 }
 
+/// Card body in the sidebar FX chain (header + 2 param rows + padding).
+pub fn sidebar_fx_card_body_height(scale: f32) -> f32 {
+    let s = scale;
+    (20.0 + 22.0 * 2.0 + 8.0) * s
+}
+
+/// Footer row height for a sidebar FX slot (reorder icons + type combo).
+pub fn sidebar_fx_footer_height(scale: f32) -> f32 {
+    22.0 * scale
+}
+
 /// One full-width FX slot in the sidebar chain (card + footer row).
 pub fn sidebar_fx_slot_height(scale: f32) -> f32 {
-    let s = scale;
-    (14.0 + 18.0 + 6.0 + 18.0) * s + GRID_UNIT * s * 0.5
+    sidebar_fx_card_body_height(scale) + sidebar_fx_footer_height(scale) + GRID_UNIT * scale * 0.5
 }
 
 /// Fixed FX viewport height — extra slots scroll inside the panel.
@@ -94,7 +104,7 @@ pub fn sidebar_fx_min_height(scale: f32, _slot_count: usize) -> f32 {
     let chrome = sidebar_panel_chrome_height(s, true);
     let slot_h = sidebar_fx_slot_height(s);
     let add_row = 28.0 * s;
-    chrome + slot_h * 2.0 + add_row
+    chrome + slot_h * 2.25 + add_row
 }
 
 /// Split left column: osc scroll on top, FX grid + mod matrix stacked at bottom.
@@ -129,8 +139,14 @@ pub fn osc_column_split_heights(
     } else {
         0.0
     };
+    let (mod_cap_frac, fx_cap_frac) = if show_fx && show_mod {
+        (0.30, 0.38)
+    } else {
+        (0.36, 1.0)
+    };
     let mod_h = if show_mod {
-        sidebar_mod_min_height(scale, 5).min(total_h * 0.36)
+        sidebar_mod_min_height(scale, 5)
+            .min(total_h * mod_cap_frac)
     } else {
         0.0
     };
@@ -139,9 +155,14 @@ pub fn osc_column_split_heights(
     } else {
         0.0
     };
+    let fx_cap = if show_fx && show_mod {
+        total_h * fx_cap_frac
+    } else {
+        total_h
+    };
     let mut fx_h = if show_fx {
         let budget = (total_h - min_osc - mod_h - stack_gap).max(min_fx);
-        min_fx.min(budget)
+        min_fx.min(budget).min(fx_cap)
     } else {
         0.0
     };

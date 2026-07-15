@@ -599,10 +599,15 @@ fn parent_bounds(
         | AuditId::OscSpreadSlider => Some(AuditId::OscPanelOscillators),
         AuditId::OscStackLayerRow(_) => Some(AuditId::OscPanelStack),
         AuditId::OscFmAlgorithm | AuditId::OscFmKnobs => Some(AuditId::OscPanelFm),
-        AuditId::OscFxSlot(_)
-        | AuditId::OscFxSlotHeader(_)
-        | AuditId::OscFxSlotParams(_)
-        | AuditId::OscFxAddBtn => Some(AuditId::OscFxPanel),
+        AuditId::OscFxSlot(_) | AuditId::OscFxAddBtn => Some(AuditId::OscFxPanel),
+        AuditId::OscFxSlotHeader(i) | AuditId::OscFxSlotParams(i) => {
+            if let Some(entry) = map.get(&AuditId::OscFxSlot(i)) {
+                return entry.allocated.or(entry.used);
+            }
+            return map
+                .get(&AuditId::OscFxPanel)
+                .and_then(|e| e.allocated.or(e.used));
+        }
         AuditId::OscModRow(_)
         | AuditId::OscModSourceSelect(_)
         | AuditId::OscModTargetSelect(_)
