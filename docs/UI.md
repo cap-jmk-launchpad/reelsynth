@@ -131,9 +131,10 @@ Empty stack → full-width frame strip only.
 When **Quant** > 0 and tool is **Select**:
 
 - Vertical grid at each slot; **knob handles** at waveform intersections (hover when quant > 64)
-- Drag snaps X to nearest slot on press; **locks slot** for entire gesture; fine Y maps to slot frame
+- Drag snaps X to nearest slot on press; **locks slot** for entire gesture; fine Y edits **amplitude** (wave height) at that quant point
 - **Curve** tool still edits slot→frame morph map; Select handles edit wave shape at quant points
 - **Pencil** hidden when quant > 0 — use Select + handles instead
+- The performance **piano/keyboard** fills the full-width band above the status footer; left/right sidebars stop above that band and never render into it
 
 Factory Lead loads with three stack layers (saw + sine + wavetable); save/reload preserves `wave_layers`, `invert`, and `stack_mode`.
 

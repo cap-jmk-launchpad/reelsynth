@@ -268,9 +268,11 @@ pub fn embed_mod_in_rail(options: ShellLayoutOptions) -> bool {
     embed_mod_in_osc_column(options)
 }
 
-/// Piano sits at the bottom of the center column when the osc column is visible.
-pub fn embed_piano_in_center(options: ShellLayoutOptions) -> bool {
-    options.piano_visible && options.show_osc_column
+/// Piano always uses the full-width wrap band above the footer so left/right
+/// sidebars never occupy the keyboard strip. Kept as a function for call sites
+/// and audits; returns false for every shell option set.
+pub fn embed_piano_in_center(_options: ShellLayoutOptions) -> bool {
+    false
 }
 
 impl ShellLayout {
@@ -466,13 +468,16 @@ mod tests {
             fx_rack_open: true,
         };
         let layout = ShellLayout::compute_with_options(screen, options);
-        // Mod/FX in sidebars, piano in center — no full-width bottom strips.
+        // Mod/FX in sidebars; piano is a full-width band above the footer.
         assert!(!layout.mod_matrix.is_positive());
         assert!(!layout.fx_rack.is_positive());
-        assert!(!layout.piano_wrap.is_positive());
+        assert!(layout.piano_wrap.is_positive());
+        assert!((layout.piano_wrap.width() - screen.width()).abs() < 0.5);
+        assert!(layout.piano_wrap.max.y <= layout.footer.min.y + 0.5);
+        assert!(layout.main.max.y <= layout.piano_wrap.min.y + 0.5);
         assert!(embed_fx_in_osc_column(options));
         assert!(embed_mod_in_rail(options));
-        assert!(embed_piano_in_center(options));
+        assert!(!embed_piano_in_center(options));
         assert!(layout.main.height() > 400.0);
         assert_eq!(layout.footer.max.y, screen.max.y);
     }

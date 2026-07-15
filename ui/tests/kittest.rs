@@ -16,11 +16,12 @@ use reelsynth_ui::{
     default_effect_slots, draw_shell, embed_piano_in_center, osc_type_index, record_region,
     record_used, AuditId, REGISTRY_VARIANT_COUNT, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
     ShellMode, WtView3dMode,
-    center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
+    center_morph_used_rect_id, center_scope_used_rect_id,
     center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id, footer_used_rect_id,
     fx_strip_used_rect_id, header_used_rect_id, mod_strip_used_rect_id,
     osc_fx_allocated_rect_id, osc_fx_used_rect_id, osc_mod_allocated_rect_id, osc_mod_used_rect_id,
-    osc_used_rect_id, rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id,
+    osc_used_rect_id, piano_used_rect_id, rail_filter_allocated_rect_id, rail_filter_used_rect_id,
+    rail_used_rect_id,
     ShellConfig, UiState, APP_HEIGHT_FULL, APP_MIN_WIDTH, APP_WIDTH, SPACE_SM, utilization,
 };
 use reelsynth_ui::widgets::{adsr_graph, button_ghost, button_toggle, labeled_select, panel_audit, reel_combo, select_value_text, tab_bar, Knob, KnobSize, PianoKeyboard};
@@ -385,21 +386,37 @@ fn interface_used_rects_within_allocated_min_window() {
 
     let osc_used = get_used(&harness.ctx, osc_used_rect_id(), "osc");
     assert!(
-        fits_max_slack(layout.rail, osc_used, 12.0),
+        fits_max_slack(layout.osc, osc_used, 12.0),
         "osc used rect out of bounds: used={osc_used:?} osc={:?}",
-        layout.rail
+        layout.osc
     );
 
     let rail_used = get_used(&harness.ctx, rail_used_rect_id(), "rail");
     assert!(rail_used.max.y <= layout.rail.max.y + 0.5);
-
-    let piano_used = get_used(&harness.ctx, center_piano_used_rect_id(), "center piano");
     assert!(
-        fits_max_slack(center_regions.piano, piano_used, 12.0),
-        "piano used rect out of bounds: used={piano_used:?} piano={:?}",
-        center_regions.piano
+        layout.rail.max.y <= layout.piano_wrap.min.y + 0.5,
+        "right rail must end above full-width piano"
     );
-    assert!(!layout.piano_wrap.is_positive());
+    assert!(
+        layout.osc.max.y <= layout.piano_wrap.min.y + 0.5,
+        "left osc column must end above full-width piano"
+    );
+
+    assert!(layout.piano_wrap.is_positive());
+    assert!((layout.piano_wrap.width() - layout.footer.width()).abs() < 0.5);
+    assert!(!center_regions.piano.is_positive());
+    let piano_used = get_used(&harness.ctx, piano_used_rect_id(), "piano wrap");
+    assert!(
+        fits_max_slack(layout.piano_wrap, piano_used, 12.0),
+        "piano used rect out of bounds: used={piano_used:?} piano={:?}",
+        layout.piano_wrap
+    );
+    // Sidebar paint must not land in the keyboard band.
+    assert!(
+        rail_used.max.y <= layout.piano_wrap.min.y + 12.0,
+        "rail content spills into piano: rail_used={rail_used:?} piano={:?}",
+        layout.piano_wrap
+    );
 
     let footer_used = get_used(&harness.ctx, footer_used_rect_id(), "footer");
     assert!(fits_max_slack(layout.footer, footer_used, 12.0));
@@ -432,9 +449,6 @@ fn interface_used_rects_within_allocated_min_window() {
     );
 
     audit_osc_sidebar_stacks(&harness.ctx);
-
-    let piano_region_used = get_used(&harness.ctx, center_piano_used_rect_id(), "center piano widget");
-    assert!(fits_max_slack(center_regions.piano, piano_region_used, 12.0));
 
     // Bottom strips only exist when not in sidebars; should be absent here.
     assert!(harness.ctx.data(|d| d.get_temp::<egui::Rect>(mod_strip_used_rect_id())).is_none());
@@ -803,8 +817,26 @@ fn design_chord_grid() {
 }
 
 #[test]
-fn design_embedded_piano() {
+fn design_full_width_piano() {
     let run = run_shell_audit(ShellAuditScenario::default());
+    assert!(run.layout.piano_wrap.is_positive());
+    assert!((run.layout.piano_wrap.width() - run.size[0]).abs() < 1.0);
+    assert!(run.layout.rail.max.y <= run.layout.piano_wrap.min.y + 0.5);
+    assert!(run.layout.osc.max.y <= run.layout.piano_wrap.min.y + 0.5);
+    assert!(!embed_piano_in_center(run.layout_options));
+    let piano_used = run.ctx.data(|d| d.get_temp::<Rect>(piano_used_rect_id()));
+    assert!(piano_used.is_some());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_quant_handles() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.wt_edit_tool = reelsynth_ui::wt::WtEditTool::Select;
+    scenario.state.oscillators[0].wave_quant = 16;
+    let run = run_shell_audit(scenario);
+    let plot = audit_id_rect(&run.ctx, AuditId::CenterWt2dPlot);
+    assert!(plot.is_some(), "2d plot region should be recorded for quant handles");
     assert_full_ui_audit(&run, &default_audit_options());
 }
 

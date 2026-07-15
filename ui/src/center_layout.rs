@@ -207,7 +207,7 @@ mod tests {
         };
         let scale = layout.scale.ui();
         let inner = layout.center.shrink(SPACE_SM * scale);
-        let regions = compute_center_regions(inner, &config, scale, true);
+        let regions = compute_center_regions(inner, &config, scale, false);
 
         for (name, rect) in regions.named() {
             if rect.is_positive() {
@@ -218,11 +218,15 @@ mod tests {
             }
         }
         audit_center(layout.center, &regions, scale);
-        assert!(regions.piano.is_positive());
+        assert!(!regions.piano.is_positive());
         assert!(regions.wt_views.is_positive());
         assert!(!regions.fx_rack.is_positive());
         assert!(!regions.mod_matrix.is_positive());
-        assert!(regions.wt_views.height() > regions.piano.height());
+        assert!(layout.piano_wrap.is_positive());
+        assert!(
+            regions.wt_views.height() > layout.piano_wrap.height() * 0.5,
+            "views should keep substantial height with full-width piano"
+        );
     }
 
     fn within(rect: Rect, outer: Rect) -> bool {

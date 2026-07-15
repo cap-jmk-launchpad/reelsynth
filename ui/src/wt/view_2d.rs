@@ -10,7 +10,7 @@ use crate::region::region;
 
 use super::curve_editor::CurveEditor;
 use super::mod_preview::{has_position_mod_routes, preview_mod_sources, preview_position_mod};
-use super::quant_handles::{nearest_slot, QuantHandleEditor, slot_x};
+use super::quant_handles::{QuantHandleEditor, slot_x};
 use super::shape_editor::ShapeEditor;
 use super::slots::{apply_slot_selection, effective_quant_count};
 use super::toolbar::{WtEditTool, WtToolbar, WtToolbarResponse};
@@ -364,27 +364,7 @@ impl WtView2d<'_> {
             egui::Stroke::new(1.0_f32, tokens.border.gamma_multiply(0.75)),
         );
 
-        let label = if let Some(name) = self.bank_name {
-            if pos_mod.abs() > 0.01 {
-                format!(
-                    "2D Waveform · {name} · frame {frame_idx} → {:.0}",
-                    modulated_pos
-                )
-            } else {
-                format!("2D Waveform · {name} · frame {frame_idx}")
-            }
-        } else if pos_mod.abs() > 0.01 {
-            format!("2D Waveform · frame {frame_idx} → {:.0}", modulated_pos)
-        } else {
-            format!("2D Waveform · frame {frame_idx}")
-        };
-        painter.text(
-            Pos2::new(plot_rect.min.x + 8.0, plot_rect.min.y + 4.0),
-            egui::Align2::LEFT_TOP,
-            label,
-            egui::FontId::proportional(10.0),
-            tokens.text_secondary,
-        );
+        let mut status_override: Option<String> = None;
 
         if *self.tool == WtEditTool::Pencil {
             if let Some(bank) = self.bank.as_mut() {
@@ -431,20 +411,46 @@ impl WtView2d<'_> {
         }
 
         if *self.tool == WtEditTool::Select && self.wave_quant > 0 {
-            if let Some(bank) = self.bank.as_ref() {
+            if let Some(bank) = self.bank.as_mut() {
                 let editor = QuantHandleEditor {
                     plot_rect: inner,
                     wave_quant: self.wave_quant,
-                    wave_slots: self.wave_slots.as_mut_slice(),
                     bank,
                     frame_idx,
                 };
                 let qh = editor.show(ui);
-                if qh.changed {
-                    slots_changed = true;
+                if qh.frame_edited {
+                    frame_edited = true;
+                }
+                if let Some(label) = qh.status_label {
+                    status_override = Some(label);
                 }
             }
         }
+
+        let label = status_override.unwrap_or_else(|| {
+            if let Some(name) = self.bank_name {
+                if pos_mod.abs() > 0.01 {
+                    format!(
+                        "2D Waveform · {name} · frame {frame_idx} → {:.0}",
+                        modulated_pos
+                    )
+                } else {
+                    format!("2D Waveform · {name} · frame {frame_idx}")
+                }
+            } else if pos_mod.abs() > 0.01 {
+                format!("2D Waveform · frame {frame_idx} → {:.0}", modulated_pos)
+            } else {
+                format!("2D Waveform · frame {frame_idx}")
+            }
+        });
+        painter.text(
+            Pos2::new(plot_rect.min.x + 8.0, plot_rect.min.y + 4.0),
+            egui::Align2::LEFT_TOP,
+            label,
+            egui::FontId::proportional(10.0),
+            tokens.text_secondary,
+        );
 
         if analyze_requested {
             stack_changed = true;
