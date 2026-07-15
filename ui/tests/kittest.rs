@@ -898,7 +898,11 @@ fn widget_audit_registry_harness() {
                             ui.min_rect(),
                         );
                         let graph_before = ui.min_rect();
-                        adsr_graph(ui, 0.01, 0.2, 0.7, 0.3, 1.0);
+                        let mut a = 0.01_f32;
+                        let mut d = 0.2;
+                        let mut s = 0.7;
+                        let mut r = 0.3;
+                        adsr_graph(ui, &mut a, &mut d, &mut s, &mut r, 1.0);
                         record_region(
                             ui.ctx(),
                             AuditId::WidgetAdsrGraph,

@@ -25,6 +25,7 @@ pub fn panel_audit<R>(
         ..Default::default()
     }
     .show(ui, |ui| {
+        ui.set_width(ui.available_width());
         let display = if let Some(base) = title.strip_suffix(" (locked)") {
             format!("{} (locked)", base.to_uppercase())
         } else {

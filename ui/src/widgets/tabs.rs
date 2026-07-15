@@ -12,11 +12,16 @@ pub fn tab_bar(ui: &mut Ui, tabs: &[&str], selected: &mut usize) {
         .rounding(Rounding::same(8.0))
         .inner_margin(Margin::symmetric(2.0, 2.0))
         .show(ui, |ui| {
+            ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
+                let n = tabs.len().max(1);
+                let gap = ui.spacing().item_spacing.x;
+                let total_gap = gap * (n.saturating_sub(1) as f32);
+                let tab_w = ((ui.available_width() - total_gap) / n as f32).max(1.0);
                 for (i, label) in tabs.iter().enumerate() {
                     let active = *selected == i;
-                    if tab_item(ui, label, active).clicked() {
+                    if tab_item(ui, label, active, tab_w).clicked() {
                         *selected = i;
                     }
                 }
@@ -24,7 +29,7 @@ pub fn tab_bar(ui: &mut Ui, tabs: &[&str], selected: &mut usize) {
         });
 }
 
-fn tab_item(ui: &mut Ui, label: &str, active: bool) -> egui::Response {
+fn tab_item(ui: &mut Ui, label: &str, active: bool, width: f32) -> egui::Response {
     let tokens = Tokens::default();
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
@@ -35,9 +40,8 @@ fn tab_item(ui: &mut Ui, label: &str, active: bool) -> egui::Response {
             tokens.text_muted
         },
     );
-    let pad_x = 10.0;
     let pad_y = 4.0;
-    let size = egui::vec2(galley.size().x + pad_x * 2.0, galley.size().y + pad_y * 2.0);
+    let size = egui::vec2(width, galley.size().y + pad_y * 2.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
 
     if ui.is_rect_visible(rect) {

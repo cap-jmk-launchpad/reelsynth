@@ -1,11 +1,11 @@
-use egui::{Grid, Pos2, Rect, Ui};
+use egui::{Grid, Rect, Ui};
 use reelsynth_ui_theme::Tokens;
 
 use super::*;
 use super::footer::{draw_level_meter, format_cutoff};
 use super::header::sync_osc_position_from_wt;
 use crate::audit_registry::{record_region, record_used, AuditId};
-use crate::layout::{CENTER_GAP, UiScale};
+use crate::layout::{CENTER_GAP, KNOB_COL_WIDTH, UiScale};
 use crate::layout_audit::{
     rail_filter_allocated_rect_id, rail_filter_used_rect_id, rail_used_rect_id,
 };
@@ -121,13 +121,16 @@ fn draw_rail_panels(
         panel_audit(ui, "Filter Envelope", Some(AuditId::RailPanelFiltEnv), |ui| {
             let graph = adsr_graph(
                 ui,
-                state.filt_env_attack,
-                state.filt_env_decay,
-                state.filt_env_sustain,
-                state.filt_env_release,
+                &mut state.filt_env_attack,
+                &mut state.filt_env_decay,
+                &mut state.filt_env_sustain,
+                &mut state.filt_env_release,
                 s * 0.85,
             );
-            record_used(ui.ctx(), AuditId::RailFiltEnvGraph, graph.rect);
+            if graph.changed {
+                actions.params_changed = true;
+            }
+            record_used(ui.ctx(), AuditId::RailFiltEnvGraph, graph.response.rect);
             ui.add_space(GRID_UNIT * s * 0.5);
             let knobs_start = ui.cursor().min;
             env_knobs(
@@ -145,13 +148,16 @@ fn draw_rail_panels(
         panel_audit(ui, "Amp Envelope", Some(AuditId::RailPanelAmpEnv), |ui| {
             let graph = adsr_graph(
                 ui,
-                state.env_attack,
-                state.env_decay,
-                state.env_sustain,
-                state.env_release,
+                &mut state.env_attack,
+                &mut state.env_decay,
+                &mut state.env_sustain,
+                &mut state.env_release,
                 s * 0.85,
             );
-            record_used(ui.ctx(), AuditId::RailAmpEnvGraph, graph.rect);
+            if graph.changed {
+                actions.params_changed = true;
+            }
+            record_used(ui.ctx(), AuditId::RailAmpEnvGraph, graph.response.rect);
             ui.add_space(GRID_UNIT * s * 0.5);
             let knobs_start = ui.cursor().min;
             env_knobs(
@@ -168,8 +174,10 @@ fn draw_rail_panels(
 
         panel_audit(ui, "LFOs", Some(AuditId::RailPanelLfos), |ui| {
             ui.spacing_mut().item_spacing.y = GRID_UNIT * s;
-            let narrow = ui.available_width() < 180.0 * s;
-            if narrow {
+            let knob_row = KNOB_COL_WIDTH * s * 2.0 + SPACE_SM * s;
+            let min_pair_w = knob_row * 2.0 + SPACE_SM * s;
+            let side_by_side = ui.available_width() >= min_pair_w;
+            if !side_by_side {
                 let lfo1_start = ui.cursor().min;
                 lfo_block(
                     ui,
@@ -538,6 +546,7 @@ fn lfo_panel(
     actions: &mut ShellActions,
     scale: f32,
 ) {
+    ui.set_max_width(ui.available_width());
     ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = SPACE_SM * scale;
         let rate_text = format_lfo_rate(*rate);
@@ -558,8 +567,10 @@ fn lfo_panel(
             actions.params_changed = true;
         }
     });
-    let shapes = ["Sine", "Tri", "Saw", "S&H"];
-    if labeled_select(ui, "Shape", &shapes, shape) {
-        actions.params_changed = true;
-    }
+    ui.horizontal(|ui| {
+        ui.set_max_width(ui.available_width());
+        if labeled_select(ui, "Shape", &["Sine", "Tri", "Saw", "S&H"], shape) {
+            actions.params_changed = true;
+        }
+    });
 }

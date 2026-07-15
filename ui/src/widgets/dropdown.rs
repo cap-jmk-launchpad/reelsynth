@@ -49,7 +49,7 @@ pub fn labeled_select(
         ui.with_layout(
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
-                let w = ui.available_width().max(108.0);
+                let w = ui.available_width().max(72.0);
                 let label = options[(*selected).min(options.len().saturating_sub(1))];
                 reel_combo(
                     ui,
