@@ -64,7 +64,14 @@ impl WavetableBank {
 
     /// Sample at wavetable position (0..num_frames-1) and phase (0..1).
     pub fn sample(&self, position: f32, phase: f32) -> f32 {
-        self.sample_warped(position, phase, crate::osc::WtWarpMode::None, 0.0)
+        self.sample_with_inc(position, phase, 0.0)
+    }
+
+    /// Sample with phase increment for band-limited wrap correction.
+    ///
+    /// When `phase_inc` is 0, wrap BLEP is skipped (legacy / static sampling).
+    pub fn sample_with_inc(&self, position: f32, phase: f32, phase_inc: f32) -> f32 {
+        self.sample_warped_inc(position, phase, crate::osc::WtWarpMode::None, 0.0, phase_inc)
     }
 
     /// Sample with optional phase warp (sync / bend).
@@ -75,6 +82,18 @@ impl WavetableBank {
         warp: crate::osc::WtWarpMode,
         warp_amount: f32,
     ) -> f32 {
+        self.sample_warped_inc(position, phase, warp, warp_amount, 0.0)
+    }
+
+    /// Sample with warp and optional polyBLEP wrap correction when `phase_inc` > 0.
+    pub fn sample_warped_inc(
+        &self,
+        position: f32,
+        phase: f32,
+        warp: crate::osc::WtWarpMode,
+        warp_amount: f32,
+        phase_inc: f32,
+    ) -> f32 {
         if self.num_frames == 0 || self.frame_size == 0 {
             return 0.0;
         }
@@ -84,8 +103,8 @@ impl WavetableBank {
         let idx1 = (idx0 + 1).min(self.num_frames - 1);
         let frac = pos - idx0 as f32;
 
-        let s0 = self.sample_frame(idx0, warped_phase);
-        let s1 = self.sample_frame(idx1, warped_phase);
+        let s0 = self.sample_frame_blep(idx0, warped_phase, phase_inc);
+        let s1 = self.sample_frame_blep(idx1, warped_phase, phase_inc);
         if frac < 1e-6 || idx0 == idx1 {
             s0
         } else {
@@ -93,14 +112,21 @@ impl WavetableBank {
         }
     }
 
-    fn sample_frame(&self, frame_idx: usize, phase: f32) -> f32 {
+    fn sample_frame_blep(&self, frame_idx: usize, phase: f32, phase_inc: f32) -> f32 {
         let frame = self.frame(frame_idx);
+        let n = self.frame_size;
         let p = phase.fract();
-        let pos = p * self.frame_size as f32;
-        let i0 = pos.floor() as usize % self.frame_size;
-        let i1 = (i0 + 1) % self.frame_size;
+        let pos = p * n as f32;
+        let i0 = pos.floor() as usize % n;
+        let i1 = (i0 + 1) % n;
         let f = pos - i0 as f32;
-        frame[i0] * (1.0 - f) + frame[i1] * f
+        let mut out = frame[i0] * (1.0 - f) + frame[i1] * f;
+        if phase_inc > 0.0 && n > 1 {
+            // Match VA saw scaling: discontinuity height ~2 uses half-weighted polyBLEP.
+            let seam = frame[n - 1] - frame[0];
+            out -= crate::osc::va::poly_blep(p, phase_inc) * seam * 0.5;
+        }
+        out
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -375,6 +401,72 @@ mod tests {
             );
             prev = cur;
         }
+    }
+
+    /// Phase wrap on saw_morph frame 0 has a seam ≈ 2.0 without BLEP.
+    /// Band-limited wrap must keep consecutive-sample jumps in the VA-blep ballpark
+    /// and clearly better than the naive seam.
+    #[test]
+    fn phase_wrap_jump_is_bandlimited() {
+        let bank = WavetableBank::factory_saw_morph();
+        let sr = 44_100.0f32;
+        let freq = 440.0;
+        let phase_inc = freq / sr;
+        let pos = 0.0f32;
+
+        let mut phase = 1.0 - 6.0 * phase_inc;
+        let mut prev_raw = bank.sample(pos, phase);
+        let mut prev = bank.sample_with_inc(pos, phase, phase_inc);
+        let mut max_jump = 0.0f32;
+        let mut max_raw = 0.0f32;
+        for _ in 0..12 {
+            phase = (phase + phase_inc).fract();
+            let cur_raw = bank.sample(pos, phase);
+            let cur = bank.sample_with_inc(pos, phase, phase_inc);
+            max_raw = max_raw.max((cur_raw - prev_raw).abs());
+            max_jump = max_jump.max((cur - prev).abs());
+            prev_raw = cur_raw;
+            prev = cur;
+        }
+        assert!(
+            max_raw > 1.5,
+            "precondition: naive wrap must be discontinuous (raw={max_raw})"
+        );
+        assert!(
+            max_jump < 1.05,
+            "phase-wrap jump too large (got {max_jump}); expected VA-comparable blep"
+        );
+        assert!(
+            max_jump < max_raw * 0.6,
+            "wrap not improved enough: blep={max_jump} raw={max_raw}"
+        );
+    }
+
+    #[test]
+    fn factory_lead_wt_position_wrap_is_bandlimited() {
+        let bank = WavetableBank::factory_saw_morph();
+        let phase_inc = 440.0 / 44_100.0;
+        let pos = 108.0f32;
+
+        let mut phase = 1.0 - 6.0 * phase_inc;
+        let mut prev_raw = bank.sample(pos, phase);
+        let mut prev = bank.sample_with_inc(pos, phase, phase_inc);
+        let mut max_jump = 0.0f32;
+        let mut max_raw = 0.0f32;
+        for _ in 0..12 {
+            phase = (phase + phase_inc).fract();
+            let cur_raw = bank.sample(pos, phase);
+            let cur = bank.sample_with_inc(pos, phase, phase_inc);
+            max_raw = max_raw.max((cur_raw - prev_raw).abs());
+            max_jump = max_jump.max((cur - prev).abs());
+            prev_raw = cur_raw;
+            prev = cur;
+        }
+        assert!(max_raw > 0.9, "precondition raw jump={max_raw}");
+        assert!(
+            max_jump < 1.05 && max_jump < max_raw * 0.65,
+            "WT pos 108 wrap jump={max_jump} raw={max_raw}"
+        );
     }
 
     #[test]

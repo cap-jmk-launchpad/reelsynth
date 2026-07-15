@@ -26,6 +26,8 @@ pub struct VoiceState {
     pub svf_band: f32,
     pub svf2_low: f32,
     pub svf2_band: f32,
+    /// 0..1 fade applied to filter output after note-on (kills HP cold-start click).
+    pub filter_fade: f32,
     pub noise_seed: u32,
     /// Previous-sample feedback for self-FM per osc slot.
     pub fm_feedback: Vec<f32>,
@@ -34,6 +36,9 @@ pub struct VoiceState {
     /// Per-voice random mod source (latched on note on).
     pub rand_mod: f32,
 }
+
+/// Soft-start window after note-on so highpass / SVF don't click on amp ramps.
+const FILTER_FADE_SECONDS: f32 = 0.008;
 
 impl VoiceState {
     pub fn new(patch: &Patch) -> Self {
@@ -54,6 +59,7 @@ impl VoiceState {
             svf_band: 0.0,
             svf2_low: 0.0,
             svf2_band: 0.0,
+            filter_fade: 0.0,
             noise_seed: 1,
             fm_feedback: vec![0.0; patch.oscillators.len().max(1)],
             lfo1_rt: LfoRuntime::default(),
@@ -80,6 +86,7 @@ impl VoiceState {
         self.svf_band = 0.0;
         self.svf2_low = 0.0;
         self.svf2_band = 0.0;
+        self.filter_fade = 0.0;
         self.noise_seed = self.noise_seed.wrapping_add(1);
         self.fm_feedback.resize(patch.oscillators.len().max(1), 0.0);
         self.fm_feedback.fill(0.0);
@@ -365,12 +372,17 @@ pub fn process_sample_stages(state: &mut VoiceState, ctx: &VoiceSampleContext<'_
         0,
     );
 
+    if state.filter_fade < 1.0 {
+        state.filter_fade = (state.filter_fade + ctx.dt / FILTER_FADE_SECONDS).min(1.0);
+    }
+    let fade = state.filter_fade;
+
     let osc_mono = (left + right) * 0.5;
     VoiceStageSample {
         osc_mono,
         filtered: [
-            filtered_l.clamp(-1.0, 1.0),
-            filtered_r.clamp(-1.0, 1.0),
+            (filtered_l * fade).clamp(-1.0, 1.0),
+            (filtered_r * fade).clamp(-1.0, 1.0),
         ],
     }
 }

@@ -72,7 +72,7 @@ pub fn sample_layer(
     } else if layer.source_type.eq_ignore_ascii_case("wavetable") {
         let max_pos = (bank.num_frames.saturating_sub(1)).max(1) as f32;
         let effective_pos = (layer.wt_position + wt_pos_offset + wt_pos_off).clamp(0.0, max_pos);
-        bank.sample_warped(effective_pos, layer_phase, warp, warp_amount)
+        bank.sample_warped_inc(effective_pos, layer_phase, warp, warp_amount, layer_inc)
     } else {
         0.0
     }

@@ -46,7 +46,12 @@ pub fn render_scope_previews(
 
     let mut voices: Vec<VoiceState> = preview_notes
         .iter()
-        .map(|_| VoiceState::new(patch))
+        .map(|_| {
+            let mut v = VoiceState::new(patch);
+            // Scope snapshots are short windows — skip note-on soft-start fade.
+            v.filter_fade = 1.0;
+            v
+        })
         .collect();
     let mut fx = FxChain::new(PREVIEW_SR as u32);
     fx.set_effects(patch.effects.clone());

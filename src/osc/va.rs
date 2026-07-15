@@ -41,7 +41,7 @@ pub fn sample_va(
 }
 
 /// Polynomial BLEP — minimum-phase band-limited step correction.
-fn blep(t: f32, dt: f32) -> f32 {
+pub(crate) fn poly_blep(t: f32, dt: f32) -> f32 {
     if dt <= 0.0 {
         return 0.0;
     }
@@ -54,6 +54,10 @@ fn blep(t: f32, dt: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+fn blep(t: f32, dt: f32) -> f32 {
+    poly_blep(t, dt)
 }
 
 fn saw_blep(phase: f32, dt: f32) -> f32 {

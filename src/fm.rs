@@ -208,7 +208,13 @@ pub fn sample_carrier_with_fm(
         let effective_phase = (carrier_phase + phase_off).fract();
         let max_pos = (bank.num_frames.saturating_sub(1)).max(1) as f32;
         let effective_pos = (wt_pos + wt_pos_off).clamp(0.0, max_pos);
-        bank.sample_warped(effective_pos, effective_phase, warp, warp_amount)
+        bank.sample_warped_inc(
+            effective_pos,
+            effective_phase,
+            warp,
+            warp_amount,
+            carrier_phase_inc,
+        )
     }
 }
 
@@ -243,7 +249,7 @@ fn sample_carrier_raw(
     if let Some(wave) = VaWaveform::from_osc_type(&osc.osc_type) {
         sample_va(wave, phase, phase_inc, osc.pulse_width)
     } else {
-        bank.sample_warped(wt_pos, phase, warp, warp_amount)
+        bank.sample_warped_inc(wt_pos, phase, warp, warp_amount, phase_inc)
     }
 }
 

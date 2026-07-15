@@ -102,6 +102,97 @@ mod tests {
         assert!(audio[100].abs() > audio[10].abs());
     }
 
+    /// Highpass after an amp envelope differentiates the attack ramp into a click.
+    /// Soft-start must keep the opening sample-to-sample jump near sustain levels.
+    #[test]
+    fn highpass_onset_soft_start_limits_click() {
+        let bank = WavetableBank::factory_sine();
+        let mut patch = Patch::default_mono();
+        patch.oscillators[0].osc_type = "sine".into();
+        patch.oscillators[0].wave_layers.clear();
+        patch.filter.filter_type = "highpass".into();
+        patch.filter.cutoff = 400.0;
+        patch.filter.resonance = 0.15;
+        patch.filter.key_tracking = 0.0;
+        patch.filter2.filter_type = "highpass".into();
+        patch.filter2.cutoff = 400.0;
+        patch.filter2.resonance = 0.15;
+        patch.filter2.key_tracking = 0.0;
+        patch.envelope = Envelope {
+            attack: 0.002,
+            decay: 0.01,
+            sustain: 1.0,
+            release: 0.05,
+        };
+        patch.filter_envelope = Envelope {
+            attack: 0.001,
+            decay: 0.001,
+            sustain: 0.0,
+            release: 0.001,
+        };
+        let audio = render_note_single_bank(&bank, 110.0, 0.25, 44100, &patch);
+        let onset_end = (0.010 * 44100.0) as usize;
+        let sustain_start = (0.08 * 44100.0) as usize;
+        let sustain_end = (0.12 * 44100.0) as usize;
+        let onset_step = audio[..onset_end]
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0f32, f32::max);
+        let sustain_step = audio[sustain_start..sustain_end]
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            sustain_step > 1e-5,
+            "sustain too quiet (step={sustain_step})"
+        );
+        assert!(
+            onset_step <= sustain_step * 2.5,
+            "HP onset click: onset_step={onset_step} sustain_step={sustain_step}"
+        );
+    }
+
+    /// Held note with a discontinuous wavetable must not produce near-full-scale
+    /// sample steps after band-limited wrap (naive was ≈1.1–2.0 per wrap).
+    #[test]
+    fn factory_lead_sustain_step_bounded() {
+        let bank = WavetableBank::factory_saw_morph();
+        let mut patch = Patch::factory_lead();
+        patch.effects.clear();
+        patch.lfo.depth = 0.0;
+        patch.lfo2.depth = 0.0;
+        // Isolate WT wrap: single layer, mono filter, no add-clipping.
+        patch.oscillators[0].unison = 1;
+        patch.oscillators[0].level = 0.7;
+        patch.oscillators[0].wave_layers = vec![crate::patch::WaveLayer {
+            source_type: "wavetable".into(),
+            level: 1.0,
+            wt_position: 108.0,
+            wavetable_id: Some("saw_morph".into()),
+            ..crate::patch::WaveLayer::default()
+        }];
+        patch.oscillators[0].stack_mode = "add".into();
+        patch.filter.filter_type = "lowpass".into();
+        patch.filter2.filter_type = "lowpass".into();
+        patch.filter2.cutoff = patch.filter.cutoff;
+        for slot in &mut patch.mod_matrix {
+            if slot.source == "lfo1" || slot.source == "lfo2" {
+                slot.enabled = false;
+            }
+        }
+        let audio = render_note_single_bank(&bank, 440.0, 0.35, 44100, &patch);
+        let start = (0.08 * 44100.0) as usize;
+        let end = (0.30 * 44100.0) as usize;
+        let max_step = audio[start..end]
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_step < 0.55,
+            "WT sustain step={max_step} (expected band-limited wrap through voice path)"
+        );
+    }
+
     #[test]
     fn filter_darkens() {
         let bank = WavetableBank::factory_saw_morph();
