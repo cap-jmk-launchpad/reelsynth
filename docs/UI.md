@@ -193,6 +193,47 @@ Footer scope strip shows four taps: oscillator → filter → FX → output. Use
 
 ---
 
+## UI audit tests
+
+Automated layout and contrast checks live in `reelsynth-ui` (`ui/tests/kittest.rs` + `ui/tests/common/audit_harness.rs`).
+
+### What they guard
+
+| Check | Module | Examples |
+|-------|--------|----------|
+| Shell geometry | `layout_audit.rs` | No overlapping header/main/footer bands; center sub-regions stack cleanly |
+| Sidebar parity | `layout.rs` + `audit_registry.rs` | Osc column and rail share **252 px** width |
+| Panel utilization | `layout_audit.rs` | FX/mod/filter panels use ≥50% of allocated area at 1280×880 |
+| WCAG contrast | `contrast_audit.rs` | `text`, `text_muted`, `accent_on`, scope trace colors on `bg` / `surface2` |
+| Element registry | `audit_registry.rs` | ~95 `AuditId` entries with bounds / overflow / overlap checks |
+
+### Running locally
+
+```bash
+cargo test -p reelsynth-ui --test kittest
+cargo test -p reelsynth-ui
+```
+
+The harness test `full_ui_audit_with_registry` runs `audit_all_elements()` after a full Design-mode shell render.
+
+### Adding rects for new panels
+
+1. Add an `AuditId` variant in `ui/src/audit_registry.rs` (keep `REGISTRY_VARIANT_COUNT` in sync).
+2. At the end of the panel's draw function, call:
+
+   ```rust
+   use crate::audit_registry::{record_region, AuditId};
+
+   record_region(ui.ctx(), AuditId::MyPanel, allocated_rect, ui.min_rect());
+   ```
+
+3. Optional: pass `audit_id: Option<AuditId>` into `widgets/panel.rs` helpers for automatic recording.
+4. Add a kittest scenario in `ui/tests/kittest.rs` (or extend `ShellAuditScenario`) that exercises the new UI path.
+
+CI runs the kittest suite on every push/PR (`.github/workflows/ci.yml`).
+
+---
+
 ## Plugin editor (preview only)
 
 `reelsynth-plugin-editor` shares this UI but **does not process audio or MIDI** yet. Message: *"Plugin editor spike — UI only (no audio I/O)"*. Real host bindings: S7 roadmap — see [plugin/README.md](../plugin/README.md).

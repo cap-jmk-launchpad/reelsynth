@@ -1,6 +1,8 @@
 mod ambient;
+mod audit_registry;
 mod center_layout;
 mod compose;
+mod contrast_audit;
 mod region;
 mod fx_rack;
 mod layout;
@@ -22,12 +24,22 @@ pub use fx_rack::{
     effect_slots_from_patch, effect_slots_to_bypass, effect_slots_to_patch, EffectRackState,
     EffectSlotUi,
 };
+pub use audit_registry::{
+    audit_all_elements, audit_compose_panels, audit_id_rect, audit_no_horizontal_overflow,
+    audit_siblings_no_overlap, count_base_audit_variants, record_element, record_region,
+    record_used, AuditChecks, AuditId, ElementAudit, REGISTRY_VARIANT_COUNT,
+};
+pub use contrast_audit::{
+    assert_min_contrast, audit_scope_trace_contrast, audit_theme_tokens, contrast_ratio,
+    relative_luminance, SCOPE_TRACE_COLORS,
+};
 pub use layout::*;
 pub use layout_audit::{
-    audit_center, audit_header_clusters, audit_osc_sidebar_stacks, audit_panel_utilization,
+    assert_content_within, assert_sidebar_width_parity, audit_center, audit_element,
+    audit_header_clusters, audit_osc_sidebar_stacks, audit_panel_utilization, audit_rail_panels,
     audit_shell, center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
     center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id, footer_used_rect_id,
-    header_left_cluster_rect_id, header_right_cluster_rect_id, header_used_rect_id,
+    header_left_cluster_rect_id, header_right_cluster_rect_id, header_used_rect_id, AuditElement,
     HEADER_CLUSTER_MIN_GAP,
     fx_strip_used_rect_id, mod_strip_used_rect_id, osc_fx_allocated_rect_id, osc_fx_used_rect_id,
     osc_used_rect_id, overlap_area,
@@ -57,7 +69,7 @@ pub use reelsynth::QuantizeDivision;
 pub use shell::draw_shell;
 pub use state::{
     OscStripContext, OscStripPreviewState, ScopeStripContext, ShellActions, ShellConfig,
-    ShellMidiDevices, ShellMode, UiState,
+    ShellMidiDevices, ShellMode, UiState, WtView3dMode,
 };
 pub use wt::{factory_bank, factory_label, FactoryBankEntry, FACTORY_BANKS};
 

@@ -1,14 +1,21 @@
-//! egui_kittest interaction smoke tests (UI-K01 … UI-K06).
+//! egui_kittest interaction smoke tests (UI-K01 … UI-K06) + UI audit matrix.
+
+mod common;
 
 use std::collections::HashSet;
 
+use common::audit_harness::{
+    assert_full_ui_audit, run_shell_audit, FullUiAuditOptions, ShellAuditScenario,
+};
 use egui::Rect;
 use egui_kittest::Harness;
 use reelsynth::Patch;
 use reelsynth_ui::{
     audit_center, audit_header_clusters, audit_osc_sidebar_stacks, audit_panel_utilization,
-    audit_shell, compute_center_regions, default_effect_slots, draw_shell, embed_piano_in_center,
-    osc_type_index, ShellLayout, ShellLayoutOptions, ShellMidiDevices,
+    audit_shell, audit_theme_tokens, compute_center_regions, count_base_audit_variants,
+    default_effect_slots, draw_shell, embed_piano_in_center, osc_type_index,
+    REGISTRY_VARIANT_COUNT, ShellLayout, ShellLayoutOptions, ShellMidiDevices, ShellMode,
+    WtView3dMode,
     center_morph_used_rect_id, center_piano_used_rect_id, center_scope_used_rect_id,
     center_strip_used_rect_id, center_used_rect_id, center_views_used_rect_id, footer_used_rect_id,
     fx_strip_used_rect_id, header_used_rect_id, mod_strip_used_rect_id,
@@ -607,4 +614,238 @@ fn run_header_cluster_audit(test: ShellHarnessTest) {
         );
     harness.run();
     audit_header_clusters(&harness.ctx, layout.header);
+}
+
+// --- UI audit matrix (Phase 3) ---
+
+#[test]
+fn theme_contrast_all_pairs_harness_gate() {
+    audit_theme_tokens();
+}
+
+#[test]
+fn audit_registry_coverage_gate() {
+    assert_eq!(count_base_audit_variants(), REGISTRY_VARIANT_COUNT);
+}
+
+fn default_audit_options() -> FullUiAuditOptions {
+    FullUiAuditOptions {
+        audit_registry: false,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn design_shell_geometry() {
+    let run = run_shell_audit(ShellAuditScenario::default().size(1440.0, 900.0));
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_header_subelement() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    audit_header_clusters(&run.ctx, run.layout.header);
+}
+
+#[test]
+fn design_osc_column_wt() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    assert!(run.layout.osc.is_positive());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_osc_column_fm() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.oscillators[0].osc_type = osc_type_index("wavetable");
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_osc_column_pulse() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.oscillators[0].osc_type = osc_type_index("pulse");
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_fx_sidebar_slots() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.fx_slots.push(reelsynth_ui::EffectSlotUi::from_slot(
+        &reelsynth::fx::EffectSlot::chorus(),
+    ));
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_mod_matrix_rows() {
+    let mut scenario = ShellAuditScenario::default();
+    while scenario.state.mod_routes.len() < 4 {
+        scenario.state.mod_routes.push(reelsynth_ui::ModSlotUi::default());
+    }
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_center_scope() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    let used = run.ctx.data(|d| d.get_temp::<Rect>(center_scope_used_rect_id()));
+    assert!(used.is_some());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_strip_morph() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_tool_curve() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.wt_edit_tool = reelsynth_ui::wt::WtEditTool::Curve;
+    scenario.state.oscillators[0].wave_quant = 64;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_tool_shape() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.wt_edit_tool = reelsynth_ui::wt::WtEditTool::Shape;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_3d_stack() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.wt_view_3d_mode = WtView3dMode::Stack;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_3d_morph() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.wt_view_3d_mode = WtView3dMode::Morph;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_analyze_dialog() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.analyze_dialog_open = true;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_rail_filter_env_lfo() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    audit_panel_utilization(&run.ctx, PANEL_UTIL_MIN);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_chord_grid() {
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.performance.layout = 2;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_embedded_piano() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_sidebar_parity() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    let diff = (run.layout.osc.width() - run.layout.rail.width()).abs();
+    assert!(diff < 1.5, "osc={} rail={}", run.layout.osc.width(), run.layout.rail.width());
+}
+
+#[test]
+fn design_min_scale_072() {
+    let run = run_shell_audit(ShellAuditScenario::default().size(1280.0, 880.0));
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_compact_no_osc() {
+    let run = run_shell_audit(ShellAuditScenario::default().no_osc_column());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn compose_full_layout() {
+    let run = run_shell_audit(ShellAuditScenario::default().compose_mode());
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn compose_transport_controls() {
+    let mut scenario = ShellAuditScenario::default().compose_mode();
+    scenario.state.compose.transport.recording = true;
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn compose_piano_roll_pencil() {
+    let mut scenario = ShellAuditScenario::default().compose_mode();
+    scenario.state.compose.piano_roll_tool = reelsynth_ui::PianoRollTool::Pencil;
+    scenario.state.compose.selected_clip = Some(0);
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn compose_scene_launch() {
+    let mut scenario = ShellAuditScenario::default().compose_mode();
+    scenario.state.compose.launched_scene = Some(0);
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn compose_arrangement_clips() {
+    let mut scenario = ShellAuditScenario::default().compose_mode();
+    if scenario.state.compose.project.tracks.len() < 2 {
+        scenario.state.compose.project.tracks.push(reelsynth::Track::new("Track 2"));
+    }
+    let run = run_shell_audit(scenario);
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn widget_knob_sizes() {
+    let mut harness = Harness::builder()
+        .with_size([120.0, 120.0])
+        .build_ui(|ui| {
+            let mut v = 0.5_f32;
+            Knob::new(&mut v, 0.0..=1.0, "Sm")
+                .size(KnobSize::Sm)
+                .show(ui);
+            Knob::new(&mut v, 0.0..=1.0, "Md")
+                .size(KnobSize::Md)
+                .show(ui);
+        });
+    harness.run();
+}
+
+#[test]
+fn full_ui_audit_with_registry() {
+    let run = run_shell_audit(ShellAuditScenario::default());
+    let mut opts = FullUiAuditOptions::default();
+    opts.audit_registry = true;
+    assert_full_ui_audit(&run, &opts);
 }

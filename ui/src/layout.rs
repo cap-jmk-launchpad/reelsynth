@@ -35,7 +35,7 @@ pub const MAIN_NEEDED_COMPACT: f32 = 200.0;
 pub const HEADER_HEIGHT: f32 = 56.0;
 pub const FOOTER_HEIGHT: f32 = 28.0;
 pub const OSC_COLUMN_WIDTH: f32 = 252.0;
-pub const RAIL_WIDTH: f32 = 216.0;
+pub const RAIL_WIDTH: f32 = 252.0;
 
 pub const KNOB_SM: f32 = 40.0;
 pub const KNOB_MD: f32 = 44.0;

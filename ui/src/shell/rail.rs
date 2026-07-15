@@ -25,7 +25,7 @@ pub(super) fn draw_rail(
     let gap = CENTER_GAP * s;
     region(ui, rect, |ui| {
         egui::Frame::none()
-            .inner_margin(egui::Margin::same(SPACE_SM * s * 0.75))
+            .inner_margin(egui::Margin::same(SPACE_SM * s))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(rect.height());
@@ -154,42 +154,67 @@ fn draw_rail_panels(
         });
 
         panel(ui, "LFOs", |ui| {
-            ui.spacing_mut().item_spacing.x = SPACE_SM * s;
-            let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
-            ui.horizontal(|ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(w, 0.0),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        lfo_block(
-                            ui,
-                            "LFO 1",
-                            &mut state.lfo_rate,
-                            &mut state.lfo_depth,
-                            &mut state.lfo_shape,
-                            KnobStyle::Wired,
-                            actions,
-                            s,
-                        );
-                    },
+            ui.spacing_mut().item_spacing.y = GRID_UNIT * s;
+            let narrow = ui.available_width() < 180.0 * s;
+            if narrow {
+                lfo_block(
+                    ui,
+                    "LFO 1",
+                    &mut state.lfo_rate,
+                    &mut state.lfo_depth,
+                    &mut state.lfo_shape,
+                    KnobStyle::Wired,
+                    actions,
+                    s,
                 );
-                ui.allocate_ui_with_layout(
-                    egui::vec2(w, 0.0),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        lfo_block(
-                            ui,
-                            "LFO 2",
-                            &mut state.lfo2_rate,
-                            &mut state.lfo2_depth,
-                            &mut state.lfo2_shape,
-                            KnobStyle::Normal,
-                            actions,
-                            s,
-                        );
-                    },
+                lfo_block(
+                    ui,
+                    "LFO 2",
+                    &mut state.lfo2_rate,
+                    &mut state.lfo2_depth,
+                    &mut state.lfo2_shape,
+                    KnobStyle::Normal,
+                    actions,
+                    s,
                 );
-            });
+            } else {
+                ui.spacing_mut().item_spacing.x = SPACE_SM * s;
+                let w = (ui.available_width() - SPACE_SM * s).max(0.0) * 0.5;
+                ui.horizontal(|ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(w, 0.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            lfo_block(
+                                ui,
+                                "LFO 1",
+                                &mut state.lfo_rate,
+                                &mut state.lfo_depth,
+                                &mut state.lfo_shape,
+                                KnobStyle::Wired,
+                                actions,
+                                s,
+                            );
+                        },
+                    );
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(w, 0.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            lfo_block(
+                                ui,
+                                "LFO 2",
+                                &mut state.lfo2_rate,
+                                &mut state.lfo2_depth,
+                                &mut state.lfo2_shape,
+                                KnobStyle::Normal,
+                                actions,
+                                s,
+                            );
+                        },
+                    );
+                });
+            }
         });
 
         if ui.available_height() > 40.0 * s {

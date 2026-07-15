@@ -373,6 +373,85 @@ pub fn audit_header_clusters(ctx: &egui::Context, header: Rect) {
     });
 }
 
+/// Fail when `used` extends outside `allocated` (width and height).
+pub fn assert_content_within(allocated: Rect, used: Rect, label: &str) {
+    assert!(
+        allocated.is_positive(),
+        "{label}: allocated rect must be positive ({allocated:?})"
+    );
+    assert!(
+        within_bounds(allocated, used),
+        "{label}: content extends outside allocated bounds (used={used:?} allocated={allocated:?})"
+    );
+}
+
+/// Left and right sidebars must share the same width when both visible.
+pub fn assert_sidebar_width_parity(layout: &ShellLayout) {
+    if !layout.osc.is_positive() || !layout.rail.is_positive() {
+        return;
+    }
+    let diff = (layout.osc.width() - layout.rail.width()).abs();
+    assert!(
+        diff < 1.5,
+        "sidebar width parity: osc={:.1}px rail={:.1}px (expected equal)",
+        layout.osc.width(),
+        layout.rail.width()
+    );
+}
+
+/// High-level auditable shell regions (legacy + registry bridge).
+#[derive(Debug, Clone, Copy)]
+pub enum AuditElement {
+    Header,
+    Osc,
+    Center,
+    Rail,
+    Footer,
+    ModStrip,
+    FxStrip,
+    PianoWrap,
+}
+
+pub fn audit_element(ctx: &egui::Context, element: AuditElement, outer: Rect) {
+    let (used_id, label) = match element {
+        AuditElement::Header => (header_used_rect_id(), "header"),
+        AuditElement::Osc => (osc_used_rect_id(), "osc"),
+        AuditElement::Center => (center_used_rect_id(), "center"),
+        AuditElement::Rail => (rail_used_rect_id(), "rail"),
+        AuditElement::Footer => (footer_used_rect_id(), "footer"),
+        AuditElement::ModStrip => (mod_strip_used_rect_id(), "mod_strip"),
+        AuditElement::FxStrip => (fx_strip_used_rect_id(), "fx_strip"),
+        AuditElement::PianoWrap => (piano_used_rect_id(), "piano_wrap"),
+    };
+    ctx.data(|d| {
+        if let Some(used) = d.get_temp::<Rect>(used_id) {
+            assert_content_within(outer, used, label);
+        }
+    });
+}
+
+/// Filter + envelope + LFO panels must fit inside the rail column.
+pub fn audit_rail_panels(ctx: &egui::Context, rail_bounds: Rect) {
+    const FRAME_SLACK: f32 = 8.0;
+    ctx.data(|d| {
+        if let Some(used) = d.get_temp::<Rect>(rail_used_rect_id()) {
+            assert!(
+                used.min.x >= rail_bounds.min.x - FRAME_SLACK
+                    && used.min.y >= rail_bounds.min.y - FRAME_SLACK
+                    && used.max.x <= rail_bounds.max.x + FRAME_SLACK
+                    && used.max.y <= rail_bounds.max.y + FRAME_SLACK,
+                "rail column: content extends outside allocated bounds (used={used:?} allocated={rail_bounds:?})"
+            );
+        }
+        if let (Some(_allocated), Some(used)) = (
+            d.get_temp::<Rect>(rail_filter_allocated_rect_id()),
+            d.get_temp::<Rect>(rail_filter_used_rect_id()),
+        ) {
+            assert_content_within(rail_bounds, used, "rail filter");
+        }
+    });
+}
+
 /// Audit center-column sub-regions inside the shrunk inner bounds.
 pub fn audit_center(
     center: Rect,
