@@ -1,6 +1,6 @@
-//! Stack view — composite stacked waveform (matches audio output).
+//! 2D stack overlay — all wave layers composited in one scope view.
 
-use egui::{CursorIcon, Pos2, Rect, Sense, Shape, Ui, Vec2};
+use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Shape, Ui, Vec2};
 use reelsynth::osc::{sample_layer, StackMode, WtWarpMode};
 use reelsynth::patch::WaveLayer;
 use reelsynth::WavetableBank;
@@ -12,10 +12,23 @@ use crate::oscillator_ui::WaveLayerUi;
 use crate::region::region;
 use crate::state::WtView3dMode;
 
-use super::waveform::peak_point;
+use super::waveform::{nearest_waveform_distance, peak_point};
 
+const HOVER_DISTANCE_PX: f32 = 14.0;
 const WAVE_AMP: f32 = 0.42;
 const WAVE_SAMPLES: usize = 256;
+
+fn layer_palette(i: usize) -> Color32 {
+    const COLORS: [Color32; 6] = [
+        Color32::from_rgb(0x5b, 0xc0, 0xde),
+        Color32::from_rgb(0x4a, 0xde, 0x80),
+        Color32::from_rgb(0xde, 0x8a, 0x4a),
+        Color32::from_rgb(0xc0, 0x5b, 0xde),
+        Color32::from_rgb(0xde, 0x5b, 0x7a),
+        Color32::from_rgb(0xde, 0xde, 0x4a),
+    ];
+    COLORS[i % COLORS.len()]
+}
 
 fn ui_layer_to_patch(layer: &WaveLayerUi) -> WaveLayer {
     layer.to_patch()
@@ -79,10 +92,11 @@ fn layer_waveform_points(
     wt_pos_offset: f32,
     samples: usize,
 ) -> Vec<Pos2> {
+    let level = if layer.enabled { layer.level.max(0.0) } else { 0.0 };
     let mut pts = Vec::with_capacity(samples + 1);
     for i in 0..=samples {
         let phase = i as f32 / samples as f32;
-        let v = sample_layer_at_phase(layer, bank, phase, wt_pos_offset);
+        let v = sample_layer_at_phase(layer, bank, phase, wt_pos_offset) * level;
         let x = egui::lerp(rect.min.x..=rect.max.x, phase);
         let y = rect.center().y - v * rect.height() * WAVE_AMP;
         pts.push(Pos2::new(x, y));
@@ -107,6 +121,27 @@ fn composite_waveform_points(
         pts.push(Pos2::new(x, y));
     }
     pts
+}
+
+fn paint_grid(painter: &egui::Painter, rect: Rect, border: Color32) {
+    let step = 24.0;
+    let stroke = egui::Stroke::new(0.5, border.gamma_multiply(0.75));
+    let mut x = rect.min.x;
+    while x <= rect.max.x {
+        painter.line_segment(
+            [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
+            stroke,
+        );
+        x += step;
+    }
+    let mut y = rect.min.y;
+    while y <= rect.max.y {
+        painter.line_segment(
+            [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
+            stroke,
+        );
+        y += step;
+    }
 }
 
 pub struct WtView3dStackResponse {
@@ -134,7 +169,7 @@ impl WtView3dStack<'_> {
             Sense::click_and_drag(),
         );
 
-        let layer_selected = false;
+        let mut layer_selected = false;
         let mut wt_position_changed = false;
 
         if !ui.is_rect_visible(rect) {
@@ -166,6 +201,60 @@ impl WtView3dStack<'_> {
             }
         };
 
+        let active_indices: Vec<usize> = self
+            .layers
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.enabled && l.level > 0.0)
+            .map(|(i, _)| i)
+            .collect();
+
+        let layer_points: Vec<(usize, Vec<Pos2>)> = active_indices
+            .iter()
+            .map(|&idx| {
+                (
+                    idx,
+                    layer_waveform_points(
+                        &self.layers[idx],
+                        bank,
+                        inner,
+                        self.wt_pos_offset,
+                        WAVE_SAMPLES,
+                    ),
+                )
+            })
+            .collect();
+
+        let composite_pts = composite_waveform_points(
+            self.layers,
+            bank,
+            self.stack_mode,
+            inner,
+            self.wt_pos_offset,
+            WAVE_SAMPLES,
+        );
+
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let mut best_idx = None;
+                let mut best_dist = HOVER_DISTANCE_PX;
+                for &(orig_idx, ref pts) in &layer_points {
+                    let dist = nearest_waveform_distance(pts, pos);
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best_idx = Some(orig_idx);
+                    }
+                }
+                if nearest_waveform_distance(&composite_pts, pos) < best_dist {
+                    best_idx = None;
+                }
+                if let Some(idx) = best_idx {
+                    *self.selected_layer = Some(idx);
+                    layer_selected = true;
+                }
+            }
+        }
+
         if response.dragged() {
             if let Some(sel) = *self.selected_layer {
                 if let Some(layer) = self.layers.get_mut(sel) {
@@ -183,14 +272,34 @@ impl WtView3dStack<'_> {
             }
         }
 
-        if response.hovered() && self.selected_layer.is_some() {
-            ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
+
+        let selected_idx = *self.selected_layer;
 
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, RADIUS_SM, tokens.bg);
         painter.rect_stroke(rect, RADIUS_SM, egui::Stroke::new(1.0, tokens.border));
 
+        paint_grid(&painter, inner, tokens.border);
+        painter.line_segment(
+            [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
+            egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
+        );
+
+        let label = format!(
+            "Stack · {} layers · {} mode",
+            active_indices.len(),
+            self.stack_mode
+        );
+        painter.text(
+            Pos2::new(rect.min.x + 8.0, rect.min.y + 6.0),
+            egui::Align2::LEFT_TOP,
+            label,
+            egui::FontId::proportional(10.0),
+            tokens.text_secondary,
+        );
         region(
             ui,
             Rect::from_min_max(
@@ -212,40 +321,50 @@ impl WtView3dStack<'_> {
             },
         );
 
-        let wave = composite_waveform_points(
-            self.layers,
-            bank,
-            self.stack_mode,
-            inner,
-            self.wt_pos_offset,
-            WAVE_SAMPLES,
-        );
+        for &(orig_idx, ref pts) in &layer_points {
+            if pts.len() < 2 {
+                continue;
+            }
+            let color = layer_palette(orig_idx);
+            let selected = selected_idx == Some(orig_idx);
+            let alpha = if selected { 0.92 } else { 0.45 };
+            let stroke_w = if selected { 2.2 } else { 1.4 };
+            painter.add(Shape::line(
+                pts.clone(),
+                egui::Stroke::new(stroke_w, color.gamma_multiply(alpha)),
+            ));
+        }
 
-        if wave.len() >= 2 {
-            let mut fill = wave.clone();
+        if composite_pts.len() >= 2 {
+            let mut fill = composite_pts.clone();
             fill.push(Pos2::new(inner.max.x, mid_y));
             fill.push(Pos2::new(inner.min.x, mid_y));
             painter.add(Shape::convex_polygon(
                 fill,
-                tokens.accent.gamma_multiply(0.35),
+                tokens.accent.gamma_multiply(0.22),
                 egui::Stroke::NONE,
             ));
             painter.add(Shape::line(
-                wave.clone(),
+                composite_pts.clone(),
                 egui::Stroke::new(2.0, accent_ui),
             ));
-            if let Some(peak) = peak_point(&wave) {
-                painter.circle_filled(peak, 4.0, tokens.accent);
-                painter.circle_stroke(peak, 4.0, egui::Stroke::new(1.0, tokens.accent_on));
+            if let Some(peak) = peak_point(&composite_pts) {
+                painter.circle_filled(peak, 3.5, tokens.accent);
+                painter.circle_stroke(peak, 3.5, egui::Stroke::new(1.0, tokens.accent_on));
             }
         }
 
+        let phase_anim = (self.time * 0.5).fract();
+        let play_x = egui::lerp(inner.min.x..=inner.max.x, phase_anim);
         painter.line_segment(
-            [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
-            egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
+            [
+                Pos2::new(play_x, inner.min.y),
+                Pos2::new(play_x, inner.max.y),
+            ],
+            egui::Stroke::new(1.0, tokens.text_muted.gamma_multiply(0.5)),
         );
 
-        let _ = self.time;
+        ui.ctx().request_repaint();
 
         record_region(ui.ctx(), AuditId::CenterWt3dStack, rect, rect);
 
