@@ -748,9 +748,14 @@ fn design_wt_tool_shape() {
 
 #[test]
 fn design_wt_3d_stack() {
+    // Design home always paints Morph frame stack; Stack mode is not Design chrome.
     let mut scenario = ShellAuditScenario::default();
     scenario.state.wt_view_3d_mode = WtView3dMode::Stack;
     let run = run_shell_audit(scenario);
+    let morph = audit_id_rect(&run.ctx, AuditId::CenterWt3dMorph);
+    assert!(morph.is_some(), "Design right pane should record Morph frame stack");
+    let toggle = audit_id_rect(&run.ctx, AuditId::CenterWt3dModeToggle);
+    assert!(toggle.is_none(), "Stack/Morph toggle hidden on Design home");
     assert_full_ui_audit(&run, &default_audit_options());
 }
 
@@ -779,10 +784,12 @@ fn design_stack_overlay_with_layers() {
     let views = audit_id_rect(&run.ctx, AuditId::CenterWtViews);
     assert!(views.is_some(), "wt views region should be recorded");
     let chip_rect = audit_id_rect(&run.ctx, AuditId::CenterWtStripLayerChip(0));
-    assert!(chip_rect.is_some(), "layer chip visible in hybrid strip");
-    if let Some(r) = chip_rect {
-        assert!(r.width() > 8.0 && r.height() > 8.0);
-    }
+    assert!(
+        chip_rect.is_none(),
+        "Design strip is frames-only — no layer chips when layers present"
+    );
+    let morph = audit_id_rect(&run.ctx, AuditId::CenterWt3dMorph);
+    assert!(morph.is_some(), "right pane stays Morph frame stack with layers present");
 }
 
 #[test]
@@ -791,6 +798,83 @@ fn design_wt_3d_morph() {
     scenario.state.wt_view_3d_mode = WtView3dMode::Morph;
     let run = run_shell_audit(scenario);
     assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_wt_3d_default_is_morph() {
+    assert_eq!(UiState::default().wt_view_3d_mode, WtView3dMode::Morph);
+    let run = run_shell_audit(ShellAuditScenario::default());
+    let morph = audit_id_rect(&run.ctx, AuditId::CenterWt3dMorph);
+    assert!(morph.is_some(), "default Design opens Morph frame stack");
+    let toggle = audit_id_rect(&run.ctx, AuditId::CenterWt3dModeToggle);
+    assert!(toggle.is_none(), "Stack/Morph dual toggle not on Design home");
+    assert_full_ui_audit(&run, &default_audit_options());
+}
+
+#[test]
+fn design_strip_frames_only_with_layers() {
+    use reelsynth_ui::WaveLayerUi;
+    let mut scenario = ShellAuditScenario::default();
+    scenario.state.oscillators[0].wave_layers = vec![
+        WaveLayerUi {
+            source_type: "saw".into(),
+            level: 0.5,
+            enabled: true,
+            ..WaveLayerUi::default()
+        },
+        WaveLayerUi {
+            source_type: "square".into(),
+            level: 0.4,
+            enabled: true,
+            ..WaveLayerUi::default()
+        },
+    ];
+    let run = run_shell_audit(scenario);
+    assert!(
+        audit_id_rect(&run.ctx, AuditId::CenterWtStripLayerChip(0)).is_none(),
+        "no L1 chip"
+    );
+    assert!(
+        audit_id_rect(&run.ctx, AuditId::CenterWtStripLayerChip(1)).is_none(),
+        "no L2 chip"
+    );
+    let strip = audit_id_rect(&run.ctx, AuditId::CenterWtStrip);
+    assert!(strip.is_some());
+    assert!(audit_id_rect(&run.ctx, AuditId::CenterWtStripCell(0)).is_some());
+}
+
+#[test]
+fn design_scope_result_label() {
+    assert_eq!(reelsynth_ui::SCOPE_RESULT_LABEL, "Result");
+    // Shell audit harness passes no WT bank, so paint the strip isolated to audit Result.
+    let mut strip_state = reelsynth_ui::ScopeStripState::default();
+    let bank = reelsynth::WavetableBank::factory_saw_morph();
+    let patch = Patch::factory_lead();
+    let bank_for_osc: &dyn Fn(usize) -> usize = &|_| 0;
+    let mut harness = Harness::builder()
+        .with_size([480.0, 72.0])
+        .build_ui(|ui| {
+            let rect = ui.max_rect();
+            reelsynth_ui::draw_scope_strip(
+                ui,
+                rect,
+                reelsynth_ui::ScopeStripInput {
+                    patch: &patch,
+                    banks: std::slice::from_ref(&bank),
+                    bank_for_osc: &bank_for_osc,
+                    live: None,
+                    is_playing: false,
+                    now_secs: 1.0,
+                    state: &mut strip_state,
+                },
+            );
+        });
+    harness.run();
+    let out = audit_id_rect(&harness.ctx, AuditId::CenterScopeCellOut);
+    assert!(out.is_some(), "Result cell (audit id CenterScopeCellOut) recorded");
+    if let Some(r) = out {
+        assert!(r.width() > 8.0 && r.height() > 8.0);
+    }
 }
 
 #[test]

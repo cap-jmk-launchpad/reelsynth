@@ -157,6 +157,10 @@ impl QuantHandleEditor<'_> {
                 CursorIcon::Grab
             };
             ui.ctx().set_cursor_icon(cursor);
+            response.clone().on_hover_text("Drag knobs to reshape this frame");
+            if status_label.is_none() {
+                status_label = Some("Drag knobs to reshape this frame".into());
+            }
         }
 
         QuantHandleResponse {

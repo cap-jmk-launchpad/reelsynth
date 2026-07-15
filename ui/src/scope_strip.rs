@@ -1,4 +1,4 @@
-//! Four-tap signal-chain scope strip (Osc → Filter → FX → Out).
+//! Four-tap signal-chain scope strip (Osc → Filter → FX → Result).
 
 use egui::{Color32, Pos2, Rect, ScrollArea, Shape, Ui};
 use reelsynth::{
@@ -12,14 +12,19 @@ use crate::layout::{GRID_UNIT, RADIUS_SM, SPACE_SM};
 use crate::region::region;
 use crate::wt::waveform_points;
 
-pub const SCOPE_STRIP_HEIGHT: f32 = 56.0;
+pub const SCOPE_STRIP_HEIGHT: f32 = 68.0;
 const PREVIEW_INTERVAL_SECS: f64 = 1.0 / 30.0;
 const SPECTRUM_BARS: usize = 20;
 const TRACE_LUMINANCE_FLOOR: f32 = 0.42;
-const MIN_CELL_W: f32 = 72.0;
+const MIN_CELL_W: f32 = 80.0;
 const ARROW_W: f32 = 10.0;
 
-const STAGE_LABELS: [&str; 4] = ["Osc", "Filter", "FX", "Out"];
+/// Scope last-cell label — summed voice after Filter/FX (all oscillators).
+pub const SCOPE_RESULT_LABEL: &str = "Result";
+const SCOPE_RESULT_TOOLTIP: &str =
+    "Result — all oscillators mixed, after Filter and FX";
+
+const STAGE_LABELS: [&str; 4] = ["Osc", "Filter", "FX", SCOPE_RESULT_LABEL];
 const STAGE_COLORS: [Color32; 4] = [
     Color32::from_rgb(0x5b, 0xc0, 0xde),
     Color32::from_rgb(0x9b, 0x7e, 0xde),
@@ -139,14 +144,20 @@ pub fn draw_scope_strip(ui: &mut Ui, rect: Rect, mut input: ScopeStripInput<'_>)
                         record_used(ui.ctx(), AuditId::CenterScopeCellFx, fx_cell);
                         draw_arrow(ui, cell_h);
 
+                        let out_w = if osc_count >= 2 {
+                            MIN_CELL_W * 1.35
+                        } else {
+                            MIN_CELL_W
+                        };
                         let out_cell = draw_spectrum_scope_cell(
                             ui,
                             &previews.out,
                             STAGE_LABELS[3],
                             STAGE_COLORS[3],
-                            MIN_CELL_W,
+                            out_w,
                             cell_h,
                             input.state.stack_clipping,
+                            Some(SCOPE_RESULT_TOOLTIP),
                         );
                         record_used(ui.ctx(), AuditId::CenterScopeCellOut, out_cell);
                     });
@@ -290,9 +301,13 @@ fn draw_spectrum_scope_cell(
     width: f32,
     height: f32,
     clip_warn: bool,
+    tooltip: Option<&str>,
 ) -> Rect {
     let tokens = Tokens::default();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    if let Some(tip) = tooltip {
+        response.on_hover_text(tip);
+    }
     if !ui.is_rect_visible(rect) {
         return rect;
     }

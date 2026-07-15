@@ -29,6 +29,8 @@ pub struct WtStrip<'a> {
     pub edit_tool: WtEditTool,
     pub wave_layers: &'a mut [WaveLayerUi],
     pub selected_layer_idx: &'a mut Option<usize>,
+    /// When false (Design home), never paint L1/+/- layer chips even if `wave_layers` is non-empty.
+    pub show_layer_chips: bool,
 }
 
 impl<'a> WtStrip<'a> {
@@ -39,7 +41,7 @@ impl<'a> WtStrip<'a> {
             .bank
             .map(|b| b.num_frames)
             .unwrap_or(256);
-        let has_layers = !self.wave_layers.is_empty();
+        let has_layers = self.show_layer_chips && !self.wave_layers.is_empty();
         let layer_frac = if has_layers { 0.38 } else { 0.0 };
 
         let (rect, response) =

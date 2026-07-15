@@ -98,33 +98,32 @@ Footer **Arp** toggle enables live arpeggiation in Design and Compose monitor pa
 
 WT position for the active osc syncs with the center WT strip.
 
-### Wave stack (Osc column)
+### Wave stack (engine / Advanced)
 
-Collapsible **Stack** panel on the active oscillator tab:
+`wave_layers` remain in the engine and Osc-column **Stack** panel for preset compatibility:
 
 - Layer list: type (saw / sine / square / triangle / pulse / wavetable), level, detune, **+/− sign**, on/off
 - Wavetable layers expose **WT Pos**
-- **Mode**: Add, Avg (level-weighted), or **Avg Equal** (1/N per layer) — tooltips in panel
-- **Autofix levels** when Add mode clips (scope Out shows **Stack clipping** warning)
+- **Mode**: Add, Avg (level-weighted), or **Avg Equal** (1/N per layer)
+- **Autofix levels** when Add mode clips (scope **Result** shows **Stack clipping** warning)
 - **+ Layer** / **Remove** per row
-- Click a layer row, a **strip chip** (left of WT strip), or a stroke in **Stack** view to select
 
-### WT strip (hybrid)
+Design home no longer surfaces layer chips or the Stack 3D overlay — combine forms via **frames + morph**, not additive strip chips.
 
-When the active osc has stack layers, the position strip splits:
+### WT strip (frames-only on Design)
 
-| Left (~38%) | Right |
-|-------------|-------|
-| Layer chips **L1…** with mini wave + **+/−** toggle | Frame/slot thumbnails + scrub (unchanged) |
+The position strip is **frame/slot scrub only** on the Design surface — no L1/+/- layer chips, even when the patch still has `wave_layers`.
 
-Empty stack → full-width frame strip only.
+| Region | Content |
+|--------|---------|
+| Full-width strip | Frame/slot thumbnails + scrub; highlights the frame bound to **Edit** |
 
-### Stack overlay (right WT view)
+### Design WT panes (frames-first)
 
-- Layer strokes (semi-transparent) + composite sum fill
-- **Composite drag** → global WT position scrub
-- **Layer drag** → per-layer WT position (wavetable) or phase (sine)
-- Inverted layers: dashed stroke + ↓ badge
+| Pane | Caption | Job |
+|------|---------|-----|
+| Left 2D | **Edit · Frame N** | Edit the strip-selected frame (knobs on wave = amplitude drag) |
+| Right 3D | **Frame stack · this osc** | Morph mesh of this oscillator’s bank frames (default; Stack/Morph toggle hidden) |
 
 ### Quant hand drag (2D waveform)
 
@@ -132,11 +131,13 @@ When **Quant** > 0 and tool is **Select**:
 
 - Vertical grid at each slot; **knob handles** at waveform intersections (hover when quant > 64)
 - Drag snaps X to nearest slot on press; **locks slot** for entire gesture; fine Y edits **amplitude** (wave height) at that quant point
+- Tooltip / status: **Drag knobs to reshape this frame**
+- **Shape** menu (Saw / Square / Sine / Triangle) click-assigns a template to the selected frame
 - **Curve** tool still edits slot→frame morph map; Select handles edit wave shape at quant points
 - **Pencil** hidden when quant > 0 — use Select + handles instead
 - The performance **piano/keyboard** fills the full-width band above the status footer; left/right sidebars stop above that band and never render into it
 
-Factory Lead loads with three stack layers (saw + sine + wavetable); save/reload preserves `wave_layers`, `invert`, and `stack_mode`.
+Factory Lead may still load engine stack layers for audio; Design UI stays frames-first. Save/reload preserves `wave_layers`, `invert`, and `stack_mode`.
 
 ### Effects (osc column sidebar)
 
@@ -194,27 +195,30 @@ Serial chain: delay, reverb, chorus, etc. Per-slot mix and bypass.
 | **Wave stack** | `wave_layers[]` inside one Osc tab (saw + sine + WT…) | Additive thickness; `stack_mode: add` or `avg` |
 | **Osc 1/2/3 tabs** | Separate oscillators + FM | Different from stack — FM routing between voices |
 
-### Wavetable editor (v0.2 — stack editor)
+### Wavetable editor (v0.3 — frames-first)
 
 | Element | Function |
 |---------|----------|
-| **Position strip** | Scrub frames; click slots when quant > 0; **Curve** mode shows mini frame-index bar under cells |
+| **Position strip** | Scrub frames; click slots when quant > 0; **Curve** mode shows mini frame-index bar under cells (no layer chips) |
 | **Wave quant** | 8 / 16 / 32 / 64 / **256** / Smooth (256 uses wire value `255`) |
 | **Morph A / B / amount** | Crossfade between frame ranges (overrides slots when active) |
-| **2D view** | Current frame; **Select** drag ↔ position / click slot band; **Pencil** edits samples; **Curve** slot→frame map; **Shape** control points → 2048-sample frame |
-| **3D view** | **Stack** (default): depth plane per `wave_layer` + composite sum; **Morph**: 16-frame mesh (legacy) |
-| **Toolbar** | Select / Pencil / **Curve** / **Shape** / **Analyze → Stack** (FFT harmonics → sine layers) |
+| **Edit (2D)** | Selected frame; **Select** knobs + drag; **Curve** slot→frame map; **Shape** control points; **Shape→** templates |
+| **Frame stack (3D)** | Default Morph mesh of this osc’s bank (16-frame depth slices); Design home hides Stack overlay toggle |
+| **Toolbar** | Select / **Curve** / **Shape** / **Shape** menu (Saw·Square·Sine·Tri) / **FFT** (engine layers; keeps Morph right pane) |
+
+**Three concepts on Design:** **Edit** (selected frame) · **Frame stack** (this osc) · **Result** (all oscs in the scope strip).
 
 Morph settings are per-oscillator; active tab syncs with WT controls.
 
 Design spec: [docs/superpowers/specs/2026-07-15-wt-stack-editor-design.md](superpowers/specs/2026-07-15-wt-stack-editor-design.md)  
 Implementation plan: [docs/superpowers/plans/2026-07-15-wt-stack-editor.md](superpowers/plans/2026-07-15-wt-stack-editor.md)
 
-### Legacy reference (pre–stack editor)
+### Legacy reference (pre–frames-first)
 
 | Element | Function |
 |---------|----------|
-| **3D morph mesh** | 16 adjacent frames as depth slices (still available via **Morph** toggle) |
+| **Stack overlay** | Layer strokes + composite (engine/Advanced; not Design home chrome) |
+| **Hybrid strip chips** | L1/+/- on strip (removed from Design surface) |
 
 ---
 
@@ -231,14 +235,14 @@ Implementation plan: [docs/superpowers/plans/2026-07-15-wt-stack-editor.md](supe
 
 ## Scopes
 
-Signal-chain strip at top of center column (56 px, horizontally scrollable when 3+ oscillators):
+Signal-chain strip at top of center column (~68 px, horizontally scrollable when 3+ oscillators):
 
 | Cell | Content |
 |------|---------|
 | **Osc** | Per-osc waveform when ≥3 oscillators; combined cycle otherwise |
 | **Filter** | Post-filter tap (responds to cutoff/resonance) |
 | **FX** | Post-FX tap (distinct when delay/chorus active) |
-| **Out** | Spectrum bars; amber border + **Stack clipping** label when Add mode exceeds ±1 |
+| **Result** | Spectrum of all oscillators after Filter/FX (tooltip explains mix); slightly wider when ≥2 oscs; amber border + **Stack clipping** when Add-mode layers exceed ±1 |
 
 Settings window (app): **Graphics** backend Auto/WGPU/Glow, GPU waveforms toggle; **Input** auto MIDI + keyboard layout override.
 

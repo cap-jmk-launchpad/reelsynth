@@ -13,7 +13,7 @@ use super::mod_preview::{has_position_mod_routes, preview_mod_sources, preview_p
 use super::quant_handles::{QuantHandleEditor, slot_x};
 use super::shape_editor::ShapeEditor;
 use super::slots::{apply_slot_selection, effective_quant_count};
-use super::toolbar::{WtEditTool, WtToolbar, WtToolbarResponse};
+use super::toolbar::{FrameShapeTemplate, WtEditTool, WtToolbar, WtToolbarResponse};
 use super::waveform::{frame_index, hit_test_waveform, peak_point, waveform_points};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,6 +47,8 @@ pub struct WtView2dResponse {
     pub slots_changed: bool,
     pub stack_changed: bool,
     pub analyze_requested: bool,
+    /// Footer / status hint (e.g. drag affordance).
+    pub status_hint: Option<String>,
 }
 
 impl WtView2dResponse {
@@ -90,6 +92,7 @@ impl WtView2d<'_> {
         let mut slots_changed = false;
         let mut stack_changed = false;
         let mut analyze_requested = false;
+        let mut status_hint: Option<String> = None;
 
         if !ui.is_rect_visible(rect) {
             return WtView2dResponse {
@@ -99,6 +102,7 @@ impl WtView2d<'_> {
                 slots_changed,
                 stack_changed,
                 analyze_requested,
+                status_hint,
             };
         }
 
@@ -125,16 +129,26 @@ impl WtView2d<'_> {
             |ui| WtToolbar::show_with_analyze(ui, self.tool, self.wave_quant),
         );
         record_region(ui.ctx(), AuditId::CenterWt2dToolbar, toolbar_rect, toolbar_rect);
-        if let WtToolbarResponse {
+        let WtToolbarResponse {
             analyze_requested: req,
+            assign_shape,
             ..
-        } = toolbar_resp
-        {
-            if req {
-                if let Some(open) = self.analyze_dialog_open {
-                    *open = true;
-                }
-                analyze_requested = true;
+        } = toolbar_resp;
+        if req {
+            if let Some(open) = self.analyze_dialog_open {
+                *open = true;
+            }
+            analyze_requested = true;
+        }
+        if let Some(kind) = assign_shape {
+            if let Some(bank) = self.bank.as_mut() {
+                let idx = frame_index(*self.position, bank.num_frames);
+                apply_frame_shape_template(bank.frame_mut(idx), kind);
+                frame_edited = true;
+                status_hint = Some(format!(
+                    "Assigned {} to frame {idx}",
+                    shape_template_label(kind)
+                ));
             }
         }
 
@@ -423,25 +437,17 @@ impl WtView2d<'_> {
                     frame_edited = true;
                 }
                 if let Some(label) = qh.status_label {
+                    status_hint = Some(label.clone());
                     status_override = Some(label);
                 }
             }
         }
 
         let label = status_override.unwrap_or_else(|| {
-            if let Some(name) = self.bank_name {
-                if pos_mod.abs() > 0.01 {
-                    format!(
-                        "2D Waveform · {name} · frame {frame_idx} → {:.0}",
-                        modulated_pos
-                    )
-                } else {
-                    format!("2D Waveform · {name} · frame {frame_idx}")
-                }
-            } else if pos_mod.abs() > 0.01 {
-                format!("2D Waveform · frame {frame_idx} → {:.0}", modulated_pos)
+            if pos_mod.abs() > 0.01 {
+                format!("Edit · Frame {frame_idx} → {:.0}", modulated_pos)
             } else {
-                format!("2D Waveform · frame {frame_idx}")
+                format!("Edit · Frame {frame_idx}")
             }
         });
         painter.text(
@@ -474,7 +480,37 @@ impl WtView2d<'_> {
             slots_changed,
             stack_changed,
             analyze_requested,
+            status_hint,
         }
+    }
+}
+
+fn shape_template_label(kind: FrameShapeTemplate) -> &'static str {
+    match kind {
+        FrameShapeTemplate::Saw => "saw",
+        FrameShapeTemplate::Square => "square",
+        FrameShapeTemplate::Sine => "sine",
+        FrameShapeTemplate::Tri => "triangle",
+    }
+}
+
+/// Write a basic cycle template into a wavetable frame (click-to-assign palette).
+pub fn apply_frame_shape_template(frame: &mut [f32], kind: FrameShapeTemplate) {
+    let n = frame.len().max(1) as f32;
+    for (i, sample) in frame.iter_mut().enumerate() {
+        let p = i as f32 / n;
+        *sample = match kind {
+            FrameShapeTemplate::Saw => 2.0 * p - 1.0,
+            FrameShapeTemplate::Square => {
+                if p < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+            FrameShapeTemplate::Sine => (p * std::f32::consts::TAU).sin(),
+            FrameShapeTemplate::Tri => 1.0 - 4.0 * (p - 0.5).abs(),
+        };
     }
 }
 

@@ -61,7 +61,8 @@ pub use osc_column::{
 pub use oscillator_ui::{OscillatorUi, WaveLayerUi, MIN_OSCILLATORS};
 pub use performance::PerformanceUi;
 pub use scope_strip::{
-    autofix_stack_levels, draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_STRIP_HEIGHT,
+    autofix_stack_levels, draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_RESULT_LABEL,
+    SCOPE_STRIP_HEIGHT,
 };
 pub use compose::{
     Clip, ClipRef, ComposeUi, MidiNote, PianoRollTool, QuantizeGrid, Scene, SequenceProject, Track,

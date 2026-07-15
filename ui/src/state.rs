@@ -11,8 +11,9 @@ use crate::wt::{morph_amount_for_position, position_from_osc_ui, WtEditTool};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WtView3dMode {
-    #[default]
     Stack,
+    /// Default Design right pane: full bank frame morph mesh.
+    #[default]
     Morph,
 }
 
@@ -204,7 +205,7 @@ impl Default for UiState {
             wt_position: wt_pos,
             wt_bank_name: "Saw Morph".into(),
             wt_edit_tool: WtEditTool::Select,
-            wt_view_3d_mode: WtView3dMode::Stack,
+            wt_view_3d_mode: WtView3dMode::Morph,
             selected_layer_idx: None,
             analyze_dialog_open: false,
             analyze_harmonics: 16,

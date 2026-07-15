@@ -76,7 +76,7 @@ impl WtView3d<'_> {
             };
         }
 
-        let inner = rect.shrink2(egui::vec2(8.0, 20.0));
+        let inner = rect.shrink2(egui::vec2(6.0, 14.0));
         let num_frames = self
             .bank
             .map(|b| b.num_frames)
@@ -141,9 +141,12 @@ impl WtView3d<'_> {
             .unwrap_or(0);
 
         let label = if let Some(bank) = self.bank {
-            format!("3D Mesh · {}/{} frames · frame {center_frame}", bank.num_frames, num_frames)
+            format!(
+                "Frame stack · this osc · {}/{} · frame {center_frame}",
+                bank.num_frames, num_frames
+            )
         } else {
-            format!("3D Mesh · frame {center_frame}")
+            format!("Frame stack · this osc · frame {center_frame}")
         };
         painter.text(
             Pos2::new(rect.min.x + 8.0, rect.min.y + 6.0),

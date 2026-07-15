@@ -18,6 +18,15 @@ pub enum WtEditTool {
     Smooth,
 }
 
+/// Basic cycle templates applied to the strip-selected frame (click-to-assign).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameShapeTemplate {
+    Saw,
+    Square,
+    Sine,
+    Tri,
+}
+
 impl WtEditTool {
     fn label(self) -> &'static str {
         match self {
@@ -41,6 +50,7 @@ impl WtEditTool {
 pub struct WtToolbarResponse {
     pub tool_changed: bool,
     pub analyze_requested: bool,
+    pub assign_shape: Option<FrameShapeTemplate>,
 }
 
 pub struct WtToolbar;
@@ -59,11 +69,13 @@ impl WtToolbar {
 
         let mut tool_changed = false;
         let mut analyze_requested = false;
+        let mut assign_shape = None;
 
         if !ui.is_rect_visible(rect) {
             return WtToolbarResponse {
                 tool_changed,
                 analyze_requested,
+                assign_shape,
             };
         }
 
@@ -75,7 +87,10 @@ impl WtToolbar {
             egui::Stroke::new(1.0_f32, tokens.border),
         );
 
+        // Clip interactions to the allocated strip so extras never expand the
+        // Design half-pane used-rect past the center column.
         region(ui, rect.shrink2(egui::vec2(4.0, 2.0)), |ui| {
+            ui.set_clip_rect(rect);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 for candidate in [
@@ -89,9 +104,9 @@ impl WtToolbar {
                     let hover = match candidate {
                         WtEditTool::Select => {
                             if wave_quant > 0 {
-                                "Drag quant handles to shape · drag background to scan"
+                                "Drag knobs to reshape this frame · drag background to scan"
                             } else {
-                                "Drag waveform to shape · drag background to scan position"
+                                "Drag waveform to reshape this frame · drag background to scan"
                             }
                         }
                         WtEditTool::Pencil => "Freehand draw (advanced)",
@@ -116,9 +131,29 @@ impl WtToolbar {
                     }
                 }
                 ui.add_space(4.0);
+                ui.menu_button("Shape", |ui| {
+                    for (label, tip, kind) in [
+                        ("Saw", "Assign sawtooth to selected frame", FrameShapeTemplate::Saw),
+                        ("Square", "Assign square to selected frame", FrameShapeTemplate::Square),
+                        ("Sine", "Assign sine to selected frame", FrameShapeTemplate::Sine),
+                        ("Triangle", "Assign triangle to selected frame", FrameShapeTemplate::Tri),
+                    ] {
+                        if ui
+                            .button(label)
+                            .on_hover_text(tip)
+                            .clicked()
+                        {
+                            assign_shape = Some(kind);
+                            ui.close_menu();
+                        }
+                    }
+                })
+                .response
+                .on_hover_text("Assign a basic shape to the selected frame");
+                ui.add_space(2.0);
                 if ui
-                    .small_button("FFT→Stack")
-                    .on_hover_text("Decompose frame into sine harmonics")
+                    .small_button("FFT")
+                    .on_hover_text("Decompose frame into sine harmonics (engine layers)")
                     .clicked()
                 {
                     analyze_requested = true;
@@ -129,6 +164,7 @@ impl WtToolbar {
         WtToolbarResponse {
             tool_changed,
             analyze_requested,
+            assign_shape,
         }
     }
 }
