@@ -422,7 +422,7 @@ mod tests {
             slot.bypassed = true;
         }
         let wet_patch = patch_from_state(&wet_state, &base);
-        engine.set_patch(wet_patch);
+        engine.apply_patch_hot(wet_patch);
         let wet = engine.render_offline(440.0, 0.15);
 
         assert_eq!(dry.len(), wet.len());

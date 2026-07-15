@@ -29,6 +29,7 @@ pub const BLOCK_SIZE: usize = 64;
 pub struct SynthEngine {
     banks: BankSet,
     patch: Patch,
+    scratch_patch: Patch,
     pool: VoicePool,
     params: EngineParams,
     fx: FxChain,
@@ -37,6 +38,22 @@ pub struct SynthEngine {
     scope: ScopeMonitor,
     mpe: MpeState,
     sequencer: SequencerRuntime,
+}
+
+fn voice_headroom(active_voices: usize) -> f32 {
+    if active_voices <= 1 {
+        1.0
+    } else {
+        1.0 / (active_voices as f32).sqrt()
+    }
+}
+
+fn sanitize_sample(sample: f32) -> f32 {
+    if sample.is_finite() {
+        sample
+    } else {
+        0.0
+    }
 }
 
 impl SynthEngine {
@@ -48,9 +65,11 @@ impl SynthEngine {
         let bpm = patch.sequence.bpm;
         let mut sequencer = SequencerRuntime::new(bpm);
         sequencer.sync_from_project(&patch.sequence);
+        let scratch_patch = patch.clone();
         Self {
             banks,
             patch,
+            scratch_patch,
             pool,
             params,
             fx,
@@ -90,13 +109,30 @@ impl SynthEngine {
         &mut self.sequencer
     }
 
-    pub fn set_patch(&mut self, patch: Patch) {
+    /// Live UI sync — updates patch state without killing active voices or FX tails.
+    pub fn apply_patch_hot(&mut self, patch: Patch) {
+        self.sequencer.sync_from_project(&patch.sequence);
+        self.params.sync_from_patch(&patch);
+        self.banks = BankSet::from_primary(self.banks.primary().clone(), &patch);
+        if patch.effects != self.patch.effects {
+            self.fx.set_effects(patch.effects.clone());
+        }
+        self.patch = patch;
+    }
+
+    /// Hard reset for preset load — clears voices and rebuilds FX processors.
+    pub fn reset_from_preset(&mut self, bank: WavetableBank, patch: Patch) {
+        self.banks = BankSet::from_primary(bank, &patch);
         self.sequencer.sync_from_project(&patch.sequence);
         self.params.sync_from_patch(&patch);
         self.pool.reset_patch(&patch);
         self.fx.set_effects(patch.effects.clone());
-        self.banks = BankSet::from_primary(self.banks.primary().clone(), &patch);
         self.patch = patch;
+    }
+
+    /// Replace the primary wavetable bank without resetting voices or FX.
+    pub fn update_bank(&mut self, bank: WavetableBank) {
+        self.banks.replace_primary(bank, &self.patch);
     }
 
     pub fn bank(&self) -> &WavetableBank {
@@ -109,8 +145,7 @@ impl SynthEngine {
 
     /// Hot-swap wavetable bank and patch (preset load).
     pub fn load_preset(&mut self, bank: WavetableBank, patch: Patch) {
-        self.banks = BankSet::from_primary(bank, &patch);
-        self.set_patch(patch);
+        self.reset_from_preset(bank, patch);
     }
 
     pub fn set_wt_position(&mut self, position: f32) {
@@ -418,32 +453,36 @@ impl SynthEngine {
         self.sequencer
             .begin_buffer(&self.patch.sequence, frames, sr);
 
+        self.scratch_patch.clone_from(&self.patch);
+
         for (frame, sample) in out.iter_mut().enumerate() {
             self.dispatch_seq_events(frame);
 
             self.params.filter_cutoff.process();
             self.params.master_gain.process();
-            let mut patch = self.patch.clone();
-            patch.filter.cutoff = self.params.filter_cutoff.current();
+            self.scratch_patch.filter.cutoff = self.params.filter_cutoff.current();
             let auto_mods = self.sequencer.automation_mods(&self.patch.sequence);
-            apply_mods_to_patch(&mut patch, &auto_mods);
-            let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&patch, oi);
+            apply_mods_to_patch(&mut self.scratch_patch, &auto_mods);
+            let patch = &self.scratch_patch;
+            let bank_for_osc = |oi: usize| self.banks.bank_for_osc(patch, oi);
 
             let mut acc_osc = 0.0f32;
             let mut acc_l = 0.0f32;
             let mut acc_r = 0.0f32;
-            let mut voices_active = false;
+            let mut voices_active = 0usize;
             let modwheel = self.mpe.modwheel();
             let bend_range = self.mpe.config.bend_range_semitones;
             for voice in self.pool.voices_mut() {
                 if !voice.active {
                     continue;
                 }
-                voices_active = voices_active || voice.is_audible();
+                if voice.is_audible() {
+                    voices_active += 1;
+                }
                 let stages = voice.process_sample_stages(
                     &bank_slice,
                     &bank_for_osc,
-                    &patch,
+                    patch,
                     self.global_time,
                     dt,
                     sr,
@@ -454,12 +493,16 @@ impl SynthEngine {
                 acc_l += stages.filtered[0];
                 acc_r += stages.filtered[1];
             }
+            let headroom = voice_headroom(voices_active);
+            acc_l *= headroom;
+            acc_r *= headroom;
+            acc_osc *= headroom;
             let gain = self.params.master_gain.current();
             let filt_mono = (acc_l + acc_r) * 0.5 * gain;
             let mono = self.fx.process_sample((acc_l + acc_r) * 0.5 * gain);
             let fx_mono = mono;
-            *sample = mono;
-            self.scope.write_frame(acc_osc * gain, filt_mono, fx_mono, mono, voices_active);
+            *sample = sanitize_sample(mono);
+            self.scope.write_frame(acc_osc * gain, filt_mono, fx_mono, mono, voices_active > 0);
             self.global_time += dt;
         }
     }
@@ -473,32 +516,36 @@ impl SynthEngine {
         self.sequencer
             .begin_buffer(&self.patch.sequence, frames, sr);
 
+        self.scratch_patch.clone_from(&self.patch);
+
         for frame in 0..frames {
             self.dispatch_seq_events(frame);
 
             self.params.filter_cutoff.process();
             self.params.master_gain.process();
-            let mut patch = self.patch.clone();
-            patch.filter.cutoff = self.params.filter_cutoff.current();
+            self.scratch_patch.filter.cutoff = self.params.filter_cutoff.current();
             let auto_mods = self.sequencer.automation_mods(&self.patch.sequence);
-            apply_mods_to_patch(&mut patch, &auto_mods);
-            let bank_for_osc = |oi: usize| self.banks.bank_for_osc(&patch, oi);
+            apply_mods_to_patch(&mut self.scratch_patch, &auto_mods);
+            let patch = &self.scratch_patch;
+            let bank_for_osc = |oi: usize| self.banks.bank_for_osc(patch, oi);
 
             let mut acc_osc = 0.0f32;
             let mut acc_l = 0.0f32;
             let mut acc_r = 0.0f32;
-            let mut voices_active = false;
+            let mut voices_active = 0usize;
             let modwheel = self.mpe.modwheel();
             let bend_range = self.mpe.config.bend_range_semitones;
             for voice in self.pool.voices_mut() {
                 if !voice.active {
                     continue;
                 }
-                voices_active = voices_active || voice.is_audible();
+                if voice.is_audible() {
+                    voices_active += 1;
+                }
                 let stages = voice.process_sample_stages(
                     &bank_slice,
                     &bank_for_osc,
-                    &patch,
+                    patch,
                     self.global_time,
                     dt,
                     sr,
@@ -509,19 +556,23 @@ impl SynthEngine {
                 acc_l += stages.filtered[0];
                 acc_r += stages.filtered[1];
             }
+            let headroom = voice_headroom(voices_active);
+            acc_l *= headroom;
+            acc_r *= headroom;
+            acc_osc *= headroom;
             let gain = self.params.master_gain.current();
             let filt_mono = (acc_l + acc_r) * 0.5 * gain;
             let [l, r] = self.fx.process_stereo(acc_l * gain, acc_r * gain);
             let fx_mono = (l + r) * 0.5;
             let out_mono = fx_mono;
-            out[frame * 2] = l;
-            out[frame * 2 + 1] = r;
+            out[frame * 2] = sanitize_sample(l);
+            out[frame * 2 + 1] = sanitize_sample(r);
             self.scope.write_frame(
                 acc_osc * gain,
                 filt_mono,
                 fx_mono,
                 out_mono,
-                voices_active,
+                voices_active > 0,
             );
             self.global_time += dt;
         }

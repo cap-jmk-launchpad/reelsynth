@@ -206,7 +206,7 @@ pub(crate) fn drain_commands(
             Ok(AudioCmd::SetNoiseLevel(l)) => engine.set_noise_level(l),
             Ok(AudioCmd::SetModMatrix(slots)) => engine.set_mod_matrix(slots),
             Ok(AudioCmd::SetEffects(effects)) => engine.set_effects(effects),
-            Ok(AudioCmd::SetPatch(patch)) => engine.set_patch(patch),
+            Ok(AudioCmd::SetPatch(patch)) => engine.apply_patch_hot(patch),
             Ok(AudioCmd::LoadPreset { patch, bank }) => {
                 engine.load_preset(bank.clone(), patch);
                 if let Ok(mut g) = bank_shared.write() {
@@ -214,8 +214,7 @@ pub(crate) fn drain_commands(
                 }
             }
             Ok(AudioCmd::UpdateBank(bank)) => {
-                let patch = engine.patch().clone();
-                engine.load_preset(bank.clone(), patch);
+                engine.update_bank(bank.clone());
                 if let Ok(mut g) = bank_shared.write() {
                     *g = bank;
                 }

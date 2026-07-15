@@ -82,6 +82,7 @@ where
     T: cpal::FromSample<f32>,
 {
     let err_fn = |e| eprintln!("audio stream error: {e}");
+    let mut scratch = Vec::new();
     device
         .build_output_stream(
             &config.into(),
@@ -92,9 +93,9 @@ where
                     &bank_for_audio,
                     &transport_for_audio,
                 );
-                let mut buf = vec![0.0f32; data.len()];
-                render_f32(&mut engine, stereo, &mut buf);
-                for (out, sample) in data.iter_mut().zip(buf.iter()) {
+                scratch.resize(data.len(), 0.0);
+                render_f32(&mut engine, stereo, &mut scratch);
+                for (out, sample) in data.iter_mut().zip(scratch.iter()) {
                     *out = T::from_sample(*sample);
                 }
                 sync_transport_and_sequence(

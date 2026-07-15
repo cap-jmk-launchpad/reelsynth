@@ -10,13 +10,12 @@ use eframe::egui;
 use reelsynth::import::{import_serum_fxp, import_vital, import_wav_folder};
 use reelsynth::{
     load_preset, note_in_scale, resolve_diatonic_chord, scale_degree_to_midi, snap_note,
-    resolve_bank_for_preset, ArpEngine, ArpEvent, Envelope, MidiEvent, Patch,
+    resolve_bank_for_preset, ArpEngine, ArpEvent, MidiEvent, Patch,
     PerformanceLayout, PerformanceSettings, ScaleBehavior, ScopeMonitor, WavetableBank,
 };
 use reelsynth_ui::{
     compose_to_patch_sequence, draw_shell, effect_slots_to_patch, factory_bank, factory_label,
-    fm_source_from_index, filter_type_from_mode, lfo_shape_from_index, mod_slots_to_patch,
-    osc_type_from_index, patch_from_state, sync_state_from_patch, warp_mode_from_index,
+    mod_slots_to_patch, patch_from_state, sync_state_from_patch,
     OscStripContext, OscStripPreviewState, ShellConfig, ShellMidiDevices, ShellMode, UiState,
     ScopeStripContext, ScopeStripState, PianoRollTool,
 };
@@ -665,81 +664,11 @@ impl ReelSynthApp {
     }
 
     fn sync_params(&mut self) {
+        let patch = patch_from_state(&self.state, &self.current_patch);
         if let Some(a) = &self.audio {
-            a.send(AudioCmd::SetWtPosition(self.state.wt_position));
-            a.send(AudioCmd::SetFilterCutoff(self.state.filter_cutoff));
-            a.send(AudioCmd::SetFilterResonance(self.state.filter_resonance));
-            a.send(AudioCmd::SetFilterType(
-                filter_type_from_mode(self.state.filter_mode).into(),
-            ));
-            a.send(AudioCmd::SetFilterKeyTracking(self.state.filter_key_tracking));
-            a.send(AudioCmd::SetFilterDrive(self.state.filter_drive));
-            a.send(AudioCmd::SetFilter2 {
-                cutoff: self.state.filter2_cutoff,
-                resonance: self.state.filter2_resonance,
-                filter_type: filter_type_from_mode(self.state.filter2_mode).into(),
-                drive: self.state.filter2_drive,
-            });
-            a.send(AudioCmd::SetUnisonStereoSpread(self.state.unison_stereo_spread));
-            a.send(AudioCmd::SetEnvelope(Envelope {
-                attack: self.state.env_attack,
-                decay: self.state.env_decay,
-                sustain: self.state.env_sustain,
-                release: self.state.env_release,
-            }));
-            a.send(AudioCmd::SetFilterEnvelope(Envelope {
-                attack: self.state.filt_env_attack,
-                decay: self.state.filt_env_decay,
-                sustain: self.state.filt_env_sustain,
-                release: self.state.filt_env_release,
-            }));
-            a.send(AudioCmd::SetLfo {
-                rate: self.state.lfo_rate,
-                depth: self.state.lfo_depth,
-                shape: lfo_shape_from_index(self.state.lfo_shape).into(),
-            });
-            a.send(AudioCmd::SetLfo2 {
-                rate: self.state.lfo2_rate,
-                depth: self.state.lfo2_depth,
-                shape: lfo_shape_from_index(self.state.lfo2_shape).into(),
-            });
-            let mut macros = self.current_patch.macros.clone();
-            for (i, mac) in macros.iter_mut().enumerate().take(4) {
-                mac.value = self.state.macro_values[i];
-            }
-            a.send(AudioCmd::SetMacros(macros));
-            for (i, osc) in self.state.oscillators.iter().enumerate() {
-                a.send(AudioCmd::SetOsc {
-                    index: i,
-                    level: osc.level,
-                    detune: osc.coarse,
-                    unison: osc.unison,
-                    position: osc.position,
-                    pan: osc.pan,
-                    osc_type: osc_type_from_index(osc.osc_type).into(),
-                    pulse_width: osc.pulse_width,
-                    morph_a: osc.morph_a,
-                    morph_b: osc.morph_b,
-                    morph_amount: osc.morph_amount,
-                    warp_mode: warp_mode_from_index(osc.warp_mode).into(),
-                    warp_amount: osc.warp_amount,
-                    fm_source: fm_source_from_index(osc.fm_source).into(),
-                    fm_ratio: osc.fm_ratio,
-                    fm_index: osc.fm_index,
-                });
-                a.send(AudioCmd::SetOscFm {
-                    index: i,
-                    fm_source: fm_source_from_index(osc.fm_source).into(),
-                    fm_ratio: osc.fm_ratio,
-                    fm_index: osc.fm_index,
-                });
-            }
-            let patch = patch_from_state(&self.state, &self.current_patch);
             a.send(AudioCmd::SetPatch(patch.clone()));
-            self.current_patch = patch;
-        } else {
-            self.current_patch = patch_from_state(&self.state, &self.current_patch);
         }
+        self.current_patch = patch;
     }
 
     fn connect_midi(&mut self, index: usize) {

@@ -47,7 +47,16 @@ impl RtVoice {
         start_time: f32,
         mpe: VoiceMpe,
     ) {
-        self.state.reset(patch);
+        let legato = self.active && self.gate && self.state.amp_env_level > 1e-5;
+        if !legato {
+            self.state.reset(patch);
+        } else if self.state.amp_env_stage == 3 {
+            // Same note retrigger while releasing — snap back to sustain instead of hard reset.
+            self.state.amp_env_stage = 2;
+            self.state.amp_env_level = patch.envelope.sustain.max(self.state.amp_env_level);
+            self.state.filt_env_stage = 2;
+            self.state.filt_env_level = patch.filter_envelope.sustain.max(self.state.filt_env_level);
+        }
         self.note = note;
         self.channel = channel;
         self.freq = freq;
