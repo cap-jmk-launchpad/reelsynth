@@ -225,7 +225,11 @@ pub fn process_sample_stages(state: &mut VoiceState, ctx: &VoiceSampleContext<'_
         let bank = ctx
             .banks
             .get(bank_idx)
-            .unwrap_or_else(|| ctx.banks.first().expect("at least one bank"));
+            .or_else(|| ctx.banks.first());
+        let Some(bank) = bank else {
+            phase_idx += osc.unison.max(1) as usize;
+            continue;
+        };
 
         let pos_mod = mods
             .get(&format!("osc{}_position", oi + 1))

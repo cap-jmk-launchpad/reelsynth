@@ -54,6 +54,8 @@ fn resolve_bank(path: &Path, preset: &Patch) -> Result<WavetableBank, String> {
 
 pub struct ReelSynthApp {
     audio: Option<Arc<AudioHandle>>,
+    /// Wavetable used for scope previews and the WT editor when audio is unavailable.
+    ui_bank: WavetableBank,
     state: UiState,
     current_patch: Patch,
     preset_path: Option<PathBuf>,
@@ -120,6 +122,7 @@ impl ReelSynthApp {
         }
         Self {
             audio,
+            ui_bank: WavetableBank::factory_saw_morph(),
             state,
             current_patch,
             preset_path: None,
@@ -743,6 +746,7 @@ impl ReelSynthApp {
         self.state.wt_bank_name = name;
         let num_frames = bank.num_frames;
         let wt_idx = apply_loaded_bank_to_design(&mut self.state, wt_id.as_deref(), num_frames);
+        self.ui_bank = bank.clone();
         if let Some(a) = &self.audio {
             let patch = patch_from_state(&self.state, &self.current_patch);
             a.send(AudioCmd::LoadPreset {
@@ -927,6 +931,7 @@ impl ReelSynthApp {
         self.audio
             .as_ref()
             .and_then(|a| a.bank().read().ok().map(|g| (*g).clone()))
+            .or_else(|| Some(self.ui_bank.clone()))
     }
 
     fn poll_compose_transport(&mut self) {
@@ -1255,8 +1260,9 @@ impl eframe::App for ReelSynthApp {
                         )
                     }
                 } else {
+                    let banks = [self.ui_bank.clone()];
                     let scope_ctx = ScopeStripContext {
-                        banks: &[],
+                        banks: &banks,
                         bank_for_osc,
                         live: None,
                         is_playing: false,
@@ -1264,7 +1270,7 @@ impl eframe::App for ReelSynthApp {
                         state: &mut self.scope_strip_state,
                     };
                     let osc_ctx = OscStripContext {
-                        banks: &[],
+                        banks: &banks,
                         bank_for_osc,
                         now_secs,
                         state: &mut self.osc_strip_state,
@@ -1273,7 +1279,7 @@ impl eframe::App for ReelSynthApp {
                         ui,
                         ui.max_rect(),
                         &mut self.state,
-                        None,
+                        Some(&mut self.ui_bank),
                         &preview_patch,
                         &midi,
                         &config,
