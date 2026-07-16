@@ -17,24 +17,28 @@ The standalone app (`reelsynth-app`) uses a fixed **1280×880** layout (see `ui/
 
 ## Compose mode
 
-Toggle **Compose** in the header to replace the center column with a mini-DAW layout:
+Toggle **Compose** in the header for an Ableton-style **clip editor**:
 
 | Region | ~Height | Purpose |
 |--------|---------|---------|
 | Transport bar | 40 px | Play / stop / record, loop, metronome, BPM, snap grid |
 | Track list | left rail | Mute / solo / arm / select (180 px) |
-| Arrangement | 35% | Multi-track timeline, clip blocks, playhead scrub |
-| Piano roll | 45% | Selected clip editor — draw, move, resize notes; velocity lane |
-| Scene grid | 12% | 8 scenes × track columns — session launch |
-| Keyboard strip | 8% | 88-key piano (bottom) — record when armed, else monitor |
+| Clip strip | ~15% | Thin multi-track timeline — select / create clips, scrub playhead |
+| Piano roll | ~70%+ | Dominant clip editor — playable keys, beat grid, notes, velocity + automation |
+| Scenes | collapsed | Header **Scenes ▸**; expand for 8×track session launch grid |
+| Keyboard strip | footer | Optional 88-key piano — record when armed, else monitor |
+
+A default empty clip is selected on first entry so the roll is never blank.
 
 **Interactions**
 
-- Click arrangement clip → loads into piano roll
-- Double-click empty bar → create clip
-- Pencil tool → draw notes; Select → move; Eraser → delete
+- Hold left **piano keys** → note on/off with highlight (same pitches as QWERTY Z–M with letter glyphs on white keys)
+- Click arrangement clip → loads into piano roll; double-click empty bar → create clip
+- Pencil → draw notes (auditions while drawing); Select → move / click-audition; Eraser → delete
 - `Delete` removes selected notes; Undo / Redo in piano roll toolbar
-- Arm track + record → live input writes notes at playhead (UI-side; engine sync pending)
+- Scroll wheel → pitch scroll; Shift/horizontal scroll → beat scroll; Ctrl+wheel → beat zoom
+- Transport **▶** plays scheduled clip notes through the synth (seek into selected clip if playhead is outside it)
+- Arm track + record → live input writes notes at playhead and monitors
 
 ---
 
@@ -66,7 +70,7 @@ Toggle **Compose** in the header to replace the center column with a mini-DAW la
 | Click piano keys | Same as computer keys when piano visible |
 | MIDI controller | Full keyboard range; **auto-connect** when a keyboard-like port appears |
 
-In **Compose** mode, QWERTY and piano input route to the armed clip when recording; otherwise they monitor through the synth. Piano roll focus + pencil tool auditions quietly.
+In **Compose** mode, QWERTY, MIDI, left piano-roll keys, and pencil/select audition share one note on/off path (performance Key/Scale/Layout still apply). Recording to an armed clip also monitors.
 
 ---
 
