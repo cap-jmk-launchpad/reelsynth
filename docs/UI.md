@@ -51,7 +51,7 @@ A default empty clip is selected on first entry so the roll is never blank.
 | **Open** | Load `.reelpreset`; resolves sibling `.reelwt` |
 | **Save** | Write current patch as `.reelpreset` |
 | **Design** / **Compose** | Switch shell mode — sound design vs mini-DAW |
-| **WT** menu | Open/Save `.reelwt`, factory banks, Vital/WAV/Serum import |
+| **WT** menu | Open/Save `.reelwt`, **factory wavetables** (applies bank to the Design wave stack — promotes a wavetable layer so sound matches the editor), Vital/WAV/Serum import |
 | **Piano** | Show/hide on-screen keyboard |
 | **Key / Scale / Layout** | Performance input: root key, scale mode, piano vs scale-fold vs chord row |
 | **Arp** (footer) | Toggle arpeggiator; input mode, style, rate, octaves, gate, latch |
@@ -198,7 +198,7 @@ Serial chain: delay, reverb, chorus, etc. Per-slot mix and bypass.
 | **Wavetable bank** | 256 frames × 2048 samples | Position picks timbre; morph moves between frames |
 | **Wave quant** | Discrete slots (8–256) mapping to frame indices | Mod/LFO walks a **slot curve** — non-uniform slots = non-linear scans |
 | **Wave stack** | `wave_layers[]` inside one Osc tab (saw + sine + WT…) | Additive thickness; `stack_mode: add` or `avg` |
-| **Osc 1/2/3 tabs** | Separate oscillators + FM | Different from stack — FM routing between voices |
+| **Factory wavetable (WT menu)** | Loads a bank **and** promotes a wavetable layer (ducks VA siblings) | Sound matches the editor — not bank-name-only |
 
 ### Wavetable editor (v0.3 — layer-first Design)
 

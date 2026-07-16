@@ -14,11 +14,10 @@ use reelsynth::{
     PerformanceLayout, PerformanceSettings, ScaleBehavior, ScopeMonitor, WavetableBank,
 };
 use reelsynth_ui::{
-    compose_to_patch_sequence, draw_shell, effect_slots_to_patch, factory_bank, factory_label,
-    mod_slots_to_patch, patch_from_state, sync_state_from_patch,
-    OscStripContext, OscStripPreviewState, ShellAppSettings, ShellConfig, ShellMidiDevices,
-    ShellMode, UiState,
-    ScopeStripContext, ScopeStripState,
+    apply_loaded_bank_to_design, compose_to_patch_sequence, draw_shell, effect_slots_to_patch,
+    factory_bank, factory_label, mod_slots_to_patch, patch_from_state, sync_state_from_patch,
+    OscStripContext, OscStripPreviewState, ScopeStripContext, ScopeStripState, ShellAppSettings,
+    ShellConfig, ShellMidiDevices, ShellMode, UiState,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -738,10 +737,12 @@ impl ReelSynthApp {
     }
 
     fn load_bank(&mut self, bank: WavetableBank, name: String, wt_id: Option<String>) {
-        if let Some(id) = wt_id {
+        if let Some(id) = wt_id.clone() {
             self.current_patch.wavetable_id = Some(id);
         }
         self.state.wt_bank_name = name;
+        let num_frames = bank.num_frames;
+        let wt_idx = apply_loaded_bank_to_design(&mut self.state, wt_id.as_deref(), num_frames);
         if let Some(a) = &self.audio {
             let patch = patch_from_state(&self.state, &self.current_patch);
             a.send(AudioCmd::LoadPreset {
@@ -750,6 +751,11 @@ impl ReelSynthApp {
             });
             self.current_patch = patch;
         }
+        self.state.status = format!(
+            "Loaded WT · Layer {} · {}",
+            wt_idx + 1,
+            self.state.wt_bank_name
+        );
     }
 
     fn import_wt_file(&mut self) {
@@ -769,12 +775,6 @@ impl ReelSynthApp {
                     .replace('_', " ");
                 self.wt_path = Some(path.clone());
                 self.load_bank(bank, name, None);
-                self.state.status = format!(
-                    "Loaded WT {}",
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("wavetable")
-                );
             }
             Err(e) => self.state.status = format!("WT open failed: {e}"),
         }
@@ -788,7 +788,6 @@ impl ReelSynthApp {
         let label = factory_label(id).unwrap_or(id).to_string();
         self.wt_path = None;
         self.load_bank(bank, label, Some(id.to_string()));
-        self.state.status = format!("Loaded factory WT: {id}");
     }
 
     fn import_vital_wt(&mut self) {

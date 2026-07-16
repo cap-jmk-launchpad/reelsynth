@@ -81,6 +81,7 @@ pub use wt::{
 };
 
 pub use state_sync::{
-    compose_to_patch_sequence, filter_mode_from_type, filter_type_from_mode, lfo_shape_from_index,
-    lfo_shape_index, patch_from_state, sync_state_from_patch,
+    apply_loaded_bank_to_design, compose_to_patch_sequence, filter_mode_from_type,
+    filter_type_from_mode, lfo_shape_from_index, lfo_shape_index, patch_from_state,
+    sync_state_from_patch,
 };

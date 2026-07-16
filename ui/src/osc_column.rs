@@ -909,7 +909,6 @@ mod bridge_tests {
 
 #[cfg(test)]
 mod osc_count_tests {
-    use super::*;
     use crate::OscillatorUi;
 
     #[test]

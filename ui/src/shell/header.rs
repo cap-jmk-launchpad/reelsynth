@@ -94,7 +94,7 @@ pub(super) fn draw_header(
                             ui.close_menu();
                         }
                         menu_divider(ui);
-                        menu_section_label(ui, "Factory banks");
+                        menu_section_label(ui, "Factory wavetables");
                         for entry in FACTORY_BANKS {
                             if menu_action(ui, entry.label).clicked() {
                                 actions.import_factory_wt = Some(entry.id.to_string());

@@ -12,10 +12,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Design Result curve** — stack Result drawn only on the left 2D pane (distinct fill); right pane is layers-only; individual layer curves drag on both panes (Y=level, X=phase/WT)
 - **Quant knobs** — dots snap to the selected layer curve (proximity hit + level/sign scale) on **both** Design panes; quantized edit polyline drawn through knobs for intuitive shaping
 - **Right Layers pane** — follows selection (`Edit · Layer N · type`); selected curve gets fill + emphasis; dim siblings; Quant reshape when the selected layer is wavetable
+- **Factory wavetables (WT menu)** — loading a factory/import bank now promotes a wavetable layer (and ducks VA siblings) so audio matches the wave editor, not just the bank label
 
 ### Changed
 
 - Cleared workspace `cargo check` warnings (`-D warnings` clean for reelsynth / reelsynth-ui / reelsynth-app); Cursor **beforeShellExecution** hook blocks `git push` unless a fresh `.cursor/compile-clean.stamp` exists (refresh via `node .cursor/hooks/require-clean-compile.js`)
+- WT menu section renamed **Factory wavetables** (was “Factory banks”) to match layer-first Design
 - **Settings** moved from floating modal window to a **Settings** dropdown in the top header navbar
 - Removed Design pane animations (ambient waves, phase playhead scrub, idle repaint loops)
 - README expanded with doc links and capability matrix

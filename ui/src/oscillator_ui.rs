@@ -16,6 +16,8 @@ pub struct WaveLayerUi {
     pub phase: f32,
     pub enabled: bool,
     pub invert: bool,
+    /// Optional bank id for this layer (falls back to patch/osc primary bank).
+    pub wavetable_id: Option<String>,
 }
 
 impl Default for WaveLayerUi {
@@ -29,6 +31,7 @@ impl Default for WaveLayerUi {
             phase: 0.0,
             enabled: true,
             invert: false,
+            wavetable_id: None,
         }
     }
 }
@@ -80,6 +83,7 @@ impl WaveLayerUi {
             phase: layer.phase,
             enabled: layer.level > 0.0,
             invert: layer.invert,
+            wavetable_id: layer.wavetable_id.clone(),
         }
     }
 
@@ -91,7 +95,7 @@ impl WaveLayerUi {
             wt_position: self.wt_position,
             pulse_width: self.pulse_width,
             phase: self.phase,
-            wavetable_id: None,
+            wavetable_id: self.wavetable_id.clone(),
             invert: self.invert,
         }
     }

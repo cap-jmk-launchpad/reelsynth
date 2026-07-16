@@ -698,6 +698,7 @@ pub fn count_base_audit_variants() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout_audit::HEADER_CLUSTER_MIN_GAP;
 
     #[test]
     fn registry_variant_count_matches_plan() {

@@ -4,8 +4,7 @@ use egui::Rect;
 
 use crate::center_layout::CenterRegions;
 use crate::layout::{
-    embed_fx_in_osc_column, embed_mod_in_rail,
-    ShellLayout, ShellLayoutOptions, SPACE_SM,
+    embed_fx_in_osc_column, embed_mod_in_rail, ShellLayout, ShellLayoutOptions, SPACE_SM,
 };
 
 const EPS: f32 = 0.5;
@@ -468,10 +467,10 @@ pub fn audit_center(
 }
 
 #[cfg(test)]
-    mod tests {
+mod tests {
     use super::*;
     use crate::center_layout::compute_center_regions;
-    use crate::layout::{APP_HEIGHT_FULL, APP_MIN_WIDTH};
+    use crate::layout::{embed_piano_in_center, APP_HEIGHT_FULL, APP_MIN_WIDTH};
     use crate::state::ShellConfig;
 
     #[test]
