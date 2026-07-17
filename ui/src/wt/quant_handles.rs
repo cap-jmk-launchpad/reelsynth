@@ -434,6 +434,29 @@ pub fn resample_frame_from_quant_points(
             frame[idx.min(len - 1)] = amp;
         }
     }
+    // Quant rebuilds can leave a raw wrap cliff (slot 0 ≠ last). Close the seam
+    // so WT BLEP + voice slew are not fighting a near-vertical edge every cycle.
+    periodize_quant_frame(frame);
+}
+
+/// Soft-close `frame[last] → frame[0]` after quant resampling (matches factory tables).
+pub fn periodize_quant_frame(frame: &mut [f32]) {
+    let n = frame.len();
+    if n < 8 {
+        return;
+    }
+    // Wider fade than factory tables — Hold knobs often leave ±1 endpoints.
+    let fade = (n / 16).max(16).min(128);
+    let start = frame[0];
+    for i in 0..fade {
+        let w = (i as f32 + 1.0) / (fade as f32 + 1.0);
+        // Ease-in crossfade each sample toward frame[0] (works when only the
+        // last sample differs from the body — common after Hold + pin endpoints).
+        let w = w * w;
+        let idx = n - fade + i;
+        frame[idx] = frame[idx] * (1.0 - w) + start * w;
+    }
+    frame[n - 1] = start;
 }
 
 /// Uniform-mode resample (all segments share `mode`).
@@ -893,7 +916,30 @@ mod tests {
         let points = vec![-0.5_f32, 0.8];
         resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Linear);
         assert!((frame[0] - (-0.5)).abs() < 1e-3);
-        assert!((frame[frame.len() - 1] - 0.8).abs() < 1e-3);
+        // Seam is periodized for wrap — last sample matches first, not the last knob.
+        assert!(
+            (frame[frame.len() - 1] - frame[0]).abs() < 1e-3,
+            "quant resample must close wrap seam"
+        );
+    }
+
+    #[test]
+    fn quant_hold_wrap_seam_is_periodized() {
+        let mut frame = vec![0.0_f32; 512];
+        // Opposite endpoints — classic Hold wrap cliff without periodize.
+        let points = vec![1.0_f32, 0.0, 0.0, -1.0];
+        resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Hold);
+        let seam = (frame[frame.len() - 1] - frame[0]).abs();
+        assert!(
+            seam < 1e-3,
+            "Hold quant wrap must be periodized (seam={seam})"
+        );
+        // Adjacent samples near wrap must not be a near-vertical cliff.
+        let jump = (frame[0] - frame[frame.len() - 2]).abs();
+        assert!(
+            jump < 0.35,
+            "periodized wrap adjacent jump too steep: {jump}"
+        );
     }
 
     #[test]

@@ -21,7 +21,7 @@ use super::view_2d::{apply_waveform_drag_inner, va_layer_waveform_points};
 use super::view_3d_stack::{
     layer_palette, layer_quant_display_scale, layer_waveform_points, WAVE_SAMPLES,
 };
-use super::waveform::frame_index;
+use super::waveform::{frame_index, layer_quant_editable};
 
 pub struct WtSelectedLayerResponse {
     pub frame_edited: bool,
@@ -88,7 +88,12 @@ impl WtSelectedLayerView<'_> {
             .get(layer_idx)
             .map(|l| l.is_wavetable())
             .unwrap_or(false);
-        let quant_active = layer_wt && self.wave_quant > 0;
+        // Quant knobs + interp only for WT / residual layers when Quant > 0.
+        let quant_active = self
+            .wave_layers
+            .get(layer_idx)
+            .is_some_and(layer_quant_editable)
+            && self.wave_quant > 0;
 
         let selected_slot = *self.selected_quant_slot;
         let show_seg = quant_active
@@ -303,7 +308,9 @@ impl WtSelectedLayerView<'_> {
             }
         }
 
-        if *self.tool == WtEditTool::Select && quant_active {
+        // Quant knobs live on Selected whenever the layer is editable — not only
+        // while the Select tool is active (Shape/Curve still own their own drags).
+        if quant_active && matches!(*self.tool, WtEditTool::Select | WtEditTool::Pencil) {
             if let Some(bank) = self.bank.as_mut() {
                 if let Some(layer) = self.wave_layers.get(layer_idx) {
                     let display_scale = layer_quant_display_scale(layer);
@@ -328,6 +335,10 @@ impl WtSelectedLayerView<'_> {
                     }
                 }
             }
+        } else if self.wave_quant > 0 && layer_va {
+            status_hint.get_or_insert_with(|| {
+                "Quant knobs: select a wavetable / residual layer".into()
+            });
         }
 
         let layer_type = self

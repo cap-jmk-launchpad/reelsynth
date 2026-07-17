@@ -172,7 +172,7 @@ impl WtToolbar {
                     analyze_requested = true;
                 }
                 if wave_quant > 0 {
-                    const COMBO_W: f32 = 72.0;
+                    const COMBO_W: f32 = 64.0;
                     ui.add_space(4.0);
                     let combo = egui::ComboBox::from_id_salt("wt_quant_interp_curve")
                         .selected_text(format!("All·{}", curve_interp.label()))
@@ -220,17 +220,14 @@ impl WtToolbar {
                             slot + 2
                         ));
                     } else if let Some(slot) = selected_slot {
-                        let slot_count = if wave_quant == 255 {
-                            256
-                        } else {
-                            wave_quant as usize
-                        };
+                        let slot_count = crate::wt::effective_quant_count(wave_quant).max(1);
                         if slot + 1 >= slot_count {
                             ui.label(
                                 egui::RichText::new("end · no next")
                                     .size(10.0)
                                     .color(tokens.text_secondary),
-                            );
+                            )
+                            .on_hover_text("Last Quant knob has no outgoing segment");
                         }
                     }
                 }

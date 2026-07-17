@@ -311,6 +311,9 @@ impl ReelSynthApp {
                 self.audio = Some(handle);
                 self.current_patch = patch;
                 self.state.status = status;
+                // Re-voice any keys still held so a device switch does not leave a
+                // silent gap while the UI thinks the note is down.
+                self.revoice_held_keys();
             }
             Err(e) => {
                 self.audio_selected = 0;
@@ -489,6 +492,19 @@ impl ReelSynthApp {
             if let Some(a) = &self.audio {
                 a.send(AudioCmd::Midi(MidiEvent::note_off(0, note)));
             }
+        }
+    }
+
+    /// After an audio device restart the DSP engine is fresh — re-send held keys.
+    fn revoice_held_keys(&mut self) {
+        let held: Vec<u8> = self.state.keys_down.iter().copied().collect();
+        if held.is_empty() {
+            return;
+        }
+        // Clear local set so engine_note_on actually emits (insert gate).
+        self.state.keys_down.clear();
+        for note in held {
+            self.engine_note_on(note, 0.9);
         }
     }
 

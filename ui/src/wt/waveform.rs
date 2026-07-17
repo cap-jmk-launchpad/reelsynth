@@ -89,6 +89,23 @@ pub fn selection_from_curve_click(
     }
 }
 
+/// Layers that may show / edit Quant knobs: wavetable or residual, enabled, audible.
+pub fn layer_quant_editable(layer: &crate::oscillator_ui::WaveLayerUi) -> bool {
+    layer.is_wavetable() && layer.enabled && layer.level > 0.0
+}
+
+/// Whether Design panes should expose Quant knobs for `selected` at `wave_quant`.
+pub fn quant_knobs_for_selection(
+    selected: Option<usize>,
+    layers: &[crate::oscillator_ui::WaveLayerUi],
+    wave_quant: u8,
+) -> Option<usize> {
+    if wave_quant == 0 {
+        return None;
+    }
+    selected.filter(|&i| layers.get(i).is_some_and(layer_quant_editable))
+}
+
 fn distance_point_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
     let len_sq = ab.x * ab.x + ab.y * ab.y;
@@ -182,5 +199,46 @@ mod tests {
         assert_eq!(selection_from_curve_click(Some(2), true), None);
         assert_eq!(selection_from_curve_click(None, false), None);
         assert_eq!(selection_from_curve_click(None, true), None);
+    }
+
+    #[test]
+    fn quant_knobs_only_for_editable_wt_or_residual() {
+        use crate::oscillator_ui::WaveLayerUi;
+
+        let saw = WaveLayerUi {
+            source_type: "saw".into(),
+            level: 1.0,
+            enabled: true,
+            ..WaveLayerUi::default()
+        };
+        let wt = WaveLayerUi {
+            source_type: "wavetable".into(),
+            level: 0.5,
+            enabled: true,
+            ..WaveLayerUi::default()
+        };
+        let residual = WaveLayerUi {
+            source_type: "wavetable".into(),
+            level: 1.0,
+            enabled: true,
+            residual: true,
+            ..WaveLayerUi::default()
+        };
+        let muted_wt = WaveLayerUi {
+            source_type: "wavetable".into(),
+            level: 0.0,
+            enabled: true,
+            ..WaveLayerUi::default()
+        };
+        assert!(!layer_quant_editable(&saw));
+        assert!(layer_quant_editable(&wt));
+        assert!(layer_quant_editable(&residual));
+        assert!(!layer_quant_editable(&muted_wt));
+
+        let layers = vec![saw, wt, residual];
+        assert_eq!(quant_knobs_for_selection(Some(0), &layers, 16), None);
+        assert_eq!(quant_knobs_for_selection(Some(1), &layers, 16), Some(1));
+        assert_eq!(quant_knobs_for_selection(Some(2), &layers, 16), Some(2));
+        assert_eq!(quant_knobs_for_selection(Some(1), &layers, 0), None);
     }
 }

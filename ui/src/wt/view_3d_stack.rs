@@ -20,7 +20,8 @@ use super::quant_handles::{
 use super::residual::layer_curve_label;
 use super::slots::effective_quant_count;
 use super::waveform::{
-    frame_index, hovered_layer_from_pointer, peak_point, selection_from_curve_click,
+    frame_index, hovered_layer_from_pointer, peak_point, quant_knobs_for_selection,
+    selection_from_curve_click,
 };
 
 pub(crate) const HOVER_DISTANCE_PX: f32 = 14.0;
@@ -330,12 +331,9 @@ impl WtView3dStack<'_> {
 
         let selected_idx = *self.selected_layer;
         // Quant knobs only on the selected WT/residual curve — siblings stay stroke-only.
-        let quant_layer_idx = selected_idx.filter(|&i| {
-            self.layers
-                .get(i)
-                .is_some_and(|l| l.is_wavetable() && l.enabled && l.level > 0.0)
-        });
-        let quant_active = self.wave_quant > 0 && quant_layer_idx.is_some();
+        let quant_layer_idx =
+            quant_knobs_for_selection(selected_idx, self.layers, self.wave_quant);
+        let quant_active = quant_layer_idx.is_some();
         let edit_frame_idx = quant_layer_idx
             .and_then(|i| self.layers.get(i).map(|l| l.wt_position))
             .map(|p| frame_index(p, bank.num_frames))

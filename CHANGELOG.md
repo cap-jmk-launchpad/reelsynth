@@ -8,6 +8,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Held-note dropout** — brief note-off→note-on while releasing no longer hard-resets soft-start (`filter_fade`); audio device switches re-voice held keys so sustain stays continuous
+- **Quant wrap crackle** — quant frame resample periodizes the cycle seam (same idea as factory tables) so Hold/Linear edits do not reintroduce near-vertical WT wraps
+- **Design Quant knobs** — knobs only on editable WT/residual curves when Quant > 0; Selected column always shows knobs + **All·…** / per-segment interp for those layers (VA shows a hint); Result/Layers siblings stay stroke-only
 - **Design WT click→select** — clicking a layer curve in Result / Layers commits `selected_layer_idx`; Quant knobs appear only on the selected WT/residual curve in multi-curve panes (siblings stay stroke-only); Selected pane stays fully interactive. Knob proximity still wins over curve click
 - **Compose piano roll** — notes now commit on pointer release (egui clears interact pos on drag end); track select no longer clears the active clip; default clip auto-ensured so Pencil works immediately
 
@@ -18,6 +21,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Factory wavetables (WT menu)** — loading a factory/import bank now promotes a wavetable layer (and ducks VA siblings) so audio matches the wave editor, not just the bank label
 
 ### Changed
+
+- **Result overlay method** — `add` / `avg` / `avg_equal` combo in the Result pane caption (writes `stack_mode`, live audio)
 
 - **Compose clip strip** — collapsed by default (**Clips ▸**); piano roll is the primary surface with in-toolbar tool hints
 
@@ -34,7 +39,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Per-segment Quant interp** — each layer stores a curve default (`quant_interp`) plus `quant_segment_interps` (`len = knobs−1`); Selected toolbar **All·…** fills every segment; clicking a knob edits that knob→next segment (last knob has no outgoing segment). Modes: Hold, Linear, Spline, Poly, Expo, MA
+- **Per-segment Quant interp** — each layer stores a curve default (`quant_interp`) plus `quant_segment_interps` (`len = knobs−1`); Selected toolbar **All·…** fills every segment; clicking a knob edits that knob→next segment (last knob has no outgoing segment; shows `end · no next`). Modes: Hold, Linear, Spline, Poly, Expo, MA
 - **Selectable audio output** — header **Audio** combo lists CPAL output devices; selection persists in app settings
 - **Auto-select new audio output** — when a device appears (DI / interface hot-plug), switch to it with a status message (Settings toggle; default on). Only newly appeared devices trigger a switch — no thrash on every default-device poll
 - **Three-column Design WT** — Result · Layers · Selected panes with per-column Quant roles; **Residual** wavetable layer created on first Result quant edit

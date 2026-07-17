@@ -256,7 +256,7 @@ use crate::wavetable::WavetableBank;
         let mut diff = 0.0f32;
         for i in 0..4410 {
             let t = i as f32 * dt;
-            let mut ctx_c = single_bank_ctx(&bank, &patch, 440.0, true, 1.0, t, dt);
+            let ctx_c = single_bank_ctx(&bank, &patch, 440.0, true, 1.0, t, dt);
             let mut ctx_b = single_bank_ctx(&bank, &patch, 440.0, true, 1.0, t, dt);
             ctx_b.mpe.pitch_bend = 0.5;
             let [l_c, _] = process_sample(&mut center, &ctx_c);

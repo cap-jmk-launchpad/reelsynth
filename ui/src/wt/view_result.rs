@@ -21,7 +21,9 @@ use super::view_3d_stack::{
     composite_waveform_points, layer_palette, layer_quant_display_scale, layer_waveform_points,
     HOVER_DISTANCE_PX, WAVE_SAMPLES,
 };
-use super::waveform::{hovered_layer_from_pointer, peak_point, selection_from_curve_click};
+use super::waveform::{
+    hovered_layer_from_pointer, peak_point, quant_knobs_for_selection, selection_from_curve_click,
+};
 
 pub struct WtViewResultResponse {
     pub frame_edited: bool,
@@ -76,12 +78,13 @@ impl WtViewResult<'_> {
             .unwrap_or(0);
 
         // Layer pick + level/phase drag (no quant grab).
-        let selected_wt = (*self.selected_layer_idx).filter(|&i| {
-            self.wave_layers
-                .get(i)
-                .is_some_and(|l| l.is_wavetable() && l.enabled && l.level > 0.0)
-        });
-        let selected_layer_quant = self.wave_quant > 0 && selected_wt.is_some();
+        // Selected-layer Quant knobs only when that layer is WT/residual.
+        let selected_wt = quant_knobs_for_selection(
+            *self.selected_layer_idx,
+            self.wave_layers,
+            self.wave_quant,
+        );
+        let selected_layer_quant = selected_wt.is_some();
         let mut quant_grab = false;
         if quant_active {
             if let Some(bank) = self.bank.as_ref() {
@@ -694,18 +697,46 @@ impl WtViewResult<'_> {
             .iter()
             .filter(|l| l.enabled && l.level > 0.0)
             .count();
-        let label = format!(
-            "Result · {} · {}",
-            n,
-            self.stack_mode
-        );
-        painter.text(
-            Pos2::new(plot_rect.min.x + 8.0, plot_rect.min.y + 6.0),
-            egui::Align2::LEFT_TOP,
-            label,
-            egui::FontId::proportional(10.0),
-            tokens.text_secondary,
-        );
+
+        // Overlay method (stack_mode) — visible + selectable in Result header.
+        let mode_anchor = Pos2::new(plot_rect.min.x + 8.0, plot_rect.min.y + 4.0);
+        let mode_id = ui.id().with("result_stack_mode");
+        let mut mode_idx = crate::osc_column::stack_mode_index(self.stack_mode);
+        let mode_rect =
+            Rect::from_min_size(mode_anchor, egui::vec2((plot_rect.width() - 16.0).max(80.0), 18.0));
+        crate::region::region(ui, mode_rect, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(
+                    egui::RichText::new(format!("Result · {n} ·"))
+                        .size(10.0)
+                        .color(tokens.text_secondary),
+                );
+                let combo = egui::ComboBox::from_id_salt(mode_id)
+                    .selected_text(match mode_idx {
+                        1 => "avg",
+                        2 => "avg_equal",
+                        _ => "add",
+                    })
+                    .width(72.0)
+                    .show_ui(ui, |ui| {
+                        for (i, label) in ["add", "avg", "avg_equal"].iter().enumerate() {
+                            if ui.selectable_label(mode_idx == i, *label).clicked() {
+                                mode_idx = i;
+                            }
+                        }
+                    });
+                combo
+                    .response
+                    .on_hover_text(crate::osc_column::stack_mode_tooltip(self.stack_mode));
+            });
+        });
+        let new_mode = crate::osc_column::stack_mode_from_index(mode_idx);
+        if self.stack_mode != new_mode {
+            *self.stack_mode = new_mode.into();
+            stack_changed = true;
+            status_hint = Some(format!("Stack → {new_mode}"));
+        }
 
         record_region(ui.ctx(), AuditId::CenterWtResult, rect, rect);
 

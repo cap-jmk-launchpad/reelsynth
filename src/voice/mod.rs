@@ -215,6 +215,45 @@ mod tests {
         }
     }
 
+    /// Sustain RMS must stay continuous after attack/decay — no silence gap mid-hold.
+    #[test]
+    fn factory_lead_held_note_no_sustain_dropout() {
+        let bank = WavetableBank::factory_saw_morph();
+        let mut patch = Patch::factory_lead();
+        patch.effects.clear();
+        patch.lfo.depth = 0.0;
+        patch.lfo2.depth = 0.0;
+        for slot in &mut patch.mod_matrix {
+            if slot.source == "lfo1" || slot.source == "lfo2" {
+                slot.enabled = false;
+            }
+        }
+        let sr = 44_100u32;
+        // Long enough that we can measure sustain before the render_note release tail.
+        let audio = render_note_single_bank(&bank, 440.0, 2.0, sr, &patch);
+        let win = (0.04 * sr as f32) as usize;
+        let mut prev_rms = None;
+        let mut min_ratio = f32::MAX;
+        // After attack+decay settle; stay clear of the offline release tail.
+        let start = (0.35 * sr as f32) as usize;
+        let end = (1.0 * sr as f32) as usize;
+        let mut i = start;
+        while i + win < end {
+            let rms = (audio[i..i + win].iter().map(|s| s * s).sum::<f32>() / win as f32).sqrt();
+            if let Some(prev) = prev_rms {
+                if prev > 1e-4 {
+                    min_ratio = min_ratio.min(rms / prev);
+                }
+            }
+            prev_rms = Some(rms);
+            i += win / 2;
+        }
+        assert!(
+            min_ratio > 0.35,
+            "held-note sustain dropout: min RMS ratio={min_ratio}"
+        );
+    }
+
     /// Held note with a discontinuous wavetable must not produce near-full-scale
     /// sample steps after band-limited wrap (naive was ≈1.1–2.0 per wrap).
     #[test]
