@@ -58,7 +58,7 @@ pub fn draw_track_list(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Trac
                                 let sel_resp = ui.selectable_label(selected, "");
                                 if sel_resp.clicked() {
                                     compose.selected_track = ti;
-                                    compose.selected_clip = None;
+                                    compose.ensure_editable_clip();
                                     compose.selected_notes.clear();
                                     actions.selection_changed = true;
                                 }
@@ -95,7 +95,7 @@ pub fn draw_track_list(ui: &mut Ui, rect: Rect, compose: &mut ComposeUi) -> Trac
                                     .clicked()
                                 {
                                     compose.selected_track = ti;
-                                    compose.selected_clip = None;
+                                    compose.ensure_editable_clip();
                                     compose.selected_notes.clear();
                                     actions.selection_changed = true;
                                 }

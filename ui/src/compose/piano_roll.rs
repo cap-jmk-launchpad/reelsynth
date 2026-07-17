@@ -108,6 +108,8 @@ pub fn draw_piano_roll(
     let tokens = Tokens::default();
     let mut actions = PianoRollActions::default();
 
+    compose.ensure_editable_clip();
+
     // Flush deferred click-audition note-off from the previous frame.
     if let Some(note) = compose.pending_audition_off.take() {
         actions.audition_note_off = Some(note);
@@ -149,6 +151,11 @@ pub fn draw_piano_roll(
                     if ui.button("Generate Arp").clicked() {
                         actions.open_arp_dialog = true;
                     }
+                    ui.label(
+                        egui::RichText::new(tool_hint(compose.piano_roll_tool))
+                            .size(10.0)
+                            .color(tokens.text_secondary),
+                    );
                 });
                 record_region(
                     ui.ctx(),
@@ -162,7 +169,7 @@ pub fn draw_piano_roll(
                     ui.centered_and_justified(|ui| {
                         ui.label(
                             egui::RichText::new(
-                                "Select or double-click a clip in the arrangement",
+                                "No clip on this track — drawing will create one automatically",
                             )
                             .size(11.0)
                             .color(tokens.text_secondary),
@@ -251,6 +258,14 @@ pub fn draw_piano_roll(
     }
 
     actions
+}
+
+fn tool_hint(tool: PianoRollTool) -> &'static str {
+    match tool {
+        PianoRollTool::Pencil => "Pencil: click or drag to draw notes",
+        PianoRollTool::Select => "Select: drag notes · edges resize · Delete removes",
+        PianoRollTool::Eraser => "Eraser: click notes to delete",
+    }
 }
 
 fn selected_clip_mut(compose: &mut ComposeUi) -> Option<(usize, usize)> {
@@ -532,6 +547,7 @@ fn paint_note_grid(
                                 start_beats: snapped,
                             },
                             start_pos: pos,
+                            last_pos: Some(pos),
                         });
                         audition_note = Some((pitch, 0.85));
                     }
@@ -547,6 +563,7 @@ fn paint_note_grid(
                                     orig_dur: note.duration_beats,
                                 },
                                 start_pos: pos,
+                                last_pos: Some(pos),
                             });
                         }
                         HitRegion::RightEdge(ni) => {
@@ -560,6 +577,7 @@ fn paint_note_grid(
                                     orig_dur: note.duration_beats,
                                 },
                                 start_pos: pos,
+                                last_pos: Some(pos),
                             });
                         }
                         HitRegion::Body(ni) => {
@@ -580,6 +598,7 @@ fn paint_note_grid(
                                     compose.drag_state = Some(DragState {
                                         drag: NoteDrag::Move { originals },
                                         start_pos: pos,
+                                        last_pos: Some(pos),
                                     });
                                     changed = true;
                                 }
@@ -601,6 +620,7 @@ fn paint_note_grid(
                                 compose.drag_state = Some(DragState {
                                     drag: NoteDrag::Move { originals },
                                     start_pos: pos,
+                                    last_pos: Some(pos),
                                 });
                             }
                         }
@@ -645,6 +665,29 @@ fn paint_note_grid(
                             changed = true;
                         }
                     }
+                    PianoRollTool::Pencil
+                        if hit == HitRegion::Empty
+                            && compose.drag_state.is_none()
+                            && !response.drag_started()
+                            && !response.drag_stopped() =>
+                    {
+                        let snapped = compose.snap_beats(beat);
+                        let note = MidiNote {
+                            pitch,
+                            start_beats: snapped,
+                            duration_beats: step,
+                            velocity: 0.78,
+                        };
+                        compose.history.push(ComposeCommand::AddNote {
+                            track: ti,
+                            clip: ci,
+                            note: note.clone(),
+                        });
+                        compose.project.tracks[ti].clips[ci].notes.push(note);
+                        audition_note = Some((pitch, 0.85));
+                        compose.pending_audition_off = Some(pitch);
+                        changed = true;
+                    }
                     PianoRollTool::Select if hit == HitRegion::Empty => {
                         compose.selected_notes.clear();
                     }
@@ -677,6 +720,11 @@ fn paint_note_grid(
     }
 
     if response.dragged() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            if let Some(drag) = compose.drag_state.as_mut() {
+                drag.last_pos = Some(pos);
+            }
+        }
         if let Some(drag) = compose.drag_state.as_ref() {
             if let Some(pos) = response.interact_pointer_pos() {
                 let beat = beat_at_pos(pos, grid_left, beat_w, beat_scroll).clamp(0.0, clip_len);
@@ -753,7 +801,13 @@ fn paint_note_grid(
 
     if response.drag_stopped() {
         if let Some(drag) = compose.drag_state.take() {
-            if let Some(pos) = response.interact_pointer_pos() {
+            // interact_pointer_pos() is often None on release — use last/start pos.
+            let pos = response
+                .interact_pointer_pos()
+                .or(drag.last_pos)
+                .or_else(|| ui.input(|i| i.pointer.latest_pos()))
+                .unwrap_or(drag.start_pos);
+            {
                 match drag.drag {
                     NoteDrag::Pencil { pitch, start_beats } => {
                         let end_beat =
@@ -1165,6 +1219,8 @@ fn paint_note(
 pub(crate) struct DragState {
     pub(crate) drag: NoteDrag,
     pub(crate) start_pos: Pos2,
+    /// Last pointer position during the drag (release often clears interact_pointer_pos).
+    pub(crate) last_pos: Option<Pos2>,
 }
 
 fn pitch_at_y(y: f32, grid_top: f32, pitch_top: u8) -> u8 {

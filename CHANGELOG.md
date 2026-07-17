@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Compose piano roll** — notes now commit on pointer release (egui clears interact pos on drag end); track select no longer clears the active clip; default clip auto-ensured so Pencil works immediately
+
 - **Held-note crackle** — widen VA/WT BLEP so saw/stack wrap cliffs are no longer near-vertical (was ~0.98 sample jump at A4); regressions cover Factory Lead mid/late sustain with FX. Bright saw overtones remain intentional; unintended wrap clicks are suppressed.
 - **Design Result curve** — stack Result drawn only on the left 2D pane (distinct fill); right pane is layers-only; individual layer curves drag on both panes (Y=level, X=phase/WT)
 - **Quant knobs** — dots snap to the selected layer curve (proximity hit + level/sign scale) on **both** Design panes; quantized edit polyline drawn through knobs for intuitive shaping
@@ -15,6 +17,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Factory wavetables (WT menu)** — loading a factory/import bank now promotes a wavetable layer (and ducks VA siblings) so audio matches the wave editor, not just the bank label
 
 ### Changed
+
+- **Compose clip strip** — collapsed by default (**Clips ▸**); piano roll is the primary surface with in-toolbar tool hints
 
 - **Quant knob hover** — clearer snap feedback across Result / Layers / Selected: enlarged brighter knobs with glow + slot guide, thickened active curve, grab/grabbing cursor, status `Slot N · amp ±x.xx`
 - **Design WT layout** — two panes replaced by three equal columns (Result / Layers / Selected); toolbar and per-layer quant moved to Selected column

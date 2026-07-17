@@ -23,19 +23,21 @@ Toggle **Compose** in the header for an Ableton-style **clip editor**:
 |--------|---------|---------|
 | Transport bar | 40 px | Play / stop / record, loop, metronome, BPM, snap grid |
 | Track list | left rail | Mute / solo / arm / select (180 px) |
-| Clip strip | ~15% | Thin multi-track timeline — select / create clips, scrub playhead |
+| Clips strip | collapsed | Header **Clips ▸** — expand for multi-track timeline / multi-clip (hidden by default) |
 | Piano roll | ~70%+ | Dominant clip editor — playable keys, beat grid, notes, velocity + automation |
 | Scenes | collapsed | Header **Scenes ▸**; expand for 8×track session launch grid |
 | Keyboard strip | footer | Optional 88-key piano — record when armed, else monitor |
 
-A default empty clip is selected on first entry so the roll is never blank.
+A default empty clip is auto-selected on the active track so you can draw immediately (no clip-strip click required).
 
 **Interactions**
 
 - Hold left **piano keys** → note on/off with highlight (same pitches as QWERTY Z–M with letter glyphs on white keys)
-- Click arrangement clip → loads into piano roll; double-click empty bar → create clip
-- Pencil → draw notes (auditions while drawing); Select → move / click-audition; Eraser → delete
-- `Delete` removes selected notes; Undo / Redo in piano roll toolbar
+- **Pencil** (default) → click or drag on the grid to draw notes (toolbar hint shows the active tool)
+- **Select** → drag notes to move; drag note edges to resize; click to audition
+- **Eraser** → click notes to delete; `Delete` also removes the selection
+- Undo / Redo in the piano roll toolbar
+- Expand **Clips ▸** only when you need the timeline (select / create additional clips, scrub playhead)
 - Scroll wheel → pitch scroll; Shift/horizontal scroll → beat scroll; Ctrl+wheel → beat zoom
 - Transport **▶** plays scheduled clip notes through the synth (seek into selected clip if playhead is outside it)
 - Arm track + record → live input writes notes at playhead and monitors

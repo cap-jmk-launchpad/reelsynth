@@ -78,6 +78,8 @@ pub struct ComposeUi {
     pub arp_replace_notes: bool,
     /// Scenes panel collapsed by default (Layout A clip-editor shell).
     pub scenes_collapsed: bool,
+    /// Clip strip (arrangement) collapsed by default — piano roll is the primary surface.
+    pub arrangement_collapsed: bool,
     /// Rows scrolled down from MIDI pitch 108 (C8).
     pub pitch_scroll: f32,
     /// Beats scrolled from clip start.
@@ -119,6 +121,7 @@ impl Default for ComposeUi {
             arp_generate_bars: 2.0,
             arp_replace_notes: true,
             scenes_collapsed: true,
+            arrangement_collapsed: true,
             // Start near middle-C window (C8=108 → scroll ~48 rows ≈ C4).
             pitch_scroll: 48.0,
             beat_scroll: 0.0,
@@ -140,6 +143,29 @@ impl ComposeUi {
         }
         let step = self.snap_division.beats_per_step();
         (beats / step).round() * step
+    }
+
+    /// Ensure the active track has a clip and `selected_clip` points at it so the
+    /// piano roll is immediately editable (no arrangement click required).
+    pub fn ensure_editable_clip(&mut self) {
+        if self.project.tracks.is_empty() {
+            self.project.tracks.push(Track::new("Track 1"));
+        }
+        if self.selected_track >= self.project.tracks.len() {
+            self.selected_track = 0;
+        }
+        let ti = self.selected_track;
+        if self.project.tracks[ti].clips.is_empty() {
+            self.project.tracks[ti].clips.push(Clip::new(0.0, 8.0));
+        }
+        let clip_count = self.project.tracks[ti].clips.len();
+        match self.selected_clip {
+            Some(ci) if ci < clip_count => {}
+            _ => {
+                self.selected_clip = Some(0);
+                self.selected_notes.clear();
+            }
+        }
     }
 }
 
@@ -201,6 +227,8 @@ pub fn draw_compose_shell(
         border,
     );
 
+    state.compose.ensure_editable_clip();
+
     let track_actions = draw_track_list(ui, track_rect, &mut state.compose);
     record_region(
         ui.ctx(),
@@ -212,14 +240,18 @@ pub fn draw_compose_shell(
         actions.sequence_changed = true;
     }
 
-    // Layout A: thin clip strip (~15%) + dominant piano roll (~70%+) + collapsed scenes.
+    // Dominant piano roll; clip strip + scenes collapsed by default.
     let content_h = content.height();
     let scene_h = if state.compose.scenes_collapsed {
         22.0 * s
     } else {
         (content_h * 0.12).max(64.0 * s)
     };
-    let arrangement_h = (content_h * 0.15).clamp(56.0 * s, 120.0 * s);
+    let arrangement_h = if state.compose.arrangement_collapsed {
+        22.0 * s
+    } else {
+        (content_h * 0.15).clamp(56.0 * s, 120.0 * s)
+    };
     let gap = GRID_UNIT * 0.5 * s;
     let piano_h = (content_h - arrangement_h - scene_h - gap * 2.0).max(120.0 * s);
 
@@ -286,5 +318,31 @@ pub fn draw_compose_shell(
     );
     if scene_actions.scene_launched.is_some() {
         actions.scene_launch = scene_actions.scene_launched;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_editable_clip_creates_and_selects() {
+        let mut compose = ComposeUi::default();
+        compose.selected_clip = None;
+        compose.project.tracks[0].clips.clear();
+        compose.ensure_editable_clip();
+        assert_eq!(compose.selected_clip, Some(0));
+        assert!(!compose.project.tracks[0].clips.is_empty());
+    }
+
+    #[test]
+    fn ensure_editable_clip_on_other_track() {
+        let mut compose = ComposeUi::default();
+        compose.selected_track = 1;
+        compose.selected_clip = None;
+        compose.ensure_editable_clip();
+        assert_eq!(compose.selected_track, 1);
+        assert_eq!(compose.selected_clip, Some(0));
+        assert!(!compose.project.tracks[1].clips.is_empty());
     }
 }

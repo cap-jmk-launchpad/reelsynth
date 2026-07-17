@@ -72,6 +72,7 @@ pub(super) fn draw_header(
                         button_toggle(ui, "Compose", state.shell_mode == ShellMode::Compose);
                     if compose_btn.clicked() {
                         state.shell_mode = ShellMode::Compose;
+                        state.compose.ensure_editable_clip();
                     }
                     record_used(ui.ctx(), AuditId::HeaderModeCompose, compose_btn.rect);
 
