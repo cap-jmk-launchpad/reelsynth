@@ -1,6 +1,6 @@
 //! Column 3 — selected layer focus, toolbar, and quant reshape.
 
-use egui::{Color32, Pos2, Rect, Sense, Shape, Ui, Vec2};
+use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Shape, Ui, Vec2};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::Tokens;
 
@@ -19,10 +19,12 @@ use super::shape_editor::ShapeEditor;
 use super::slots::effective_quant_count;
 use super::toolbar::{WtEditTool, WtToolbar, WtToolbarResponse};
 use super::view_2d::{apply_waveform_drag_inner, va_layer_waveform_points};
+use super::residual::layer_curve_label;
 use super::view_3d_stack::{
-    layer_palette, layer_quant_display_scale, layer_waveform_points, WAVE_SAMPLES,
+    layer_palette, layer_quant_display_scale, layer_waveform_points, HOVER_DISTANCE_PX,
+    WAVE_SAMPLES,
 };
-use super::waveform::{frame_index, selected_pane_shows_quant_knobs};
+use super::waveform::{frame_index, selected_curve_hovered, selected_pane_shows_quant_knobs};
 
 pub struct WtSelectedLayerResponse {
     pub frame_edited: bool,
@@ -141,35 +143,81 @@ impl WtSelectedLayerView<'_> {
         let empty = WavetableBank::factory_saw_morph();
         let bank_ro = self.bank.as_ref().map(|b| &**b).unwrap_or(&empty);
 
+        let layer_pts: Option<Vec<Pos2>> =
+            self.wave_layers.get(layer_idx).and_then(|layer| {
+                if layer.enabled && layer.level > 0.0 {
+                    let pts = if layer_va {
+                        va_layer_waveform_points(layer, inner, WAVE_SAMPLES)
+                    } else {
+                        layer_waveform_points(layer, bank_ro, inner, 0.0, WAVE_SAMPLES)
+                    };
+                    if pts.len() >= 2 {
+                        Some(pts)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+
+        let pointer_in_plot = ui
+            .ctx()
+            .pointer_latest_pos()
+            .filter(|p| inner.contains(*p));
+        let hover_slot_pre = if quant_active {
+            pointer_in_plot.and_then(|pos| {
+                self.bank.as_ref().and_then(|bank| {
+                    self.wave_layers.get(layer_idx).map(|layer| {
+                        let slot_count = effective_quant_count(self.wave_quant);
+                        let scale = layer_quant_display_scale(layer);
+                        let points = quant_control_points(bank.frame(frame_idx), slot_count);
+                        nearest_quant_handle(pos, inner, &points, scale, 14.0)
+                    })
+                })
+            })
+            .flatten()
+        } else {
+            None
+        };
+        let over_quant_knob = hover_slot_pre.is_some();
+        let curve_hovered = pointer_in_plot.is_some_and(|pos| {
+            layer_pts
+                .as_ref()
+                .is_some_and(|pts| selected_curve_hovered(pts, pos, over_quant_knob, HOVER_DISTANCE_PX))
+        });
+
         // Paint plot first (bg → wave → knobs) so knobs cannot be covered by a late fill.
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, RADIUS_SM, tokens.bg);
         painter.rect_stroke(rect, RADIUS_SM, egui::Stroke::new(1.0, tokens.border));
         paint_grid(&painter, inner, tokens.border);
 
-        if let Some(layer) = self.wave_layers.get(layer_idx) {
-            if layer.enabled && layer.level > 0.0 {
-                let pts = if layer_va {
-                    va_layer_waveform_points(layer, inner, WAVE_SAMPLES)
-                } else {
-                    layer_waveform_points(layer, bank_ro, inner, 0.0, WAVE_SAMPLES)
-                };
-                if pts.len() >= 2 {
-                    let color = layer_palette(layer_idx);
-                    let mut fill = pts.clone();
-                    fill.push(Pos2::new(inner.max.x, mid_y));
-                    fill.push(Pos2::new(inner.min.x, mid_y));
-                    painter.add(Shape::convex_polygon(
-                        fill,
-                        color.gamma_multiply(0.25),
-                        egui::Stroke::NONE,
-                    ));
-                    painter.add(Shape::line(
-                        pts,
-                        egui::Stroke::new(2.8, color.gamma_multiply(0.98)),
-                    ));
-                }
+        if let Some(pts) = layer_pts.as_ref() {
+            let color = layer_palette(layer_idx);
+            let mut fill = pts.clone();
+            fill.push(Pos2::new(inner.max.x, mid_y));
+            fill.push(Pos2::new(inner.min.x, mid_y));
+            painter.add(Shape::convex_polygon(
+                fill,
+                color.gamma_multiply(if curve_hovered { 0.32 } else { 0.25 }),
+                egui::Stroke::NONE,
+            ));
+            let (stroke_w, stroke_alpha) = if curve_hovered {
+                (3.4, 1.0)
+            } else {
+                (2.8, 0.98)
+            };
+            if curve_hovered {
+                painter.add(Shape::line(
+                    pts.clone(),
+                    egui::Stroke::new(stroke_w + 2.0, color.gamma_multiply(0.35)),
+                ));
             }
+            painter.add(Shape::line(
+                pts.clone(),
+                egui::Stroke::new(stroke_w, color.gamma_multiply(stroke_alpha)),
+            ));
         }
 
         painter.line_segment(
@@ -186,12 +234,10 @@ impl WtSelectedLayerView<'_> {
                 let scale = layer_quant_display_scale(layer);
                 let points = quant_control_points(bank.frame(frame_idx), slot_count);
                 let color = layer_palette(layer_idx);
-                let pointer = ui
-                    .ctx()
-                    .pointer_latest_pos()
-                    .filter(|p| inner.contains(*p));
-                let hover_slot =
-                    pointer.and_then(|pos| nearest_quant_handle(pos, inner, &points, scale, 14.0));
+                let pointer = pointer_in_plot;
+                let hover_slot = hover_slot_pre.or_else(|| {
+                    pointer.and_then(|pos| nearest_quant_handle(pos, inner, &points, scale, 14.0))
+                });
                 for i in 0..slot_count {
                     let show = self.wave_quant <= 64
                         || hover_slot == Some(i)
@@ -276,6 +322,7 @@ impl WtSelectedLayerView<'_> {
                 *self.tool,
                 WtEditTool::Select | WtEditTool::Pencil | WtEditTool::Line | WtEditTool::Smooth
             );
+        let mut quant_hint_active = false;
         if quant_interactive {
             if let Some(bank) = self.bank.as_mut() {
                 if let Some(layer) = self.wave_layers.get(layer_idx) {
@@ -298,6 +345,7 @@ impl WtSelectedLayerView<'_> {
                     }
                     if let Some(label) = qh.status_label {
                         status_hint = Some(label);
+                        quant_hint_active = true;
                     }
                 }
             }
@@ -401,6 +449,15 @@ impl WtSelectedLayerView<'_> {
                     self.wave_quant,
                 );
                 frame_edited = true;
+            }
+        }
+
+        if curve_hovered && !over_quant_knob && !quant_hint_active {
+            if let Some(layer) = self.wave_layers.get(layer_idx) {
+                status_hint = Some(format!("Hover · {}", layer_curve_label(layer_idx, layer)));
+            }
+            if pointer_in_plot.is_some() {
+                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
             }
         }
 

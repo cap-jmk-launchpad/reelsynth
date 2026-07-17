@@ -118,6 +118,16 @@ pub fn selected_pane_shows_quant_knobs(
     quant_knobs_for_selection(selected, layers, wave_quant).is_some()
 }
 
+/// Selected (right) pane: pointer is near the displayed layer curve and not on a knob.
+pub fn selected_curve_hovered(
+    points: &[Pos2],
+    pos: Pos2,
+    over_quant_knob: bool,
+    max_dist: f32,
+) -> bool {
+    !over_quant_knob && hit_test_waveform(points, pos, max_dist)
+}
+
 /// Layers multi-curve pointer: prefer selecting a *different* hovered curve over
 /// grabbing knobs on the currently selected Quant layer (knobs often overlap
 /// siblings spatially and otherwise trap selection on the last WT / L3).
@@ -282,6 +292,15 @@ mod tests {
         assert!(selected_pane_shows_quant_knobs(Some(1), &layers, 16));
         assert!(selected_pane_shows_quant_knobs(Some(2), &layers, 16));
         assert_eq!(quant_knobs_for_selection(None, &layers, 16), None);
+    }
+
+    #[test]
+    fn selected_curve_hovered_respects_quant_knob_priority() {
+        let pts = vec![Pos2::new(0.0, 50.0), Pos2::new(100.0, 50.0)];
+        let pos = Pos2::new(50.0, 52.0);
+        assert!(selected_curve_hovered(&pts, pos, false, 14.0));
+        assert!(!selected_curve_hovered(&pts, pos, true, 14.0));
+        assert!(!selected_curve_hovered(&pts, Pos2::new(50.0, 80.0), false, 14.0));
     }
 
     #[test]
