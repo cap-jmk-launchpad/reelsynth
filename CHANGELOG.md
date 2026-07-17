@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Compose clip strip** — collapsed by default (**Clips ▸**); piano roll is the primary surface with in-toolbar tool hints
 
+- **Layer curve hover** — Design **Layers** / **Result** panes preview the nearest selectable waveform (thicker/brighter stroke, hand cursor, status `Hover · Ln · type`) before click; Quant knob hover still wins when the pointer is on a knob
 - **Quant knob hover** — clearer snap feedback across Result / Layers / Selected: enlarged brighter knobs with glow + slot guide, thickened active curve, grab/grabbing cursor, status `Slot N · amp ±x.xx`
 - **Design WT layout** — two panes replaced by three equal columns (Result / Layers / Selected); toolbar and per-layer quant moved to Selected column
 - Cleared workspace `cargo check` warnings (`-D warnings` clean for reelsynth / reelsynth-ui / reelsynth-app); Cursor **beforeShellExecution** hook blocks `git push` unless a fresh `.cursor/compile-clean.stamp` exists (refresh via `node .cursor/hooks/require-clean-compile.js`)

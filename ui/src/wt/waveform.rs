@@ -54,6 +54,26 @@ pub fn hit_test_waveform(points: &[Pos2], pos: Pos2, tolerance: f32) -> bool {
     nearest_waveform_distance(points, pos) <= tolerance
 }
 
+/// Layer index whose polyline is nearest to `pos` within `max_dist` px.
+///
+/// Same nearest-wins rule as click-to-select on Design WT layer curves.
+pub fn hovered_layer_from_pointer<'a>(
+    layer_points: impl IntoIterator<Item = (usize, &'a [Pos2])>,
+    pos: Pos2,
+    max_dist: f32,
+) -> Option<usize> {
+    let mut best_idx = None;
+    let mut best_dist = max_dist;
+    for (idx, pts) in layer_points {
+        let dist = nearest_waveform_distance(pts, pos);
+        if dist < best_dist {
+            best_dist = dist;
+            best_idx = Some(idx);
+        }
+    }
+    best_idx
+}
+
 fn distance_point_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
     let len_sq = ab.x * ab.x + ab.y * ab.y;
@@ -108,5 +128,36 @@ mod tests {
         assert!(hit_test_waveform(&pts, Pos2::new(50.0, 50.0), 8.0));
         assert!(hit_test_waveform(&pts, Pos2::new(50.0, 55.0), 8.0));
         assert!(!hit_test_waveform(&pts, Pos2::new(50.0, 70.0), 8.0));
+    }
+
+    #[test]
+    fn hovered_layer_from_pointer_picks_nearest_within_tolerance() {
+        let a = vec![Pos2::new(0.0, 40.0), Pos2::new(100.0, 40.0)];
+        let b = vec![Pos2::new(0.0, 60.0), Pos2::new(100.0, 60.0)];
+        let layers = [(0usize, a.as_slice()), (1usize, b.as_slice())];
+
+        assert_eq!(
+            hovered_layer_from_pointer(layers, Pos2::new(50.0, 42.0), 14.0),
+            Some(0)
+        );
+        assert_eq!(
+            hovered_layer_from_pointer(layers, Pos2::new(50.0, 58.0), 14.0),
+            Some(1)
+        );
+        assert_eq!(
+            hovered_layer_from_pointer(layers, Pos2::new(50.0, 100.0), 14.0),
+            None
+        );
+    }
+
+    #[test]
+    fn hovered_layer_from_pointer_nearest_wins_on_tie_break_distance() {
+        let far = vec![Pos2::new(0.0, 20.0), Pos2::new(100.0, 20.0)];
+        let near = vec![Pos2::new(0.0, 50.0), Pos2::new(100.0, 50.0)];
+        let layers = [(3usize, far.as_slice()), (7usize, near.as_slice())];
+        assert_eq!(
+            hovered_layer_from_pointer(layers, Pos2::new(50.0, 52.0), 14.0),
+            Some(7)
+        );
     }
 }

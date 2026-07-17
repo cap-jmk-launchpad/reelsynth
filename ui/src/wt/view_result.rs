@@ -14,14 +14,14 @@ use super::quant_handles::{
     sample_from_knob_y, slot_x, WtQuantInterp,
 };
 use super::residual::{
-    composite_quant_points, ensure_residual_layer, residual_frame_from_desired,
+    composite_quant_points, ensure_residual_layer, layer_curve_label, residual_frame_from_desired,
 };
 use super::slots::effective_quant_count;
 use super::view_3d_stack::{
     composite_waveform_points, layer_palette, layer_waveform_points, HOVER_DISTANCE_PX,
     WAVE_SAMPLES,
 };
-use super::waveform::{nearest_waveform_distance, peak_point};
+use super::waveform::{hovered_layer_from_pointer, peak_point};
 
 pub struct WtViewResultResponse {
     pub frame_edited: bool,
@@ -115,18 +115,21 @@ impl WtViewResult<'_> {
                 })
                 .collect();
 
+            let hovered_curve = response.hover_pos().and_then(|pos| {
+                hovered_layer_from_pointer(
+                    layer_pts.iter().map(|(i, pts)| (*i, pts.as_slice())),
+                    pos,
+                    HOVER_DISTANCE_PX,
+                )
+            });
+
             if response.clicked() || response.drag_started() {
                 if let Some(pos) = response.interact_pointer_pos() {
-                    let mut best_idx = None;
-                    let mut best_dist = HOVER_DISTANCE_PX;
-                    for &(idx, ref pts) in &layer_pts {
-                        let dist = nearest_waveform_distance(pts, pos);
-                        if dist < best_dist {
-                            best_dist = dist;
-                            best_idx = Some(idx);
-                        }
-                    }
-                    if let Some(idx) = best_idx {
+                    if let Some(idx) = hovered_layer_from_pointer(
+                        layer_pts.iter().map(|(i, pts)| (*i, pts.as_slice())),
+                        pos,
+                        HOVER_DISTANCE_PX,
+                    ) {
                         *self.selected_layer_idx = Some(idx);
                         stack_changed = true;
                     }
@@ -165,9 +168,17 @@ impl WtViewResult<'_> {
             if response.hovered() {
                 ui.ctx().set_cursor_icon(if response.dragged() {
                     CursorIcon::Grabbing
+                } else if hovered_curve.is_some() {
+                    CursorIcon::PointingHand
                 } else {
                     CursorIcon::Grab
                 });
+            }
+
+            if let Some(idx) = hovered_curve {
+                if let Some(layer) = self.wave_layers.get(idx) {
+                    status_hint = Some(format!("Hover · {}", layer_curve_label(idx, layer)));
+                }
             }
         }
 
@@ -190,20 +201,78 @@ impl WtViewResult<'_> {
         let selected = *self.selected_layer_idx;
         if !layers_empty {
             let bank_ro = self.bank.as_ref().map(|b| &**b).unwrap_or(&empty);
-            for (i, layer) in self.wave_layers.iter().enumerate() {
-                if !layer.enabled || layer.level <= 0.0 {
-                    continue;
+            let layer_pts: Vec<(usize, Vec<Pos2>)> = self
+                .wave_layers
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.enabled && l.level > 0.0)
+                .map(|(i, l)| {
+                    (
+                        i,
+                        layer_waveform_points(l, bank_ro, inner, 0.0, WAVE_SAMPLES),
+                    )
+                })
+                .collect();
+            // When over Result quant knobs, skip curve-hover preview (knob wins).
+            let hovered_curve = if quant_grab {
+                None
+            } else {
+                ui.ctx().pointer_latest_pos().and_then(|pos| {
+                    if !inner.contains(pos) {
+                        return None;
+                    }
+                    hovered_layer_from_pointer(
+                        layer_pts.iter().map(|(i, pts)| (*i, pts.as_slice())),
+                        pos,
+                        HOVER_DISTANCE_PX,
+                    )
+                })
+            };
+            let curve_hover_active = hovered_curve.is_some();
+
+            let mut paint_order: Vec<usize> = (0..layer_pts.len()).collect();
+            paint_order.sort_by_key(|&i| {
+                let orig = layer_pts[i].0;
+                if hovered_curve == Some(orig) {
+                    2u8
+                } else if selected == Some(orig) {
+                    1u8
+                } else {
+                    0u8
                 }
-                let pts = layer_waveform_points(layer, bank_ro, inner, 0.0, WAVE_SAMPLES);
+            });
+
+            for &paint_i in &paint_order {
+                let (i, pts) = &layer_pts[paint_i];
+                let i = *i;
                 if pts.len() < 2 {
                     continue;
                 }
                 let color = layer_palette(i);
                 let is_sel = selected == Some(i);
-                let alpha = if is_sel { 0.55 } else { 0.28 };
+                let is_hover = hovered_curve == Some(i);
+                let (alpha, stroke_w) = if is_hover {
+                    (0.72, 2.2)
+                } else if is_sel {
+                    if curve_hover_active {
+                        (0.42, 1.4)
+                    } else {
+                        (0.55, 1.6)
+                    }
+                } else if curve_hover_active {
+                    (0.16, 0.9)
+                } else {
+                    (0.28, 1.0)
+                };
+                if is_hover {
+                    painter.add(Shape::line(
+                        pts.clone(),
+                        egui::Stroke::new(stroke_w + 1.6, color.gamma_multiply(0.28)),
+                    ));
+                }
                 painter.add(Shape::line(
-                    pts,
-                    egui::Stroke::new(if is_sel { 1.6 } else { 1.0 }, color.gamma_multiply(alpha)),
+                    pts.clone(),
+                    egui::Stroke::new(stroke_w, color.gamma_multiply(alpha)),
                 ));
             }
 

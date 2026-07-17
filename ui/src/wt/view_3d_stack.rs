@@ -19,7 +19,7 @@ use super::quant_handles::{
 };
 use super::residual::layer_curve_label;
 use super::slots::effective_quant_count;
-use super::waveform::{frame_index, nearest_waveform_distance, peak_point};
+use super::waveform::{frame_index, hovered_layer_from_pointer, peak_point};
 
 pub(crate) const HOVER_DISTANCE_PX: f32 = 14.0;
 pub(crate) const WAVE_AMP: f32 = 0.42;
@@ -348,6 +348,33 @@ impl WtView3dStack<'_> {
         let drag_layer_id = ui.id().with("layers_multi_quant_layer");
         let drag_target_id = ui.id().with("stack_drag_target");
 
+        let pointer_in_plot = ui
+            .ctx()
+            .pointer_latest_pos()
+            .filter(|p| inner.contains(*p));
+        let hovered_curve = pointer_in_plot.and_then(|pos| {
+            hovered_layer_from_pointer(
+                layer_points
+                    .iter()
+                    .map(|(idx, pts, _)| (*idx, pts.as_slice())),
+                pos,
+                HOVER_DISTANCE_PX,
+            )
+        });
+        // Knob proximity wins for interaction; curve preview only when not on a knob.
+        let over_quant_knob = quant_active
+            && pointer_in_plot.is_some_and(|pos| {
+                let slot_count = effective_quant_count(self.wave_quant);
+                wt_layer_indices.iter().any(|&layer_i| {
+                    self.layers.get(layer_i).is_some_and(|layer| {
+                        let scale = layer_quant_display_scale(layer);
+                        let points = quant_control_points(bank.frame(edit_frame_idx), slot_count);
+                        nearest_quant_handle(pos, inner, &points, scale, 14.0).is_some()
+                    })
+                })
+            });
+        let curve_preview = if over_quant_knob { None } else { hovered_curve };
+
         let quant_locked = ui.ctx().data(|d| d.get_temp::<usize>(drag_slot_id).is_some());
         let response = if quant_active && quant_locked {
             None
@@ -364,16 +391,13 @@ impl WtView3dStack<'_> {
         if let Some(response) = response.as_ref() {
             if response.clicked() {
                 if let Some(pos) = response.interact_pointer_pos() {
-                    let mut best_idx = None;
-                    let mut best_dist = HOVER_DISTANCE_PX;
-                    for &(orig_idx, ref pts, _) in &layer_points {
-                        let dist = nearest_waveform_distance(pts, pos);
-                        if dist < best_dist {
-                            best_dist = dist;
-                            best_idx = Some(orig_idx);
-                        }
-                    }
-                    if let Some(idx) = best_idx {
+                    if let Some(idx) = hovered_layer_from_pointer(
+                        layer_points
+                            .iter()
+                            .map(|(i, pts, _)| (*i, pts.as_slice())),
+                        pos,
+                        HOVER_DISTANCE_PX,
+                    ) {
                         *self.selected_layer = Some(idx);
                         layer_selected = true;
                         ui.ctx().data_mut(|d| {
@@ -385,20 +409,18 @@ impl WtView3dStack<'_> {
 
             if response.drag_started() {
                 if let Some(pos) = response.interact_pointer_pos() {
-                    let mut best_idx = None;
-                    let mut best_dist = HOVER_DISTANCE_PX;
-                    for &(orig_idx, ref pts, _) in &layer_points {
-                        let dist = nearest_waveform_distance(pts, pos);
-                        if dist < best_dist {
-                            best_dist = dist;
-                            best_idx = Some(orig_idx);
-                        }
-                    }
-                    let target = if let Some(idx) = best_idx {
-                        StackDragTarget::Layer(idx)
-                    } else {
-                        StackDragTarget::None
-                    };
+                    let target =
+                        if let Some(idx) = hovered_layer_from_pointer(
+                            layer_points
+                                .iter()
+                                .map(|(i, pts, _)| (*i, pts.as_slice())),
+                            pos,
+                            HOVER_DISTANCE_PX,
+                        ) {
+                            StackDragTarget::Layer(idx)
+                        } else {
+                            StackDragTarget::None
+                        };
                     ui.ctx()
                         .data_mut(|d| d.insert_temp(drag_target_id, target));
                 }
@@ -441,6 +463,8 @@ impl WtView3dStack<'_> {
             if response.hovered() {
                 ui.ctx().set_cursor_icon(if response.dragged() {
                     CursorIcon::Grabbing
+                } else if curve_preview.is_some() {
+                    CursorIcon::PointingHand
                 } else {
                     CursorIcon::Grab
                 });
@@ -487,16 +511,13 @@ impl WtView3dStack<'_> {
                         d.insert_temp(drag_layer_id, layer_i);
                     });
                 } else if let Some(pos) = pointer {
-                    let mut best_idx = None;
-                    let mut best_dist = HOVER_DISTANCE_PX;
-                    for &(orig_idx, ref pts, _) in &layer_points {
-                        let dist = nearest_waveform_distance(pts, pos);
-                        if dist < best_dist {
-                            best_dist = dist;
-                            best_idx = Some(orig_idx);
-                        }
-                    }
-                    if let Some(idx) = best_idx {
+                    if let Some(idx) = hovered_layer_from_pointer(
+                        layer_points
+                            .iter()
+                            .map(|(i, pts, _)| (*i, pts.as_slice())),
+                        pos,
+                        HOVER_DISTANCE_PX,
+                    ) {
                         *self.selected_layer = Some(idx);
                         layer_selected = true;
                     }
@@ -549,6 +570,18 @@ impl WtView3dStack<'_> {
                         CursorIcon::Grab
                     });
                 }
+            } else if let Some(idx) = curve_preview {
+                // Not on a quant knob — preview which curve click would select.
+                if let Some(layer) = self.layers.get(idx) {
+                    status_hint = Some(format!("Hover · {}", layer_curve_label(idx, layer)));
+                }
+                if q_response.hovered() {
+                    ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+                }
+            }
+        } else if let Some(idx) = curve_preview {
+            if let Some(layer) = self.layers.get(idx) {
+                status_hint = Some(format!("Hover · {}", layer_curve_label(idx, layer)));
             }
         }
 
@@ -619,12 +652,37 @@ impl WtView3dStack<'_> {
             }
         }
 
-        for &(orig_idx, ref pts, inverted) in &layer_points {
+        // Paint order: dim siblings → selected (if not hovered) → hovered / quant-hot on top.
+        let mut paint_order: Vec<usize> = (0..layer_points.len()).collect();
+        paint_order.sort_by_key(|&i| {
+            let orig = layer_points[i].0;
+            let quant_hot = quant_active && {
+                let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
+                locked_layer == Some(orig)
+            };
+            let is_hover = curve_preview == Some(orig);
+            let is_sel = selected_idx == Some(orig);
+            if quant_hot || is_hover {
+                2u8
+            } else if is_sel {
+                1u8
+            } else {
+                0u8
+            }
+        });
+
+        let curve_hover_active = curve_preview.is_some();
+
+        for &paint_i in &paint_order {
+            let (orig_idx, pts, inverted) = &layer_points[paint_i];
+            let orig_idx = *orig_idx;
+            let inverted = *inverted;
             if pts.len() < 2 {
                 continue;
             }
             let color = layer_palette(orig_idx);
             let is_sel = selected_idx == Some(orig_idx);
+            let is_hover = curve_preview == Some(orig_idx);
             let quant_hot = quant_active && {
                 let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
                 let hover_layer = locked_layer.or_else(|| {
@@ -658,19 +716,20 @@ impl WtView3dStack<'_> {
                 });
                 hover_layer == Some(orig_idx)
             };
-            let alpha = if quant_hot {
-                0.95
+            let (alpha, stroke_w) = if quant_hot {
+                (0.95, 3.2)
+            } else if is_hover {
+                (0.92, 2.9)
             } else if is_sel {
-                0.75
+                if curve_hover_active {
+                    (0.62, 1.9)
+                } else {
+                    (0.75, 2.0)
+                }
+            } else if curve_hover_active {
+                (0.28, 1.15)
             } else {
-                0.45
-            };
-            let stroke_w = if quant_hot {
-                3.2
-            } else if is_sel {
-                2.0
-            } else {
-                1.4
+                (0.45, 1.4)
             };
             if inverted {
                 let dash_stroke = egui::Stroke::new(stroke_w, color.gamma_multiply(alpha));
@@ -680,6 +739,13 @@ impl WtView3dStack<'_> {
                     }
                 }
             } else {
+                if is_hover && !quant_hot {
+                    // Subtle outline so the preview target reads before click.
+                    painter.add(Shape::line(
+                        pts.clone(),
+                        egui::Stroke::new(stroke_w + 2.0, color.gamma_multiply(0.35)),
+                    ));
+                }
                 painter.add(Shape::line(
                     pts.clone(),
                     egui::Stroke::new(stroke_w, color.gamma_multiply(alpha)),
@@ -687,12 +753,21 @@ impl WtView3dStack<'_> {
             }
             if let Some(peak) = peak_point(pts) {
                 let lbl = layer_curve_label(orig_idx, &self.layers[orig_idx]);
+                let label_alpha = if is_hover || quant_hot {
+                    1.0
+                } else if is_sel {
+                    0.9
+                } else if curve_hover_active {
+                    0.55
+                } else {
+                    0.9
+                };
                 painter.text(
                     Pos2::new(peak.x + 4.0, peak.y - 10.0),
                     egui::Align2::LEFT_BOTTOM,
                     lbl,
-                    egui::FontId::proportional(9.0),
-                    color.gamma_multiply(0.9),
+                    egui::FontId::proportional(if is_hover { 10.0 } else { 9.0 }),
+                    color.gamma_multiply(label_alpha),
                 );
             }
         }
