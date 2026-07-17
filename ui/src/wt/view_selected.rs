@@ -12,7 +12,8 @@ use crate::region::region;
 
 use super::curve_editor::CurveEditor;
 use super::quant_handles::{
-    quant_control_points, resample_frame_from_quant_points, QuantHandleEditor,
+    knob_y_on_curve, nearest_quant_handle, paint_quant_knob, quant_control_points,
+    quant_knob_visual, resample_frame_from_quant_points, slot_x, QuantHandleEditor,
 };
 use super::shape_editor::ShapeEditor;
 use super::slots::effective_quant_count;
@@ -21,7 +22,7 @@ use super::view_2d::{apply_waveform_drag_inner, va_layer_waveform_points};
 use super::view_3d_stack::{
     layer_palette, layer_quant_display_scale, layer_waveform_points, WAVE_SAMPLES,
 };
-use super::waveform::{frame_index, layer_quant_editable};
+use super::waveform::{frame_index, selected_pane_shows_quant_knobs};
 
 pub struct WtSelectedLayerResponse {
     pub frame_edited: bool,
@@ -88,87 +89,15 @@ impl WtSelectedLayerView<'_> {
             .get(layer_idx)
             .map(|l| l.is_wavetable())
             .unwrap_or(false);
-        // Quant knobs + interp only for WT / residual layers when Quant > 0.
-        let quant_active = self
-            .wave_layers
-            .get(layer_idx)
-            .is_some_and(layer_quant_editable)
-            && self.wave_quant > 0;
+        // Quant knobs whenever the selected layer is editable (tool-independent visibility).
+        let quant_active = selected_pane_shows_quant_knobs(
+            *self.selected_layer_idx,
+            self.wave_layers,
+            self.wave_quant,
+        );
 
         let selected_slot = *self.selected_quant_slot;
-        let show_seg = quant_active
-            && selected_slot.is_some_and(|s| s + 1 < slot_count.max(1));
-
-        let toolbar_rect = Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top));
-        let toolbar_resp = region(ui, toolbar_rect, |ui| {
-            let mut seg_scratch = WtQuantInterp::Hold;
-            let has_seg = if show_seg {
-                if let Some(layer) = self.wave_layers.get(layer_idx) {
-                    let s = selected_slot.unwrap();
-                    seg_scratch = layer
-                        .quant_segment_interps
-                        .get(s)
-                        .copied()
-                        .unwrap_or(layer.quant_interp);
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-            let resp = WtToolbar::show_with_analyze(
-                ui,
-                self.tool,
-                if quant_active { self.wave_quant } else { 0 },
-                self.quant_interp,
-                selected_slot.filter(|_| quant_active),
-                if has_seg {
-                    Some(&mut seg_scratch)
-                } else {
-                    None
-                },
-            );
-            if has_seg && resp.segment_interp_changed {
-                if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
-                    let s = selected_slot.unwrap();
-                    if s < layer.quant_segment_interps.len() {
-                        layer.quant_segment_interps[s] = seg_scratch;
-                    }
-                }
-            }
-            resp
-        });
-        record_region(
-            ui.ctx(),
-            AuditId::CenterWt2dToolbar,
-            toolbar_rect,
-            toolbar_rect,
-        );
-        let WtToolbarResponse {
-            analyze_requested: req,
-            assign_shape,
-            interp_changed,
-            segment_interp_changed,
-            ..
-        } = toolbar_resp;
-        if req {
-            if let Some(open) = self.analyze_dialog_open {
-                *open = true;
-            }
-            analyze_requested = true;
-        }
-        if let Some(kind) = assign_shape {
-            if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
-                layer.source_type = super::view_2d::shape_template_source_type(kind).into();
-                stack_changed = true;
-                status_hint = Some(format!(
-                    "Layer {} → {}",
-                    layer_idx + 1,
-                    super::view_2d::shape_template_source_type(kind)
-                ));
-            }
-        }
+        let show_seg = quant_active && selected_slot.is_some_and(|s| s + 1 < slot_count.max(1));
 
         let rebuild = |bank: &mut WavetableBank,
                        layers: &[WaveLayerUi],
@@ -194,36 +123,9 @@ impl WtSelectedLayerView<'_> {
             resample_frame_from_quant_points(frame, &points, segs, curve_default);
         };
 
-        if interp_changed && quant_active {
-            if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
-                layer.apply_curve_interp_to_segments(slot_count, *self.quant_interp);
-            }
-            if let Some(bank) = self.bank.as_mut() {
-                rebuild(
-                    bank,
-                    self.wave_layers,
-                    layer_idx,
-                    *self.wt_position,
-                    self.wave_quant,
-                );
-                frame_edited = true;
-                status_hint = Some(format!(
-                    "Interp → {} (all segments)",
-                    self.quant_interp.label()
-                ));
-            }
-        } else if segment_interp_changed && quant_active {
-            if let Some(bank) = self.bank.as_mut() {
-                rebuild(
-                    bank,
-                    self.wave_layers,
-                    layer_idx,
-                    *self.wt_position,
-                    self.wave_quant,
-                );
-                frame_edited = true;
-            }
-        }
+        // Interp / toolbar mutations apply after paint so the plot fill cannot cover chrome.
+        let mut seg_scratch = WtQuantInterp::Hold;
+        let mut seg_scratch_for_toolbar = false;
 
         let layer_wt_position = self
             .wave_layers
@@ -239,6 +141,7 @@ impl WtSelectedLayerView<'_> {
         let empty = WavetableBank::factory_saw_morph();
         let bank_ro = self.bank.as_ref().map(|b| &**b).unwrap_or(&empty);
 
+        // Paint plot first (bg → wave → knobs) so knobs cannot be covered by a late fill.
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, RADIUS_SM, tokens.bg);
         painter.rect_stroke(rect, RADIUS_SM, egui::Stroke::new(1.0, tokens.border));
@@ -274,6 +177,65 @@ impl WtSelectedLayerView<'_> {
             egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
         );
 
+        // Always paint Quant knobs on the same painter as the wave when editable.
+        // QuantHandleEditor also paints when interactive; double-draw is identical.
+        if quant_active {
+            if let (Some(bank), Some(layer)) = (self.bank.as_ref(), self.wave_layers.get(layer_idx))
+            {
+                let slot_count = effective_quant_count(self.wave_quant);
+                let scale = layer_quant_display_scale(layer);
+                let points = quant_control_points(bank.frame(frame_idx), slot_count);
+                let color = layer_palette(layer_idx);
+                let pointer = ui
+                    .ctx()
+                    .pointer_latest_pos()
+                    .filter(|p| inner.contains(*p));
+                let hover_slot =
+                    pointer.and_then(|pos| nearest_quant_handle(pos, inner, &points, scale, 14.0));
+                for i in 0..slot_count {
+                    let show = self.wave_quant <= 64
+                        || hover_slot == Some(i)
+                        || i == 0
+                        || i + 1 == slot_count;
+                    if !show {
+                        continue;
+                    }
+                    let x = slot_x(i, slot_count, inner);
+                    let sample = points.get(i).copied().unwrap_or(0.0);
+                    let y = knob_y_on_curve(sample, scale, inner);
+                    let center = Pos2::new(x, y);
+                    let visual = quant_knob_visual(hover_slot == Some(i), false);
+                    let fill = if visual.fill_brighter {
+                        color.gamma_multiply(0.5)
+                    } else {
+                        color.gamma_multiply(0.22)
+                    };
+                    paint_quant_knob(&painter, center, visual, fill, color, inner);
+                }
+            }
+        }
+
+        let layer_type = self
+            .wave_layers
+            .get(layer_idx)
+            .map(|l| {
+                if l.residual {
+                    "residual"
+                } else {
+                    l.source_type.as_str()
+                }
+            })
+            .unwrap_or("saw");
+        let label = format!("Edit · Layer {} · {layer_type}", layer_idx + 1);
+        painter.text(
+            Pos2::new(rect.min.x + 8.0, rect.min.y + 4.0),
+            egui::Align2::LEFT_TOP,
+            label,
+            egui::FontId::proportional(10.0),
+            tokens.text_secondary,
+        );
+
+        // Interactive editors (after paint so allocate_rect hit-tests win).
         if *self.tool == WtEditTool::Pencil && layer_wt {
             if let Some(bank) = self.bank.as_mut() {
                 let response = ui.allocate_rect(inner, Sense::click_and_drag());
@@ -308,9 +270,13 @@ impl WtSelectedLayerView<'_> {
             }
         }
 
-        // Quant knobs live on Selected whenever the layer is editable — not only
-        // while the Select tool is active (Shape/Curve still own their own drags).
-        if quant_active && matches!(*self.tool, WtEditTool::Select | WtEditTool::Pencil) {
+        // Drag reshape: Select/Pencil always; also when idle tools so knobs stay editable.
+        let quant_interactive = quant_active
+            && matches!(
+                *self.tool,
+                WtEditTool::Select | WtEditTool::Pencil | WtEditTool::Line | WtEditTool::Smooth
+            );
+        if quant_interactive {
             if let Some(bank) = self.bank.as_mut() {
                 if let Some(layer) = self.wave_layers.get(layer_idx) {
                     let display_scale = layer_quant_display_scale(layer);
@@ -341,25 +307,102 @@ impl WtSelectedLayerView<'_> {
             });
         }
 
-        let layer_type = self
-            .wave_layers
-            .get(layer_idx)
-            .map(|l| {
-                if l.residual {
-                    "residual"
+        // Toolbar last — drawn above the plot fill / knobs.
+        let toolbar_rect = Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top));
+        if show_seg {
+            if let Some(layer) = self.wave_layers.get(layer_idx) {
+                let s = selected_slot.unwrap();
+                seg_scratch = layer
+                    .quant_segment_interps
+                    .get(s)
+                    .copied()
+                    .unwrap_or(layer.quant_interp);
+                seg_scratch_for_toolbar = true;
+            }
+        }
+        let toolbar_resp = region(ui, toolbar_rect, |ui| {
+            WtToolbar::show_with_analyze(
+                ui,
+                self.tool,
+                if quant_active { self.wave_quant } else { 0 },
+                self.quant_interp,
+                selected_slot.filter(|_| quant_active),
+                if seg_scratch_for_toolbar {
+                    Some(&mut seg_scratch)
                 } else {
-                    l.source_type.as_str()
-                }
-            })
-            .unwrap_or("saw");
-        let label = format!("Edit · Layer {} · {layer_type}", layer_idx + 1);
-        painter.text(
-            Pos2::new(rect.min.x + 8.0, rect.min.y + 4.0),
-            egui::Align2::LEFT_TOP,
-            label,
-            egui::FontId::proportional(10.0),
-            tokens.text_secondary,
+                    None
+                },
+            )
+        });
+        record_region(
+            ui.ctx(),
+            AuditId::CenterWt2dToolbar,
+            toolbar_rect,
+            toolbar_rect,
         );
+        let WtToolbarResponse {
+            analyze_requested: req,
+            assign_shape,
+            interp_changed,
+            segment_interp_changed,
+            ..
+        } = toolbar_resp;
+
+        if req {
+            if let Some(open) = self.analyze_dialog_open {
+                *open = true;
+            }
+            analyze_requested = true;
+        }
+        if let Some(kind) = assign_shape {
+            if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
+                layer.source_type = super::view_2d::shape_template_source_type(kind).into();
+                stack_changed = true;
+                status_hint = Some(format!(
+                    "Layer {} → {}",
+                    layer_idx + 1,
+                    super::view_2d::shape_template_source_type(kind)
+                ));
+            }
+        }
+        if seg_scratch_for_toolbar && segment_interp_changed {
+            if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
+                let s = selected_slot.unwrap();
+                if s < layer.quant_segment_interps.len() {
+                    layer.quant_segment_interps[s] = seg_scratch;
+                }
+            }
+        }
+        if interp_changed && quant_active {
+            if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
+                layer.apply_curve_interp_to_segments(slot_count, *self.quant_interp);
+            }
+            if let Some(bank) = self.bank.as_mut() {
+                rebuild(
+                    bank,
+                    self.wave_layers,
+                    layer_idx,
+                    *self.wt_position,
+                    self.wave_quant,
+                );
+                frame_edited = true;
+                status_hint = Some(format!(
+                    "Interp → {} (all segments)",
+                    self.quant_interp.label()
+                ));
+            }
+        } else if segment_interp_changed && quant_active {
+            if let Some(bank) = self.bank.as_mut() {
+                rebuild(
+                    bank,
+                    self.wave_layers,
+                    layer_idx,
+                    *self.wt_position,
+                    self.wave_quant,
+                );
+                frame_edited = true;
+            }
+        }
 
         record_region(ui.ctx(), AuditId::CenterWtSelected, rect, rect);
         record_region(ui.ctx(), AuditId::CenterWt2dPlot, plot_rect, plot_rect);
@@ -389,5 +432,40 @@ fn paint_grid(painter: &egui::Painter, inner: Rect, border: Color32) {
                 egui::Stroke::new(1.0, border.gamma_multiply(0.25)),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::oscillator_ui::WaveLayerUi;
+
+    #[test]
+    fn selected_pane_shows_knobs_for_wt_not_va() {
+        let layers = vec![
+            WaveLayerUi {
+                source_type: "saw".into(),
+                level: 1.0,
+                enabled: true,
+                ..WaveLayerUi::default()
+            },
+            WaveLayerUi {
+                source_type: "wavetable".into(),
+                level: 1.0,
+                enabled: true,
+                ..WaveLayerUi::default()
+            },
+            WaveLayerUi {
+                source_type: "wavetable".into(),
+                level: 1.0,
+                enabled: true,
+                residual: true,
+                ..WaveLayerUi::default()
+            },
+        ];
+        assert!(!selected_pane_shows_quant_knobs(Some(0), &layers, 16));
+        assert!(selected_pane_shows_quant_knobs(Some(1), &layers, 16));
+        assert!(selected_pane_shows_quant_knobs(Some(2), &layers, 16));
+        assert!(!selected_pane_shows_quant_knobs(Some(1), &layers, 0));
     }
 }

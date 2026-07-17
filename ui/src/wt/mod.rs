@@ -45,5 +45,6 @@ pub use view_2d::{apply_frame_shape_template, shape_template_source_type, WtView
 pub use view_3d::{WtView3d, WtView3dResponse};
 pub use view_3d_stack::{composite_stack_sample, WtView3dStack, WtView3dStackResponse};
 pub use waveform::{
-    frame_index, layer_quant_editable, quant_knobs_for_selection, waveform_points,
+    frame_index, layer_quant_editable, layers_pointer_prefers_curve_select,
+    quant_knobs_for_selection, selected_pane_shows_quant_knobs, waveform_points,
 };

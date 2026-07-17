@@ -106,6 +106,33 @@ pub fn quant_knobs_for_selection(
     selected.filter(|&i| layers.get(i).is_some_and(layer_quant_editable))
 }
 
+/// Selected (right) pane shows Quant knobs whenever the selection is editable.
+///
+/// Independent of edit tool — Shape/Curve may own alternate drags, but knobs
+/// must still be visible for WT/residual layers when Quant > 0.
+pub fn selected_pane_shows_quant_knobs(
+    selected: Option<usize>,
+    layers: &[crate::oscillator_ui::WaveLayerUi],
+    wave_quant: u8,
+) -> bool {
+    quant_knobs_for_selection(selected, layers, wave_quant).is_some()
+}
+
+/// Layers multi-curve pointer: prefer selecting a *different* hovered curve over
+/// grabbing knobs on the currently selected Quant layer (knobs often overlap
+/// siblings spatially and otherwise trap selection on the last WT / L3).
+pub fn layers_pointer_prefers_curve_select(
+    hovered_curve: Option<usize>,
+    quant_layer: Option<usize>,
+    over_quant_knob: bool,
+) -> bool {
+    match (hovered_curve, quant_layer) {
+        (Some(curve), Some(q)) if curve != q => true,
+        (Some(_), _) if !over_quant_knob => true,
+        _ => false,
+    }
+}
+
 fn distance_point_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
     let len_sq = ab.x * ab.x + ab.y * ab.y;
@@ -201,6 +228,15 @@ mod tests {
         assert_eq!(selection_from_curve_click(None, true), None);
     }
 
+    fn wt_layer(level: f32) -> crate::oscillator_ui::WaveLayerUi {
+        crate::oscillator_ui::WaveLayerUi {
+            source_type: "wavetable".into(),
+            level,
+            enabled: true,
+            ..crate::oscillator_ui::WaveLayerUi::default()
+        }
+    }
+
     #[test]
     fn quant_knobs_only_for_editable_wt_or_residual() {
         use crate::oscillator_ui::WaveLayerUi;
@@ -211,12 +247,7 @@ mod tests {
             enabled: true,
             ..WaveLayerUi::default()
         };
-        let wt = WaveLayerUi {
-            source_type: "wavetable".into(),
-            level: 0.5,
-            enabled: true,
-            ..WaveLayerUi::default()
-        };
+        let wt = wt_layer(0.5);
         let residual = WaveLayerUi {
             source_type: "wavetable".into(),
             level: 1.0,
@@ -224,12 +255,7 @@ mod tests {
             residual: true,
             ..WaveLayerUi::default()
         };
-        let muted_wt = WaveLayerUi {
-            source_type: "wavetable".into(),
-            level: 0.0,
-            enabled: true,
-            ..WaveLayerUi::default()
-        };
+        let muted_wt = wt_layer(0.0);
         assert!(!layer_quant_editable(&saw));
         assert!(layer_quant_editable(&wt));
         assert!(layer_quant_editable(&residual));
@@ -240,5 +266,34 @@ mod tests {
         assert_eq!(quant_knobs_for_selection(Some(1), &layers, 16), Some(1));
         assert_eq!(quant_knobs_for_selection(Some(2), &layers, 16), Some(2));
         assert_eq!(quant_knobs_for_selection(Some(1), &layers, 0), None);
+        assert!(!selected_pane_shows_quant_knobs(Some(0), &layers, 16));
+        assert!(selected_pane_shows_quant_knobs(Some(1), &layers, 16));
+        assert!(selected_pane_shows_quant_knobs(Some(2), &layers, 16));
+    }
+
+    /// Three WT layers: knobs must track selection (L1 / L2 / L3), not stick on last.
+    #[test]
+    fn quant_knobs_follow_selection_across_three_wt_layers() {
+        let layers = vec![wt_layer(1.0), wt_layer(0.8), wt_layer(0.6)];
+        assert_eq!(quant_knobs_for_selection(Some(0), &layers, 16), Some(0));
+        assert_eq!(quant_knobs_for_selection(Some(1), &layers, 16), Some(1));
+        assert_eq!(quant_knobs_for_selection(Some(2), &layers, 16), Some(2));
+        assert!(selected_pane_shows_quant_knobs(Some(0), &layers, 16));
+        assert!(selected_pane_shows_quant_knobs(Some(1), &layers, 16));
+        assert!(selected_pane_shows_quant_knobs(Some(2), &layers, 16));
+        assert_eq!(quant_knobs_for_selection(None, &layers, 16), None);
+    }
+
+    #[test]
+    fn layers_pointer_prefers_other_curve_over_knob_trap() {
+        // Hovering L1 while knobs are on L3 → select L1 (do not stay trapped on L3 knobs).
+        assert!(layers_pointer_prefers_curve_select(Some(0), Some(2), true));
+        assert!(layers_pointer_prefers_curve_select(Some(1), Some(2), true));
+        // Hovering the Quant layer itself near a knob → keep knob grab.
+        assert!(!layers_pointer_prefers_curve_select(Some(2), Some(2), true));
+        // No knob under pointer → curve select is fine.
+        assert!(layers_pointer_prefers_curve_select(Some(0), Some(2), false));
+        // Only knobs, no curve hover → do not force curve select.
+        assert!(!layers_pointer_prefers_curve_select(None, Some(2), true));
     }
 }

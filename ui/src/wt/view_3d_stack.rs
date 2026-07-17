@@ -20,8 +20,8 @@ use super::quant_handles::{
 use super::residual::layer_curve_label;
 use super::slots::effective_quant_count;
 use super::waveform::{
-    frame_index, hovered_layer_from_pointer, peak_point, quant_knobs_for_selection,
-    selection_from_curve_click,
+    frame_index, hovered_layer_from_pointer, layers_pointer_prefers_curve_select, peak_point,
+    quant_knobs_for_selection, selection_from_curve_click,
 };
 
 pub(crate) const HOVER_DISTANCE_PX: f32 = 14.0;
@@ -368,7 +368,13 @@ impl WtView3dStack<'_> {
                     })
                 })
             });
-        let curve_preview = if over_quant_knob { None } else { hovered_curve };
+        let curve_preview = if over_quant_knob
+            && !layers_pointer_prefers_curve_select(hovered_curve, quant_layer_idx, true)
+        {
+            None
+        } else {
+            hovered_curve
+        };
 
         let quant_locked = ui.ctx().data(|d| d.get_temp::<usize>(drag_slot_id).is_some());
 
@@ -474,21 +480,18 @@ impl WtView3dStack<'_> {
             let over_knob = nearest_slot.is_some() || quant_locked;
 
             if q_response.clicked() || q_response.drag_started() {
-                if let Some(slot) = nearest_slot {
-                    if q_response.drag_started() {
-                        ui.ctx().data_mut(|d| {
-                            d.insert_temp(drag_slot_id, slot);
-                            d.insert_temp(drag_layer_id, layer_i);
-                        });
-                    }
-                } else if let Some(pos) = pointer {
-                    let hovered = hovered_layer_from_pointer(
+                let hovered = pointer.and_then(|pos| {
+                    hovered_layer_from_pointer(
                         layer_points
                             .iter()
                             .map(|(i, pts, _)| (*i, pts.as_slice())),
                         pos,
                         HOVER_DISTANCE_PX,
-                    );
+                    )
+                });
+                // Sibling curves win over knobs so L1/L2 stay selectable when L3 has knobs.
+                if layers_pointer_prefers_curve_select(hovered, quant_layer_idx, nearest_slot.is_some())
+                {
                     if let Some(idx) = selection_from_curve_click(hovered, false) {
                         *self.selected_layer = Some(idx);
                         layer_selected = true;
@@ -497,6 +500,21 @@ impl WtView3dStack<'_> {
                                 d.insert_temp(drag_target_id, StackDragTarget::Layer(idx))
                             });
                         }
+                    }
+                } else if let Some(slot) = nearest_slot {
+                    if q_response.drag_started() {
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(drag_slot_id, slot);
+                            d.insert_temp(drag_layer_id, layer_i);
+                        });
+                    }
+                } else if let Some(idx) = selection_from_curve_click(hovered, false) {
+                    *self.selected_layer = Some(idx);
+                    layer_selected = true;
+                    if q_response.drag_started() {
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(drag_target_id, StackDragTarget::Layer(idx))
+                        });
                     }
                 }
             }

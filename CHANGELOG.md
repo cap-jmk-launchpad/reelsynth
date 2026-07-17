@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Design Quant knobs (Layers)** — multi-curve Layers pane no longer traps selection on the last WT/residual (often L3): hovering/clicking L1 or L2 prefers that curve over overlapping Quant knobs; knobs follow `selected_layer_idx` for any editable layer
+- **Design Quant knobs (Selected)** — right Selected column paints Quant knobs on the plot painter after the wave (and keeps the toolbar above the fill) so editable WT/residual layers always show draggable knobs when Quant > 0
 - **Held-note dropout** — brief note-off→note-on while releasing no longer hard-resets soft-start (`filter_fade`); audio device switches re-voice held keys so sustain stays continuous
 - **Quant wrap crackle** — quant frame resample periodizes the cycle seam (same idea as factory tables) so Hold/Linear edits do not reintroduce near-vertical WT wraps
 - **Design Quant knobs** — knobs only on editable WT/residual curves when Quant > 0; Selected column always shows knobs + **All·…** / per-segment interp for those layers (VA shows a hint); Result/Layers siblings stay stroke-only
