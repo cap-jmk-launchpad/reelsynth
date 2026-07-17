@@ -913,10 +913,18 @@ mod tests {
         let mut ma = vec![0.0_f32; 256];
         resample_frame_from_quant_points_uniform(&mut hold, &points, WtQuantInterp::Hold);
         resample_frame_from_quant_points_uniform(&mut ma, &points, WtQuantInterp::MovingAverage);
-        let hf = |f: &[f32]| -> f32 {
-            f.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f32>() / f.len() as f32
-        };
-        assert!(hf(&ma) < hf(&hold) * 0.85);
+        // Hold jumps by ~2.0 at the first segment boundary; MA should ease across it.
+        let b = ((hold.len() - 1) as f32 * 0.25).round() as usize;
+        let hold_jump = (hold[b] - hold[b.saturating_sub(1)]).abs();
+        let ma_jump = (ma[b] - ma[b.saturating_sub(1)]).abs();
+        assert!(
+            hold_jump > 1.5,
+            "Hold should cliff at band edge, jump={hold_jump}"
+        );
+        assert!(
+            ma_jump < hold_jump * 0.5,
+            "MA should ease Hold cliff (ma_jump={ma_jump} hold_jump={hold_jump})"
+        );
     }
 
     #[test]
