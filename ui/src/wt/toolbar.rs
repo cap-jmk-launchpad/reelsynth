@@ -4,10 +4,9 @@ use egui::{Sense, Ui};
 use reelsynth_ui_theme::Tokens;
 
 use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT};
+use crate::quant_interp::WtQuantInterp;
 use crate::region::region;
 use crate::widgets::button_tool;
-
-use super::quant_handles::WtQuantInterp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WtEditTool {
@@ -53,21 +52,31 @@ pub struct WtToolbarResponse {
     pub tool_changed: bool,
     pub analyze_requested: bool,
     pub assign_shape: Option<FrameShapeTemplate>,
+    /// Curve-wide Interp changed (apply to all segments).
     pub interp_changed: bool,
+    /// Per-segment Interp changed for the selected knob's outgoing segment.
+    pub segment_interp_changed: bool,
 }
 
 pub struct WtToolbar;
 
 impl WtToolbar {
-    pub fn show(ui: &mut Ui, tool: &mut WtEditTool, wave_quant: u8, quant_interp: &mut WtQuantInterp) -> bool {
-        Self::show_with_analyze(ui, tool, wave_quant, quant_interp).tool_changed
+    pub fn show(
+        ui: &mut Ui,
+        tool: &mut WtEditTool,
+        wave_quant: u8,
+        curve_interp: &mut WtQuantInterp,
+    ) -> bool {
+        Self::show_with_analyze(ui, tool, wave_quant, curve_interp, None, None).tool_changed
     }
 
     pub fn show_with_analyze(
         ui: &mut Ui,
         tool: &mut WtEditTool,
         wave_quant: u8,
-        quant_interp: &mut WtQuantInterp,
+        curve_interp: &mut WtQuantInterp,
+        selected_slot: Option<usize>,
+        segment_interp: Option<&mut WtQuantInterp>,
     ) -> WtToolbarResponse {
         let tokens = Tokens::default();
         let (rect, _) = ui.allocate_exact_size(
@@ -79,6 +88,7 @@ impl WtToolbar {
         let mut analyze_requested = false;
         let mut assign_shape = None;
         let mut interp_changed = false;
+        let mut segment_interp_changed = false;
 
         if !ui.is_rect_visible(rect) {
             return WtToolbarResponse {
@@ -86,6 +96,7 @@ impl WtToolbar {
                 analyze_requested,
                 assign_shape,
                 interp_changed,
+                segment_interp_changed,
             };
         }
 
@@ -97,8 +108,6 @@ impl WtToolbar {
             egui::Stroke::new(1.0_f32, tokens.border),
         );
 
-        // Clip interactions to the allocated strip so extras never expand the
-        // Design half-pane used-rect past the center column.
         region(ui, rect.shrink2(egui::vec2(4.0, 2.0)), |ui| {
             ui.set_clip_rect(rect);
             ui.horizontal(|ui| {
@@ -133,11 +142,9 @@ impl WtToolbar {
                     if !hover.is_empty() {
                         btn = btn.on_hover_text(hover);
                     }
-                    if btn.clicked() {
-                        if candidate.enabled() {
-                            *tool = candidate;
-                            tool_changed = true;
-                        }
+                    if btn.clicked() && candidate.enabled() {
+                        *tool = candidate;
+                        tool_changed = true;
                     }
                 }
                 ui.add_space(4.0);
@@ -148,11 +155,7 @@ impl WtToolbar {
                         ("Sine", "Set active layer to sine", FrameShapeTemplate::Sine),
                         ("Triangle", "Set active layer to triangle", FrameShapeTemplate::Tri),
                     ] {
-                        if ui
-                            .button(label)
-                            .on_hover_text(tip)
-                            .clicked()
-                        {
+                        if ui.button(label).on_hover_text(tip).clicked() {
                             assign_shape = Some(kind);
                             ui.close_menu();
                         }
@@ -169,29 +172,67 @@ impl WtToolbar {
                     analyze_requested = true;
                 }
                 if wave_quant > 0 {
-                    const COMBO_W: f32 = 84.0;
-                    ui.add_space((ui.available_width() - COMBO_W).max(0.0));
-                    let combo = egui::ComboBox::from_id_salt("wt_quant_interp")
-                        .selected_text(quant_interp.label())
-                        .width(COMBO_W - 4.0)
+                    const COMBO_W: f32 = 72.0;
+                    ui.add_space(4.0);
+                    let combo = egui::ComboBox::from_id_salt("wt_quant_interp_curve")
+                        .selected_text(format!("All·{}", curve_interp.label()))
+                        .width(COMBO_W)
                         .show_ui(ui, |ui| {
                             for (idx, &label) in WtQuantInterp::LABELS.iter().enumerate() {
                                 let mode = WtQuantInterp::from_index(idx);
                                 if ui
-                                    .selectable_label(quant_interp.index() == idx, label)
+                                    .selectable_label(curve_interp.index() == idx, label)
                                     .on_hover_text(mode.tooltip())
                                     .clicked()
+                                    && *curve_interp != mode
                                 {
-                                    if *quant_interp != mode {
-                                        *quant_interp = mode;
-                                        interp_changed = true;
-                                    }
+                                    *curve_interp = mode;
+                                    interp_changed = true;
                                 }
                             }
                         });
                     combo.response.on_hover_text(
-                        "Interpolation between quant knobs when reshaping the frame",
+                        "Curve default — apply this interp to all segments on this layer",
                     );
+
+                    if let Some(seg) = segment_interp {
+                        let slot = selected_slot.unwrap_or(0);
+                        let combo = egui::ComboBox::from_id_salt("wt_quant_interp_seg")
+                            .selected_text(format!("{}→{}", slot + 1, slot + 2))
+                            .width(COMBO_W)
+                            .show_ui(ui, |ui| {
+                                for (idx, &label) in WtQuantInterp::LABELS.iter().enumerate() {
+                                    let mode = WtQuantInterp::from_index(idx);
+                                    if ui
+                                        .selectable_label(seg.index() == idx, label)
+                                        .on_hover_text(mode.tooltip())
+                                        .clicked()
+                                        && *seg != mode
+                                    {
+                                        *seg = mode;
+                                        segment_interp_changed = true;
+                                    }
+                                }
+                            });
+                        combo.response.on_hover_text(format!(
+                            "Segment {} → {} interp (selected knob)",
+                            slot + 1,
+                            slot + 2
+                        ));
+                    } else if let Some(slot) = selected_slot {
+                        let slot_count = if wave_quant == 255 {
+                            256
+                        } else {
+                            wave_quant as usize
+                        };
+                        if slot + 1 >= slot_count {
+                            ui.label(
+                                egui::RichText::new("end · no next")
+                                    .size(10.0)
+                                    .color(tokens.text_secondary),
+                            );
+                        }
+                    }
                 }
             });
         });
@@ -201,6 +242,7 @@ impl WtToolbar {
             analyze_requested,
             assign_shape,
             interp_changed,
+            segment_interp_changed,
         }
     }
 }

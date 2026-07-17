@@ -38,6 +38,12 @@ pub struct WaveLayer {
     /// When true, layer contributes with inverted sign (−).
     #[serde(default)]
     pub invert: bool,
+    /// Curve-wide default quant interp (hold|linear|spline|poly|expo|ma).
+    #[serde(default = "default_quant_interp")]
+    pub quant_interp: String,
+    /// Per-segment interp modes (len = max(0, quant-1)).
+    #[serde(default)]
+    pub quant_segment_interps: Vec<String>,
 }
 
 impl Default for WaveLayer {
@@ -51,6 +57,8 @@ impl Default for WaveLayer {
             wavetable_id: None,
             phase: 0.0,
             invert: false,
+            quant_interp: default_quant_interp(),
+            quant_segment_interps: Vec::new(),
         }
     }
 }
@@ -181,6 +189,9 @@ pub(crate) fn default_saw_type() -> String {
 }
 pub(crate) fn default_stack_mode() -> String {
     "add".into()
+}
+pub(crate) fn default_quant_interp() -> String {
+    "hold".into()
 }
 fn one() -> f32 {
     1.0

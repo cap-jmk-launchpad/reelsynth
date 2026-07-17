@@ -10,6 +10,7 @@ mod layout_audit;
 mod mod_matrix;
 mod osc_column;
 mod oscillator_ui;
+mod quant_interp;
 mod performance;
 mod scope_strip;
 mod shell;
@@ -59,6 +60,7 @@ pub use osc_column::{
     warp_mode_index, OscColumnInput, OscColumnResult, OscColumnState,
 };
 pub use oscillator_ui::{OscillatorUi, WaveLayerUi, MIN_OSCILLATORS};
+pub use quant_interp::WtQuantInterp;
 pub use performance::PerformanceUi;
 pub use scope_strip::{
     autofix_stack_levels, draw_scope_strip, ScopeStripInput, ScopeStripState, SCOPE_RESULT_LABEL,

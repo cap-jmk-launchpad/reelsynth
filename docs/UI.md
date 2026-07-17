@@ -130,9 +130,9 @@ The position strip is **layer chips only** on Design — no 256-frame scrub.
 
 | Column | Caption | Job |
 |--------|---------|-----|
-| **1 Result** | **Result · N · {stack_mode}** | Stack sum with fill; dim sibling layer strokes. Hover near a layer curve previews it (thicker stroke + hand cursor); click selects. Drag Y=level, X=phase/WT. **Result Quant** (when Quant > 0) reshapes the total curve via a one-shot **Residual** wavetable layer |
-| **2 Layers** | **Layers · Osc N** | Every enabled layer labelled (`L1 · saw`, …). Hover nearest curve within ~14 px previews selection (`Hover · L2 · saw`); click selects; per-WT **Quant** knobs at the edit frame (nearest-knob hit across WT curves; knob hover wins over curve preview) |
-| **3 Selected** | **Edit · Layer N · {type}** | Single selected layer (fill + thick). Toolbar: **Select / Shape / Interp (All + per-segment)**; full **QuantHandleEditor** for wavetable layers; Pencil / Curve / Shape tools |
+| **1 Result** | **Result · N · {stack_mode}** | Stack sum with fill; dim sibling layer strokes. Hover near a layer curve previews it (thicker stroke + hand cursor); click commits `selected_layer_idx`. Drag Y=level, X=phase/WT. **Result Quant** (when Quant > 0) reshapes the total via **Residual**; the **selected** WT/residual curve also shows its Quant knobs (siblings stay stroke-only). Knob proximity wins over curve click |
+| **2 Layers** | **Layers · Osc N** | Every enabled layer labelled (`L1 · saw`, …). Hover nearest curve within ~14 px previews selection (`Hover · L2 · saw`); click commits selection; **Quant knobs only on the selected** WT/residual curve at its edit frame (non-selected: stroke only). Knob hover wins over curve preview |
+| **3 Selected** | **Edit · Layer N · {type}** | Always the selected layer (fill + thick). Interactive toolbar + full edit: **Select / Shape / Interp (All + per-segment)**; **QuantHandleEditor** for wavetable layers; Pencil / Curve / Shape tools — not a paint-only preview |
 
 **Residual layer** — first Result Quant drag appends one wavetable layer (`residual: true`, shown as **Residual** in the strip). Stack mode switches to **add** if needed. Further Result edits update the same layer; math: `residual[i] = (desired[i] − others[i]) / (sign × level)`.
 
@@ -143,7 +143,7 @@ The position strip is **layer chips only** on Design — no 256-frame scrub.
 | Pane | Quant target |
 |------|----------------|
 | **Result** | Composite stack sum — writes **Residual** frame |
-| **Layers** | Nearest WT curve knob at edit frame |
+| **Layers** | Selected WT/residual curve knobs at that layer's edit frame |
 | **Selected** | Active layer curve (level / invert scaled) |
 
 When the **active layer** is **wavetable** and **Quant** > 0:

@@ -7,15 +7,20 @@ use reelsynth_ui_theme::Tokens;
 use crate::audit_registry::{record_region, AuditId};
 use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT};
 use crate::oscillator_ui::WaveLayerUi;
+use crate::quant_interp::WtQuantInterp;
 use crate::region::region;
 
 use super::curve_editor::CurveEditor;
-use super::quant_handles::{QuantHandleEditor, WtQuantInterp};
+use super::quant_handles::{
+    quant_control_points, resample_frame_from_quant_points, QuantHandleEditor,
+};
 use super::shape_editor::ShapeEditor;
 use super::slots::effective_quant_count;
 use super::toolbar::{WtEditTool, WtToolbar, WtToolbarResponse};
-use super::view_3d_stack::{layer_palette, layer_quant_display_scale, layer_waveform_points, WAVE_SAMPLES};
 use super::view_2d::{apply_waveform_drag_inner, va_layer_waveform_points};
+use super::view_3d_stack::{
+    layer_palette, layer_quant_display_scale, layer_waveform_points, WAVE_SAMPLES,
+};
 use super::waveform::frame_index;
 
 pub struct WtSelectedLayerResponse {
@@ -31,6 +36,7 @@ pub struct WtSelectedLayerView<'a> {
     pub tool: &'a mut WtEditTool,
     pub wave_quant: u8,
     pub quant_interp: &'a mut WtQuantInterp,
+    pub selected_quant_slot: &'a mut Option<usize>,
     pub wave_slot: &'a mut u8,
     pub wave_slots: &'a mut Vec<reelsynth::patch::WaveSlot>,
     pub wave_layers: &'a mut Vec<WaveLayerUi>,
@@ -43,7 +49,8 @@ impl WtSelectedLayerView<'_> {
     pub fn show(mut self, ui: &mut Ui) -> WtSelectedLayerResponse {
         let tokens = Tokens::default();
         let view_h = ui.available_height().max(48.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), view_h), Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), view_h), Sense::hover());
 
         let mut frame_edited = false;
         let mut stack_changed = false;
@@ -65,6 +72,12 @@ impl WtSelectedLayerView<'_> {
         let mid_y = inner.center().y;
 
         let layer_idx = self.selected_layer_idx.unwrap_or(0);
+        let slot_count = effective_quant_count(self.wave_quant);
+        if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
+            layer.ensure_segment_interps(slot_count);
+            *self.quant_interp = layer.quant_interp;
+        }
+
         let layer_va = self
             .wave_layers
             .get(layer_idx)
@@ -77,20 +90,61 @@ impl WtSelectedLayerView<'_> {
             .unwrap_or(false);
         let quant_active = layer_wt && self.wave_quant > 0;
 
+        let selected_slot = *self.selected_quant_slot;
+        let show_seg = quant_active
+            && selected_slot.is_some_and(|s| s + 1 < slot_count.max(1));
+
         let toolbar_rect = Rect::from_min_max(rect.min, egui::pos2(rect.max.x, plot_top));
         let toolbar_resp = region(ui, toolbar_rect, |ui| {
-            WtToolbar::show_with_analyze(
+            let mut seg_scratch = WtQuantInterp::Hold;
+            let has_seg = if show_seg {
+                if let Some(layer) = self.wave_layers.get(layer_idx) {
+                    let s = selected_slot.unwrap();
+                    seg_scratch = layer
+                        .quant_segment_interps
+                        .get(s)
+                        .copied()
+                        .unwrap_or(layer.quant_interp);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            let resp = WtToolbar::show_with_analyze(
                 ui,
                 self.tool,
                 if quant_active { self.wave_quant } else { 0 },
                 self.quant_interp,
-            )
+                selected_slot.filter(|_| quant_active),
+                if has_seg {
+                    Some(&mut seg_scratch)
+                } else {
+                    None
+                },
+            );
+            if has_seg && resp.segment_interp_changed {
+                if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
+                    let s = selected_slot.unwrap();
+                    if s < layer.quant_segment_interps.len() {
+                        layer.quant_segment_interps[s] = seg_scratch;
+                    }
+                }
+            }
+            resp
         });
-        record_region(ui.ctx(), AuditId::CenterWt2dToolbar, toolbar_rect, toolbar_rect);
+        record_region(
+            ui.ctx(),
+            AuditId::CenterWt2dToolbar,
+            toolbar_rect,
+            toolbar_rect,
+        );
         let WtToolbarResponse {
             analyze_requested: req,
             assign_shape,
             interp_changed,
+            segment_interp_changed,
             ..
         } = toolbar_resp;
         if req {
@@ -111,6 +165,61 @@ impl WtSelectedLayerView<'_> {
             }
         }
 
+        let rebuild = |bank: &mut WavetableBank,
+                       layers: &[WaveLayerUi],
+                       layer_idx: usize,
+                       wt_position: f32,
+                       wave_quant: u8| {
+            let layer_wt_position = layers
+                .get(layer_idx)
+                .map(|l| l.wt_position)
+                .unwrap_or(wt_position);
+            let frame_idx = frame_index(layer_wt_position, bank.num_frames);
+            let segs = layers
+                .get(layer_idx)
+                .map(|l| l.quant_segment_interps.as_slice())
+                .unwrap_or(&[]);
+            let curve_default = layers
+                .get(layer_idx)
+                .map(|l| l.quant_interp)
+                .unwrap_or_default();
+            let slots = effective_quant_count(wave_quant).max(1);
+            let frame = bank.frame_mut(frame_idx);
+            let points = quant_control_points(frame, slots);
+            resample_frame_from_quant_points(frame, &points, segs, curve_default);
+        };
+
+        if interp_changed && quant_active {
+            if let Some(layer) = self.wave_layers.get_mut(layer_idx) {
+                layer.apply_curve_interp_to_segments(slot_count, *self.quant_interp);
+            }
+            if let Some(bank) = self.bank.as_mut() {
+                rebuild(
+                    bank,
+                    self.wave_layers,
+                    layer_idx,
+                    *self.wt_position,
+                    self.wave_quant,
+                );
+                frame_edited = true;
+                status_hint = Some(format!(
+                    "Interp → {} (all segments)",
+                    self.quant_interp.label()
+                ));
+            }
+        } else if segment_interp_changed && quant_active {
+            if let Some(bank) = self.bank.as_mut() {
+                rebuild(
+                    bank,
+                    self.wave_layers,
+                    layer_idx,
+                    *self.wt_position,
+                    self.wave_quant,
+                );
+                frame_edited = true;
+            }
+        }
+
         let layer_wt_position = self
             .wave_layers
             .get(layer_idx)
@@ -121,17 +230,6 @@ impl WtSelectedLayerView<'_> {
             .as_ref()
             .map(|b| frame_index(layer_wt_position, b.num_frames))
             .unwrap_or(0);
-
-        if interp_changed && quant_active {
-            if let Some(bank) = self.bank.as_mut() {
-                use super::quant_handles::{quant_control_points, resample_frame_from_quant_points};
-                let slot_count = effective_quant_count(self.wave_quant);
-                let frame = bank.frame_mut(frame_idx);
-                let points = quant_control_points(frame, slot_count);
-                resample_frame_from_quant_points(frame, &points, *self.quant_interp);
-                frame_edited = true;
-            }
-        }
 
         let empty = WavetableBank::factory_saw_morph();
         let bank_ro = self.bank.as_ref().map(|b| &**b).unwrap_or(&empty);
@@ -209,12 +307,16 @@ impl WtSelectedLayerView<'_> {
             if let Some(bank) = self.bank.as_mut() {
                 if let Some(layer) = self.wave_layers.get(layer_idx) {
                     let display_scale = layer_quant_display_scale(layer);
+                    let curve_default = layer.quant_interp;
+                    let segs = layer.quant_segment_interps.clone();
                     let editor = QuantHandleEditor {
                         plot_rect: inner,
                         wave_quant: self.wave_quant,
                         bank,
                         frame_idx,
-                        interp: *self.quant_interp,
+                        segment_interps: &segs,
+                        curve_default,
+                        selected_slot: self.selected_quant_slot,
                         display_scale,
                     };
                     let qh = editor.show(ui);
@@ -260,23 +362,21 @@ impl WtSelectedLayerView<'_> {
     }
 }
 
-fn paint_grid(painter: &egui::Painter, rect: Rect, border: Color32) {
-    let step = 24.0;
-    let stroke = egui::Stroke::new(0.5, border.gamma_multiply(0.75));
-    let mut x = rect.min.x;
-    while x <= rect.max.x {
+fn paint_grid(painter: &egui::Painter, inner: Rect, border: Color32) {
+    let mid_y = inner.center().y;
+    for i in 1..4 {
+        let t = i as f32 / 4.0;
+        let x = egui::lerp(inner.min.x..=inner.max.x, t);
         painter.line_segment(
-            [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
-            stroke,
+            [Pos2::new(x, inner.min.y), Pos2::new(x, inner.max.y)],
+            egui::Stroke::new(1.0, border.gamma_multiply(0.35)),
         );
-        x += step;
-    }
-    let mut y = rect.min.y;
-    while y <= rect.max.y {
-        painter.line_segment(
-            [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
-            stroke,
-        );
-        y += step;
+        let y = egui::lerp(inner.min.y..=inner.max.y, t);
+        if (y - mid_y).abs() > 2.0 {
+            painter.line_segment(
+                [Pos2::new(inner.min.x, y), Pos2::new(inner.max.x, y)],
+                egui::Stroke::new(1.0, border.gamma_multiply(0.25)),
+            );
+        }
     }
 }

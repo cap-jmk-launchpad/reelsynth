@@ -28,10 +28,11 @@ pub use morph::{morph_amount_for_position, morph_position, WtMorph, WtMorphRespo
 pub use quant_handles::{
     apply_quant_slot_amplitude, frame_to_y, knob_y_on_curve, nearest_quant_handle, nearest_slot,
     paint_quant_knob, quant_control_points, quant_curve_stroke, quant_hover_status_label,
-    quant_knob_visual, quantized_curve_polyline, resample_frame_from_quant_points,
+    quant_knob_visual, quantized_curve_polyline, resample_frame_from_quant_points, resample_frame_from_quant_points_uniform,
     sample_at_quant_phase, sample_from_knob_y, sample_to_y, snap_x_to_slot, slot_x, y_to_frame,
-    y_to_sample, QuantHandleEditor, QuantHandleResponse, QuantKnobVisual, WtQuantInterp,
+    y_to_sample, QuantHandleEditor, QuantHandleResponse, QuantKnobVisual,
 };
+pub use crate::quant_interp::WtQuantInterp;
 pub use slots::{
     apply_slot_selection, effective_quant_count, frame_to_slot_coord, position_from_osc_ui,
     resolved_slots_for_ui, sync_slot_from_position, wave_quant_from_index, wave_quant_index,

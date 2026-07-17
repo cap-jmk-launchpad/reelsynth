@@ -8,6 +8,8 @@ use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Ui};
 use reelsynth::WavetableBank;
 use reelsynth_ui_theme::{ACCENT_UI, Tokens};
 
+use crate::quant_interp::segment_mode;
+
 use super::slots::effective_quant_count;
 
 const HANDLE_RADIUS: f32 = 6.0;
@@ -107,59 +109,22 @@ pub fn paint_quant_knob(
     );
 }
 
-/// How quant knob amplitudes are written into the 2048-sample frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum WtQuantInterp {
-    /// Flat band per slot (step / rectangular — current legacy behavior).
-    #[default]
-    Hold,
-    /// Straight segments between knob heights.
-    Linear,
-    /// Catmull-Rom spline through knob heights (smooth, same family as Shape upsample).
-    Cubic,
-}
-
-impl WtQuantInterp {
-    pub const LABELS: [&'static str; 3] = ["Hold", "Linear", "Spline"];
-
-    pub fn label(self) -> &'static str {
-        Self::LABELS[self.index()]
-    }
-
-    pub fn index(self) -> usize {
-        match self {
-            Self::Hold => 0,
-            Self::Linear => 1,
-            Self::Cubic => 2,
-        }
-    }
-
-    pub fn from_index(idx: usize) -> Self {
-        match idx {
-            1 => Self::Linear,
-            2 => Self::Cubic,
-            _ => Self::Hold,
-        }
-    }
-
-    pub fn tooltip(self) -> &'static str {
-        match self {
-            Self::Hold => "Step — flat band per slot (rectangular)",
-            Self::Linear => "Linear — straight lines between knobs",
-            Self::Cubic => "Spline — smooth Catmull-Rom curve through knobs",
-        }
-    }
-}
+/// Re-export — modes live in [`crate::quant_interp`].
+pub use crate::quant_interp::WtQuantInterp;
 
 pub struct QuantHandleEditor<'a> {
     pub plot_rect: Rect,
     pub wave_quant: u8,
     pub bank: &'a mut WavetableBank,
     pub frame_idx: usize,
-    pub interp: WtQuantInterp,
-    /// Selected-layer display scale (level × sign). Knobs sit on that curve.
+    /// Per-segment modes (`len = slot_count - 1`).
+    pub segment_interps: &'a [WtQuantInterp],
+    pub curve_default: WtQuantInterp,
+    pub selected_slot: &'a mut Option<usize>,
+    /// Selected-layer display scale (level x sign). Knobs sit on that curve.
     pub display_scale: f32,
 }
+
 
 pub struct QuantHandleResponse {
     pub frame_edited: bool,
@@ -220,13 +185,22 @@ impl QuantHandleEditor<'_> {
 
         if response.drag_started() {
             if let Some(pos) = pointer {
-                // Snap to the nearest knob on the selected curve — ignore bare X columns.
                 if let Some(slot) =
                     nearest_quant_handle(pos, self.plot_rect, &points, scale, HIT_PX)
                 {
                     ui.ctx().data_mut(|d| d.insert_temp(drag_slot_id, slot));
                     dragged_slot = Some(slot);
+                    *self.selected_slot = Some(slot);
                     over_handle = true;
+                }
+            }
+        }
+        if response.clicked() {
+            if let Some(pos) = pointer {
+                if let Some(slot) =
+                    nearest_quant_handle(pos, self.plot_rect, &points, scale, HIT_PX)
+                {
+                    *self.selected_slot = Some(slot);
                 }
             }
         }
@@ -258,15 +232,22 @@ impl QuantHandleEditor<'_> {
                             slot,
                             slot_count,
                             sample,
-                            self.interp,
+                            self.segment_interps,
+                            self.curve_default,
                         );
                         frame_edited = true;
+                        let seg_label = if slot + 1 < slot_count {
+                            segment_mode(self.segment_interps, slot, self.curve_default).label()
+                        } else {
+                            "end"
+                        };
                         status_label = Some(format!(
                             "Slot {} → amp {:+.2} · {}",
                             slot + 1,
                             sample,
-                            self.interp.label()
+                            seg_label
                         ));
+                        *self.selected_slot = Some(slot);
                     }
                 }
             }
@@ -284,42 +265,32 @@ impl QuantHandleEditor<'_> {
 
         // Editable quantized curve through knobs (distinct from Result / other layers).
         let poly = quantized_curve_polyline(&points, self.plot_rect, scale);
-        if poly.len() >= 2 {
-            match self.interp {
-                WtQuantInterp::Hold => {
-                    // Step silhouette: horizontal then vertical between knobs.
-                    let mut step_pts = Vec::with_capacity(poly.len() * 2);
-                    for w in poly.windows(2) {
-                        step_pts.push(w[0]);
-                        step_pts.push(Pos2::new(w[1].x, w[0].y));
-                    }
-                    if let Some(last) = poly.last() {
-                        step_pts.push(*last);
-                    }
-                    painter.add(egui::Shape::line(
-                        step_pts,
-                        egui::Stroke::new(curve_w, accent_ui.gamma_multiply(curve_mul)),
-                    ));
-                }
-                WtQuantInterp::Linear | WtQuantInterp::Cubic => {
-                    // Dense resample so spline looks continuous under the knobs.
-                    let dense = 64.max(slot_count * 4);
-                    let mut dense_pts = Vec::with_capacity(dense + 1);
-                    for i in 0..=dense {
-                        let phase = i as f32 / dense as f32;
-                        let s = sample_interp_at_phase(&points, phase, self.interp);
-                        let x = egui::lerp(self.plot_rect.min.x..=self.plot_rect.max.x, phase);
-                        let y = knob_y_on_curve(s, scale, self.plot_rect);
-                        dense_pts.push(Pos2::new(x, y));
-                    }
-                    painter.add(egui::Shape::line(
-                        dense_pts,
-                        egui::Stroke::new(
-                            curve_w + 0.2,
-                            accent_ui.gamma_multiply(curve_mul.max(0.9)),
-                        ),
-                    ));
-                }
+        {
+            let dense = 64.max(slot_count * 4);
+            let mut dense_pts = Vec::with_capacity(dense + 1);
+            for i in 0..=dense {
+                let phase = i as f32 / dense as f32;
+                let s = sample_interp_at_phase(
+                    &points,
+                    phase,
+                    self.segment_interps,
+                    self.curve_default,
+                );
+                let x = egui::lerp(self.plot_rect.min.x..=self.plot_rect.max.x, phase);
+                let y = knob_y_on_curve(s, scale, self.plot_rect);
+                dense_pts.push(Pos2::new(x, y));
+            }
+            if dense_pts.len() >= 2 {
+                let focus = self.selected_slot.filter(|s| *s + 1 < slot_count);
+                // Tint outgoing segment under selected/hovered knob when possible.
+                let _ = (focus, hovered_slot, poly);
+                painter.add(egui::Shape::line(
+                    dense_pts,
+                    egui::Stroke::new(
+                        curve_w + 0.2,
+                        accent_ui.gamma_multiply(curve_mul.max(0.9)),
+                    ),
+                ));
             }
         }
 
@@ -399,13 +370,14 @@ impl QuantHandleEditor<'_> {
     }
 }
 
-/// Update one quant knob, then rebuild the frame using the chosen interpolation.
+/// Update one quant knob, then rebuild using per-segment interpolation.
 pub fn apply_quant_slot_amplitude(
     frame: &mut [f32],
     slot: usize,
     slot_count: usize,
     sample: f32,
-    mode: WtQuantInterp,
+    segments: &[WtQuantInterp],
+    curve_default: WtQuantInterp,
 ) {
     if frame.is_empty() || slot_count == 0 {
         return;
@@ -414,14 +386,28 @@ pub fn apply_quant_slot_amplitude(
     if slot < points.len() {
         points[slot] = sample.clamp(-1.0, 1.0);
     }
-    resample_frame_from_quant_points(frame, &points, mode);
+    resample_frame_from_quant_points(frame, &points, segments, curve_default);
 }
 
-/// Fill `frame` from evenly spaced control-point amplitudes.
+/// Convenience: apply one mode to every segment.
+#[allow(dead_code)]
+pub fn apply_quant_slot_amplitude_uniform(
+    frame: &mut [f32],
+    slot: usize,
+    slot_count: usize,
+    sample: f32,
+    mode: WtQuantInterp,
+) {
+    let segs = vec![mode; slot_count.saturating_sub(1)];
+    apply_quant_slot_amplitude(frame, slot, slot_count, sample, &segs, mode);
+}
+
+/// Fill `frame` from control-point amplitudes using per-segment modes.
 pub fn resample_frame_from_quant_points(
     frame: &mut [f32],
     points: &[f32],
-    mode: WtQuantInterp,
+    segments: &[WtQuantInterp],
+    curve_default: WtQuantInterp,
 ) {
     let n = points.len();
     if n == 0 || frame.is_empty() {
@@ -438,9 +424,9 @@ pub fn resample_frame_from_quant_points(
         } else {
             i as f32 / (len - 1) as f32
         };
-        *sample = sample_interp_at_phase(points, phase, mode);
+        *sample = sample_interp_at_phase(points, phase, segments, curve_default);
     }
-    // Pin exact knot samples so knobs read back the values you set (Hold edges).
+    apply_moving_average_segments(frame, points, segments, curve_default);
     if len > 1 && points.len() > 1 {
         for (slot, &amp) in points.iter().enumerate() {
             let phase = slot as f32 / (points.len() - 1) as f32;
@@ -450,7 +436,61 @@ pub fn resample_frame_from_quant_points(
     }
 }
 
-fn sample_interp_at_phase(points: &[f32], phase: f32, mode: WtQuantInterp) -> f32 {
+/// Uniform-mode resample (all segments share `mode`).
+pub fn resample_frame_from_quant_points_uniform(
+    frame: &mut [f32],
+    points: &[f32],
+    mode: WtQuantInterp,
+) {
+    let segs = vec![mode; points.len().saturating_sub(1)];
+    resample_frame_from_quant_points(frame, points, &segs, mode);
+}
+
+fn apply_moving_average_segments(
+    frame: &mut [f32],
+    points: &[f32],
+    segments: &[WtQuantInterp],
+    curve_default: WtQuantInterp,
+) {
+    let n = points.len();
+    let len = frame.len();
+    if n < 2 || len < 3 {
+        return;
+    }
+    let mut scratch = frame.to_vec();
+    for seg in 0..n - 1 {
+        if segment_mode(segments, seg, curve_default) != WtQuantInterp::MovingAverage {
+            continue;
+        }
+        let i0 = ((seg as f32 / (n - 1) as f32) * (len - 1) as f32).round() as usize;
+        let i1 = (((seg + 1) as f32 / (n - 1) as f32) * (len - 1) as f32).round() as usize;
+        let i1 = i1.min(len - 1).max(i0);
+        let win = ((i1 - i0) / 4).max(3) | 1;
+        let half = win / 2;
+        for i in i0..=i1 {
+            let mut sum = 0.0_f32;
+            let mut count = 0_u32;
+            for j in i.saturating_sub(half)..=(i + half).min(len - 1) {
+                if j < i0 || j > i1 {
+                    continue;
+                }
+                sum += frame[j];
+                count += 1;
+            }
+            if count > 0 {
+                scratch[i] = sum / count as f32;
+            }
+        }
+        frame[i0..=i1].copy_from_slice(&scratch[i0..=i1]);
+    }
+}
+
+fn sample_interp_at_phase(
+    points: &[f32],
+    phase: f32,
+    segments: &[WtQuantInterp],
+    curve_default: WtQuantInterp,
+) -> f32 {
     let n = points.len();
     debug_assert!(n >= 1);
     if n == 1 {
@@ -458,27 +498,38 @@ fn sample_interp_at_phase(points: &[f32], phase: f32, mode: WtQuantInterp) -> f3
     }
     let phase = phase.clamp(0.0, 1.0);
     let t = phase * (n - 1) as f32;
+    let i = (t.floor() as usize).min(n - 2);
+    let frac = (t - i as f32).clamp(0.0, 1.0);
+    let mode = segment_mode(segments, i, curve_default);
+    let mode = if mode == WtQuantInterp::MovingAverage {
+        WtQuantInterp::Linear
+    } else {
+        mode
+    };
+    sample_segment(points, i, frac, mode)
+}
+
+fn sample_segment(points: &[f32], i: usize, frac: f32, mode: WtQuantInterp) -> f32 {
+    let n = points.len();
+    let y1 = points[i];
+    let y2 = points[(i + 1).min(n - 1)];
     match mode {
-        WtQuantInterp::Hold => {
-            let slot = t.floor() as usize;
-            points[slot.min(n - 1)]
-        }
-        WtQuantInterp::Linear => {
-            let i = t.floor() as usize;
-            if i >= n - 1 {
-                return points[n - 1];
-            }
-            let frac = t - i as f32;
-            egui::lerp(points[i]..=points[i + 1], frac)
-        }
-        WtQuantInterp::Cubic => {
-            let i = (t.floor() as usize).min(n - 2);
-            let frac = (t - i as f32).clamp(0.0, 1.0);
+        WtQuantInterp::Hold => y1,
+        WtQuantInterp::Linear | WtQuantInterp::MovingAverage => egui::lerp(y1..=y2, frac),
+        WtQuantInterp::Spline => {
             let y0 = points[i.saturating_sub(1)];
-            let y1 = points[i];
-            let y2 = points[(i + 1).min(n - 1)];
             let y3 = points[(i + 2).min(n - 1)];
             cubic_catmull(y0, y1, y2, y3, frac)
+        }
+        WtQuantInterp::Polynomial => {
+            let y0 = points[i.saturating_sub(1)];
+            let y3 = points[(i + 2).min(n - 1)];
+            lagrange_cubic(y0, y1, y2, y3, frac)
+        }
+        WtQuantInterp::Exponential => {
+            const K: f32 = 3.0;
+            let eased = ((K * frac).exp() - 1.0) / (K.exp() - 1.0);
+            egui::lerp(y1..=y2, eased)
         }
     }
 }
@@ -490,6 +541,16 @@ fn cubic_catmull(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
     let d = y1;
     ((a * t + b) * t + c) * t + d
 }
+
+fn lagrange_cubic(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
+    let x = 1.0 + t;
+    let l0 = ((x - 1.0) * (x - 2.0) * (x - 3.0)) / ((0.0 - 1.0) * (0.0 - 2.0) * (0.0 - 3.0));
+    let l1 = ((x - 0.0) * (x - 2.0) * (x - 3.0)) / ((1.0 - 0.0) * (1.0 - 2.0) * (1.0 - 3.0));
+    let l2 = ((x - 0.0) * (x - 1.0) * (x - 3.0)) / ((2.0 - 0.0) * (2.0 - 1.0) * (2.0 - 3.0));
+    let l3 = ((x - 0.0) * (x - 1.0) * (x - 2.0)) / ((3.0 - 0.0) * (3.0 - 1.0) * (3.0 - 2.0));
+    y0 * l0 + y1 * l1 + y2 * l2 + y3 * l3
+}
+
 
 /// Control-point amplitudes at each quant slot phase (aligned with [`slot_x`]).
 pub fn quant_control_points(frame: &[f32], slot_count: usize) -> Vec<f32> {
@@ -672,7 +733,7 @@ mod tests {
         let mut frame = vec![0.0_f32; 512];
         let mut points = vec![0.0, 0.25, -0.4, 0.7, 0.1, -0.2, 0.5, 0.0];
         points[3] = 0.9;
-        resample_frame_from_quant_points(&mut frame, &points, WtQuantInterp::Linear);
+        resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Linear);
         let back = quant_control_points(&frame, points.len());
         for (i, (&want, &got)) in points.iter().zip(back.iter()).enumerate() {
             assert!(
@@ -756,7 +817,7 @@ mod tests {
         let mut bank = WavetableBank::factory_sine();
         let slot_count = 8;
         let before = sample_at_quant_phase(bank.frame(0), 3, slot_count);
-        apply_quant_slot_amplitude(bank.frame_mut(0), 3, slot_count, 0.85, WtQuantInterp::Hold);
+        apply_quant_slot_amplitude_uniform(bank.frame_mut(0), 3, slot_count, 0.85, WtQuantInterp::Hold);
         let after = sample_at_quant_phase(bank.frame(0), 3, slot_count);
         assert!((after - before).abs() > 0.2);
         assert!((after - 0.85).abs() < 1e-3);
@@ -766,7 +827,7 @@ mod tests {
     fn linear_interp_smooths_between_slots() {
         let mut frame = vec![0.0_f32; 256];
         let points = vec![-1.0, 1.0, -1.0, 1.0];
-        resample_frame_from_quant_points(&mut frame, &points, WtQuantInterp::Linear);
+        resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Linear);
         let mid = frame[frame.len() / 4];
         assert!(mid.abs() < 0.95 && mid.abs() > 0.05, "mid should blend, got {mid}");
     }
@@ -775,7 +836,7 @@ mod tests {
     fn hold_flat_per_slot_band() {
         let mut frame = vec![0.0_f32; 256];
         let points = vec![0.0, 1.0, 0.0, 1.0];
-        resample_frame_from_quant_points(&mut frame, &points, WtQuantInterp::Hold);
+        resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Hold);
         let q1 = frame[32];
         let q2 = frame[96];
         assert!((q1 - 0.0).abs() < 1e-3);
@@ -826,4 +887,63 @@ mod tests {
             "got {label}"
         );
     }
+    #[test]
+    fn linear_hits_endpoints() {
+        let mut frame = vec![0.0_f32; 128];
+        let points = vec![-0.5_f32, 0.8];
+        resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Linear);
+        assert!((frame[0] - (-0.5)).abs() < 1e-3);
+        assert!((frame[frame.len() - 1] - 0.8).abs() < 1e-3);
+    }
+
+    #[test]
+    fn expo_monotonic_same_sign_endpoints() {
+        let mut frame = vec![0.0_f32; 128];
+        let points = vec![0.2_f32, 0.9];
+        resample_frame_from_quant_points_uniform(&mut frame, &points, WtQuantInterp::Exponential);
+        for w in frame.windows(2) {
+            assert!(w[1] + 1e-4 >= w[0]);
+        }
+    }
+
+    #[test]
+    fn ma_reduces_high_freq_vs_hold() {
+        let points = vec![1.0_f32, -1.0, 1.0, -1.0, 1.0];
+        let mut hold = vec![0.0_f32; 256];
+        let mut ma = vec![0.0_f32; 256];
+        resample_frame_from_quant_points_uniform(&mut hold, &points, WtQuantInterp::Hold);
+        resample_frame_from_quant_points_uniform(&mut ma, &points, WtQuantInterp::MovingAverage);
+        let hf = |f: &[f32]| -> f32 {
+            f.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f32>() / f.len() as f32
+        };
+        assert!(hf(&ma) < hf(&hold) * 0.85);
+    }
+
+    #[test]
+    fn per_segment_modes_differ_from_uniform() {
+        let points = vec![0.0_f32, 1.0, 0.0, 1.0];
+        let mut uniform = vec![0.0_f32; 128];
+        let mut mixed = vec![0.0_f32; 128];
+        resample_frame_from_quant_points_uniform(&mut uniform, &points, WtQuantInterp::Hold);
+        let segs = [
+            WtQuantInterp::Hold,
+            WtQuantInterp::Linear,
+            WtQuantInterp::Spline,
+        ];
+        resample_frame_from_quant_points(&mut mixed, &points, &segs, WtQuantInterp::Hold);
+        let diff: f32 = uniform.iter().zip(mixed.iter()).map(|(a, b)| (a - b).abs()).sum();
+        assert!(diff > 1.0);
+    }
+
+    #[test]
+    fn edge_knobs_always_in_control_points() {
+        for n in [2usize, 8, 16, 65, 256] {
+            let frame = vec![0.25_f32; 512];
+            let pts = quant_control_points(&frame, n);
+            assert_eq!(pts.len(), n);
+            assert!((pts[0] - 0.25).abs() < 1e-3);
+            assert!((pts[n - 1] - 0.25).abs() < 1e-3);
+        }
+    }
+
 }

@@ -143,7 +143,6 @@ pub(super) fn draw_center(
                             selected_layer_idx: &mut state.selected_layer_idx,
                             stack_mode: &mut osc.stack_mode,
                             wave_quant,
-                            quant_interp: state.wt_quant_interp,
                             wavetable_id: Some(bank_name.clone()),
                             active_osc: idx,
                         };
@@ -182,7 +181,6 @@ pub(super) fn draw_center(
                             active_osc: idx,
                             time: 0.0,
                             wave_quant,
-                            quant_interp: state.wt_quant_interp,
                         };
                         let stack_resp = view_stack.show(ui);
                         if stack_resp.frame_edited {
@@ -212,6 +210,7 @@ pub(super) fn draw_center(
                             tool: &mut state.wt_edit_tool,
                             wave_quant,
                             quant_interp: &mut state.wt_quant_interp,
+                            selected_quant_slot: &mut state.selected_quant_slot,
                             wave_slot: &mut osc.wave_slot,
                             wave_slots: &mut osc.wave_slots,
                             wave_layers: &mut osc.wave_layers,

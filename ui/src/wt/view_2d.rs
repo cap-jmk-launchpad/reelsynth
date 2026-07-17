@@ -10,7 +10,10 @@ use crate::region::region;
 
 use super::curve_editor::CurveEditor;
 use super::mod_preview::{preview_mod_sources, preview_position_mod};
-use super::quant_handles::{QuantHandleEditor, WtQuantInterp, quant_control_points, resample_frame_from_quant_points, slot_x};
+use crate::quant_interp::WtQuantInterp;
+use super::quant_handles::{
+    QuantHandleEditor, quant_control_points, resample_frame_from_quant_points_uniform, slot_x,
+};
 use super::shape_editor::ShapeEditor;
 use super::slots::{apply_slot_selection, effective_quant_count};
 use super::toolbar::{FrameShapeTemplate, WtEditTool, WtToolbar, WtToolbarResponse};
@@ -160,6 +163,8 @@ impl WtView2d<'_> {
                     self.tool,
                     if quant_active { self.wave_quant } else { 0 },
                     self.quant_interp,
+                    None,
+                    None,
                 )
             },
         );
@@ -209,7 +214,7 @@ impl WtView2d<'_> {
                     let slot_count = effective_quant_count(self.wave_quant);
                     let frame = bank.frame_mut(frame_idx);
                     let points = quant_control_points(frame, slot_count);
-                    resample_frame_from_quant_points(frame, &points, *self.quant_interp);
+                    resample_frame_from_quant_points_uniform(frame, &points, *self.quant_interp);
                     frame_edited = true;
                     status_hint = Some(format!(
                         "Interp → {} (frame rebuilt)",
@@ -659,12 +664,19 @@ impl WtView2d<'_> {
                         sign * level.max(0.05)
                     })
                     .unwrap_or(1.0);
+                let mut selected_slot: Option<usize> = None;
+                let segs = vec![
+                    *self.quant_interp;
+                    effective_quant_count(self.wave_quant).saturating_sub(1)
+                ];
                 let editor = QuantHandleEditor {
                     plot_rect: inner,
                     wave_quant: self.wave_quant,
                     bank,
                     frame_idx,
-                    interp: *self.quant_interp,
+                    segment_interps: &segs,
+                    curve_default: *self.quant_interp,
+                    selected_slot: &mut selected_slot,
                     display_scale,
                 };
                 let qh = editor.show(ui);

@@ -15,11 +15,13 @@ use crate::state::WtView3dMode;
 use super::quant_handles::{
     apply_quant_slot_amplitude, knob_y_on_curve, nearest_quant_handle, paint_quant_knob,
     quant_control_points, quant_hover_status_label, quant_knob_visual, sample_from_knob_y,
-    slot_x, WtQuantInterp,
+    slot_x,
 };
 use super::residual::layer_curve_label;
 use super::slots::effective_quant_count;
-use super::waveform::{frame_index, hovered_layer_from_pointer, peak_point};
+use super::waveform::{
+    frame_index, hovered_layer_from_pointer, peak_point, selection_from_curve_click,
+};
 
 pub(crate) const HOVER_DISTANCE_PX: f32 = 14.0;
 pub(crate) const WAVE_AMP: f32 = 0.42;
@@ -244,9 +246,8 @@ pub struct WtView3dStack<'a> {
     /// Osc index for pane caption (`Layers · Osc N`).
     pub active_osc: usize,
     pub time: f32,
-    /// Osc quant count — enables snap knobs on selected wavetable layer.
+    /// Osc quant count — enables snap knobs on the **selected** wavetable layer.
     pub wave_quant: u8,
-    pub quant_interp: WtQuantInterp,
 }
 
 impl WtView3dStack<'_> {
@@ -328,19 +329,15 @@ impl WtView3dStack<'_> {
             .collect();
 
         let selected_idx = *self.selected_layer;
-        let wt_layer_indices: Vec<usize> = active_indices
-            .iter()
-            .copied()
-            .filter(|&i| self.layers[i].is_wavetable())
-            .collect();
-        let quant_active = self.wave_quant > 0 && !wt_layer_indices.is_empty();
-        let edit_frame_idx = selected_idx
-            .and_then(|i| {
-                self.layers
-                    .get(i)
-                    .filter(|l| l.is_wavetable())
-                    .map(|l| l.wt_position)
-            })
+        // Quant knobs only on the selected WT/residual curve — siblings stay stroke-only.
+        let quant_layer_idx = selected_idx.filter(|&i| {
+            self.layers
+                .get(i)
+                .is_some_and(|l| l.is_wavetable() && l.enabled && l.level > 0.0)
+        });
+        let quant_active = self.wave_quant > 0 && quant_layer_idx.is_some();
+        let edit_frame_idx = quant_layer_idx
+            .and_then(|i| self.layers.get(i).map(|l| l.wt_position))
             .map(|p| frame_index(p, bank.num_frames))
             .unwrap_or_else(|| frame_index(*self.wt_position, bank.num_frames));
 
@@ -364,9 +361,9 @@ impl WtView3dStack<'_> {
         // Knob proximity wins for interaction; curve preview only when not on a knob.
         let over_quant_knob = quant_active
             && pointer_in_plot.is_some_and(|pos| {
-                let slot_count = effective_quant_count(self.wave_quant);
-                wt_layer_indices.iter().any(|&layer_i| {
+                quant_layer_idx.is_some_and(|layer_i| {
                     self.layers.get(layer_i).is_some_and(|layer| {
+                        let slot_count = effective_quant_count(self.wave_quant);
                         let scale = layer_quant_display_scale(layer);
                         let points = quant_control_points(bank.frame(edit_frame_idx), slot_count);
                         nearest_quant_handle(pos, inner, &points, scale, 14.0).is_some()
@@ -376,9 +373,10 @@ impl WtView3dStack<'_> {
         let curve_preview = if over_quant_knob { None } else { hovered_curve };
 
         let quant_locked = ui.ctx().data(|d| d.get_temp::<usize>(drag_slot_id).is_some());
-        let response = if quant_active && quant_locked {
-            None
-        } else if quant_active {
+
+        // When Quant knobs are shown, the quant response owns the plot hit-test
+        // (so knob proximity can win). Otherwise the stack interact owns clicks.
+        let response = if quant_active {
             None
         } else {
             Some(ui.interact(
@@ -389,40 +387,25 @@ impl WtView3dStack<'_> {
         };
 
         if let Some(response) = response.as_ref() {
-            if response.clicked() {
+            if response.clicked() || response.drag_started() {
                 if let Some(pos) = response.interact_pointer_pos() {
-                    if let Some(idx) = hovered_layer_from_pointer(
+                    let hovered = hovered_layer_from_pointer(
                         layer_points
                             .iter()
                             .map(|(i, pts, _)| (*i, pts.as_slice())),
                         pos,
                         HOVER_DISTANCE_PX,
-                    ) {
+                    );
+                    if let Some(idx) = selection_from_curve_click(hovered, false) {
                         *self.selected_layer = Some(idx);
                         layer_selected = true;
                         ui.ctx().data_mut(|d| {
                             d.insert_temp(drag_target_id, StackDragTarget::Layer(idx))
                         });
+                    } else if response.drag_started() {
+                        ui.ctx()
+                            .data_mut(|d| d.insert_temp(drag_target_id, StackDragTarget::None));
                     }
-                }
-            }
-
-            if response.drag_started() {
-                if let Some(pos) = response.interact_pointer_pos() {
-                    let target =
-                        if let Some(idx) = hovered_layer_from_pointer(
-                            layer_points
-                                .iter()
-                                .map(|(i, pts, _)| (*i, pts.as_slice())),
-                            pos,
-                            HOVER_DISTANCE_PX,
-                        ) {
-                            StackDragTarget::Layer(idx)
-                        } else {
-                            StackDragTarget::None
-                        };
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(drag_target_id, target));
                 }
             }
 
@@ -475,6 +458,7 @@ impl WtView3dStack<'_> {
             let slot_count = effective_quant_count(self.wave_quant);
             let locked_slot: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_slot_id));
             let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
+            let layer_i = quant_layer_idx.expect("quant_active implies selected WT layer");
 
             let sense = Sense::click_and_drag();
             let q_response = ui.allocate_rect(inner, sense);
@@ -482,44 +466,39 @@ impl WtView3dStack<'_> {
                 .interact_pointer_pos()
                 .filter(|p| inner.contains(*p));
 
-            let mut nearest: Option<(usize, usize)> = None;
-            let mut nearest_dist = 14.0_f32;
-            for &layer_i in &wt_layer_indices {
-                if let Some(layer) = self.layers.get(layer_i) {
+            let nearest_slot = pointer.and_then(|pos| {
+                self.layers.get(layer_i).and_then(|layer| {
                     let scale = layer_quant_display_scale(layer);
                     let points = quant_control_points(bank.frame(edit_frame_idx), slot_count);
-                    if let Some(pos) = pointer {
-                        if let Some(slot) =
-                            nearest_quant_handle(pos, inner, &points, scale, 14.0)
-                        {
-                            let x = slot_x(slot, slot_count, inner);
-                            let y = knob_y_on_curve(points[slot], scale, inner);
-                            let dist = pos.distance(Pos2::new(x, y));
-                            if dist < nearest_dist {
-                                nearest_dist = dist;
-                                nearest = Some((layer_i, slot));
-                            }
-                        }
-                    }
-                }
-            }
+                    nearest_quant_handle(pos, inner, &points, scale, 14.0)
+                })
+            });
+            let over_knob = nearest_slot.is_some() || quant_locked;
 
-            if q_response.drag_started() {
-                if let Some((layer_i, slot)) = nearest {
-                    ui.ctx().data_mut(|d| {
-                        d.insert_temp(drag_slot_id, slot);
-                        d.insert_temp(drag_layer_id, layer_i);
-                    });
+            if q_response.clicked() || q_response.drag_started() {
+                if let Some(slot) = nearest_slot {
+                    if q_response.drag_started() {
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(drag_slot_id, slot);
+                            d.insert_temp(drag_layer_id, layer_i);
+                        });
+                    }
                 } else if let Some(pos) = pointer {
-                    if let Some(idx) = hovered_layer_from_pointer(
+                    let hovered = hovered_layer_from_pointer(
                         layer_points
                             .iter()
                             .map(|(i, pts, _)| (*i, pts.as_slice())),
                         pos,
                         HOVER_DISTANCE_PX,
-                    ) {
+                    );
+                    if let Some(idx) = selection_from_curve_click(hovered, false) {
                         *self.selected_layer = Some(idx);
                         layer_selected = true;
+                        if q_response.drag_started() {
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(drag_target_id, StackDragTarget::Layer(idx))
+                            });
+                        }
                     }
                 }
             }
@@ -530,15 +509,52 @@ impl WtView3dStack<'_> {
                 });
             }
 
-            let active_layer = locked_layer.or(nearest.map(|(l, _)| l));
-            let active_slot = locked_slot.or(nearest.map(|(_, s)| s));
+            // Level / phase drag when not grabbing a knob.
+            if q_response.dragged() && !over_knob && !quant_locked {
+                let target = ui
+                    .ctx()
+                    .data(|d| d.get_temp(drag_target_id))
+                    .unwrap_or_else(|| {
+                        selected_idx
+                            .map(StackDragTarget::Layer)
+                            .unwrap_or(StackDragTarget::None)
+                    });
+                let delta = q_response.drag_delta();
+                if let StackDragTarget::Layer(sel) = target {
+                    if let Some(layer) = self.layers.get_mut(sel) {
+                        if delta.x.abs() > 0.0 {
+                            let max_pos = (bank.num_frames.saturating_sub(1)).max(1) as f32;
+                            let px_per_frame = inner.width() / max_pos.max(1.0);
+                            if layer.is_wavetable() {
+                                layer.wt_position = (layer.wt_position + delta.x / px_per_frame)
+                                    .clamp(0.0, max_pos);
+                                wt_position_changed = true;
+                            } else {
+                                layer.phase += delta.x / inner.width() * std::f32::consts::TAU;
+                                wt_position_changed = true;
+                            }
+                        }
+                        if delta.y.abs() > 0.0 {
+                            let next = (layer.level - delta.y / inner.height()).clamp(0.0, 1.0);
+                            if (next - layer.level).abs() > f32::EPSILON {
+                                layer.level = next;
+                                wt_position_changed = true;
+                            }
+                        }
+                    }
+                }
+            }
 
-            if let (Some(layer_i), Some(slot)) = (active_layer, active_slot) {
-                *self.selected_layer = Some(layer_i);
-                layer_selected = true;
-                if q_response.dragged() {
+            let active_slot = locked_slot.or(nearest_slot);
+            let editing_this = locked_layer == Some(layer_i) || locked_layer.is_none();
+
+            if let Some(slot) = active_slot {
+                if editing_this && q_response.dragged() && (quant_locked || nearest_slot.is_some()) {
                     if let Some(pos) = pointer {
-                        if let Some(layer) = self.layers.get(layer_i) {
+                        if let Some(layer) = self.layers.get_mut(layer_i) {
+                            layer.ensure_segment_interps(slot_count);
+                            let segs = layer.quant_segment_interps.clone();
+                            let curve_default = layer.quant_interp;
                             let scale = layer_quant_display_scale(layer);
                             let sample = sample_from_knob_y(pos.y, scale, inner);
                             apply_quant_slot_amplitude(
@@ -546,7 +562,8 @@ impl WtView3dStack<'_> {
                                 slot,
                                 slot_count,
                                 sample,
-                                self.quant_interp,
+                                &segs,
+                                curve_default,
                             );
                             frame_edited = true;
                             status_hint = Some(format!(
@@ -556,7 +573,7 @@ impl WtView3dStack<'_> {
                             ));
                         }
                     }
-                } else if pointer.is_some() {
+                } else if pointer.is_some() && editing_this && over_knob {
                     let points = quant_control_points(bank.frame(edit_frame_idx), slot_count);
                     let amp = points.get(slot).copied().unwrap_or(0.0);
                     status_hint = Some(format!(
@@ -658,7 +675,7 @@ impl WtView3dStack<'_> {
             let orig = layer_points[i].0;
             let quant_hot = quant_active && {
                 let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
-                locked_layer == Some(orig)
+                locked_layer == Some(orig) || (over_quant_knob && quant_layer_idx == Some(orig))
             };
             let is_hover = curve_preview == Some(orig);
             let is_sel = selected_idx == Some(orig);
@@ -683,39 +700,12 @@ impl WtView3dStack<'_> {
             let color = layer_palette(orig_idx);
             let is_sel = selected_idx == Some(orig_idx);
             let is_hover = curve_preview == Some(orig_idx);
-            let quant_hot = quant_active && {
-                let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
-                let hover_layer = locked_layer.or_else(|| {
-                    ui.ctx().pointer_latest_pos().and_then(|pos| {
-                        if !inner.contains(pos) {
-                            return None;
-                        }
-                        let slot_count = effective_quant_count(self.wave_quant);
-                        let mut best = None;
-                        let mut best_d = 14.0_f32;
-                        for &layer_i in &wt_layer_indices {
-                            if let Some(layer) = self.layers.get(layer_i) {
-                                let scale = layer_quant_display_scale(layer);
-                                let points =
-                                    quant_control_points(bank.frame(edit_frame_idx), slot_count);
-                                if let Some(slot) =
-                                    nearest_quant_handle(pos, inner, &points, scale, 14.0)
-                                {
-                                    let x = slot_x(slot, slot_count, inner);
-                                    let y = knob_y_on_curve(points[slot], scale, inner);
-                                    let dist = pos.distance(Pos2::new(x, y));
-                                    if dist < best_d {
-                                        best_d = dist;
-                                        best = Some(layer_i);
-                                    }
-                                }
-                            }
-                        }
-                        best
-                    })
-                });
-                hover_layer == Some(orig_idx)
-            };
+            let quant_hot = quant_active
+                && quant_layer_idx == Some(orig_idx)
+                && (over_quant_knob
+                    || ui
+                        .ctx()
+                        .data(|d| d.get_temp::<usize>(drag_layer_id) == Some(orig_idx)));
             let (alpha, stroke_w) = if quant_hot {
                 (0.95, 3.2)
             } else if is_hover {
@@ -773,45 +763,29 @@ impl WtView3dStack<'_> {
         }
 
         if quant_active {
-            let slot_count = effective_quant_count(self.wave_quant);
-            let locked_slot: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_slot_id));
-            let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
-            let pointer = ui
-                .ctx()
-                .pointer_latest_pos()
-                .filter(|p| inner.contains(*p));
-            let mut hover: Option<(usize, usize)> = None;
-            if locked_layer.is_none() {
-                let mut nearest_dist = 14.0_f32;
-                for &layer_i in &wt_layer_indices {
-                    if let Some(layer) = self.layers.get(layer_i) {
-                        let scale = layer_quant_display_scale(layer);
-                        let points = quant_control_points(bank.frame(edit_frame_idx), slot_count);
-                        if let Some(pos) = pointer {
-                            if let Some(slot) =
-                                nearest_quant_handle(pos, inner, &points, scale, 14.0)
-                            {
-                                let x = slot_x(slot, slot_count, inner);
-                                let y = knob_y_on_curve(points[slot], scale, inner);
-                                let dist = pos.distance(Pos2::new(x, y));
-                                if dist < nearest_dist {
-                                    nearest_dist = dist;
-                                    hover = Some((layer_i, slot));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            for &layer_i in &wt_layer_indices {
+            if let Some(layer_i) = quant_layer_idx {
                 if let Some(layer) = self.layers.get(layer_i) {
+                    let slot_count = effective_quant_count(self.wave_quant);
+                    let locked_slot: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_slot_id));
+                    let locked_layer: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_layer_id));
+                    let pointer = ui
+                        .ctx()
+                        .pointer_latest_pos()
+                        .filter(|p| inner.contains(*p));
                     let scale = layer_quant_display_scale(layer);
                     let points = quant_control_points(bank.frame(edit_frame_idx), slot_count);
+                    let hover_slot = if locked_layer.is_none() {
+                        pointer.and_then(|pos| {
+                            nearest_quant_handle(pos, inner, &points, scale, 14.0)
+                        })
+                    } else {
+                        None
+                    };
                     let color = layer_palette(layer_i);
                     for i in 0..slot_count {
                         let dragged =
                             locked_layer == Some(layer_i) && locked_slot == Some(i);
-                        let hovered = hover == Some((layer_i, i));
+                        let hovered = hover_slot == Some(i);
                         let show = self.wave_quant <= 64
                             || hovered
                             || dragged

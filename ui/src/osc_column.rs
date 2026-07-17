@@ -287,6 +287,7 @@ pub fn draw_osc_column(
                             osc.wave_slot_fine = 0.0;
                             sync_slot_from_position(osc, 256);
                         }
+                        osc.ensure_layer_segment_interps();
                         changed = true;
                     }
                     record_row(ui.ctx(), AuditId::OscWtQuant, ui, quant_start);

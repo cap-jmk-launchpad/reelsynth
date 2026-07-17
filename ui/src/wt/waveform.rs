@@ -74,6 +74,21 @@ pub fn hovered_layer_from_pointer<'a>(
     best_idx
 }
 
+/// Commit `selected_layer_idx` from a curve click on Result / Layers.
+///
+/// Quant knob proximity wins: when the pointer is on a knob, return `None`
+/// so the click does not steal selection from knob editing.
+pub fn selection_from_curve_click(
+    hovered_curve: Option<usize>,
+    over_quant_knob: bool,
+) -> Option<usize> {
+    if over_quant_knob {
+        None
+    } else {
+        hovered_curve
+    }
+}
+
 fn distance_point_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
     let len_sq = ab.x * ab.x + ab.y * ab.y;
@@ -159,5 +174,13 @@ mod tests {
             hovered_layer_from_pointer(layers, Pos2::new(50.0, 52.0), 14.0),
             Some(7)
         );
+    }
+
+    #[test]
+    fn selection_from_curve_click_commits_hover_unless_on_knob() {
+        assert_eq!(selection_from_curve_click(Some(2), false), Some(2));
+        assert_eq!(selection_from_curve_click(Some(2), true), None);
+        assert_eq!(selection_from_curve_click(None, false), None);
+        assert_eq!(selection_from_curve_click(None, true), None);
     }
 }

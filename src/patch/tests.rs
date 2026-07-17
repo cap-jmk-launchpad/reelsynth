@@ -173,3 +173,25 @@ fn v1_migration_adds_wave_slot_fields() {
     assert_eq!(p.oscillators[0].wave_quant, 16);
     assert_eq!(p.oscillators[0].wave_slot, 7);
 }
+
+#[test]
+fn wave_layer_quant_interp_defaults_and_roundtrips() {
+    let old: WaveLayer = serde_json::from_str(r#"{"type":"saw","level":0.5}"#).unwrap();
+    assert_eq!(old.quant_interp, "hold");
+    assert!(old.quant_segment_interps.is_empty());
+
+    let layer = WaveLayer {
+        source_type: "wavetable".into(),
+        quant_interp: "expo".into(),
+        quant_segment_interps: vec![
+            "hold".to_string(),
+            "linear".to_string(),
+            "spline".to_string(),
+        ],
+        ..WaveLayer::default()
+    };
+    let json = serde_json::to_string(&layer).unwrap();
+    let back: WaveLayer = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.quant_interp, "expo");
+    assert_eq!(back.quant_segment_interps.len(), 3);
+}

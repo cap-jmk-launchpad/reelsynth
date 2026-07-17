@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Design WT click→select** — clicking a layer curve in Result / Layers commits `selected_layer_idx`; Quant knobs appear only on the selected WT/residual curve in multi-curve panes (siblings stay stroke-only); Selected pane stays fully interactive. Knob proximity still wins over curve click
 - **Compose piano roll** — notes now commit on pointer release (egui clears interact pos on drag end); track select no longer clears the active clip; default clip auto-ensured so Pencil works immediately
 
 - **Held-note crackle** — widen VA/WT BLEP so saw/stack wrap cliffs are no longer near-vertical (was ~0.98 sample jump at A4); regressions cover Factory Lead mid/late sustain with FX. Bright saw overtones remain intentional; unintended wrap clicks are suppressed.

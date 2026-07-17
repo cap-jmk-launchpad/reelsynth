@@ -7,7 +7,8 @@ use crate::fx_rack::{effect_slots_from_patch, EffectSlotUi};
 use crate::mod_matrix::{default_mod_slots, ModSlotUi};
 use crate::oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
 use crate::scope_strip::ScopeStripState;
-use crate::wt::{morph_amount_for_position, position_from_osc_ui, WtEditTool, WtQuantInterp};
+use crate::wt::{morph_amount_for_position, position_from_osc_ui, WtEditTool};
+use crate::quant_interp::WtQuantInterp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WtView3dMode {

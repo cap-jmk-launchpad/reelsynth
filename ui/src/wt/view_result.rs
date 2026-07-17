@@ -9,19 +9,19 @@ use crate::layout::RADIUS_SM;
 use crate::oscillator_ui::WaveLayerUi;
 
 use super::quant_handles::{
-    knob_y_on_curve, nearest_quant_handle, paint_quant_knob, quant_curve_stroke,
-    quant_hover_status_label, quant_knob_visual, resample_frame_from_quant_points,
-    sample_from_knob_y, slot_x, WtQuantInterp,
+    apply_quant_slot_amplitude, knob_y_on_curve, nearest_quant_handle, paint_quant_knob,
+    quant_control_points, quant_curve_stroke, quant_hover_status_label, quant_knob_visual,
+    resample_frame_from_quant_points, sample_from_knob_y, slot_x,
 };
 use super::residual::{
     composite_quant_points, ensure_residual_layer, layer_curve_label, residual_frame_from_desired,
 };
 use super::slots::effective_quant_count;
 use super::view_3d_stack::{
-    composite_waveform_points, layer_palette, layer_waveform_points, HOVER_DISTANCE_PX,
-    WAVE_SAMPLES,
+    composite_waveform_points, layer_palette, layer_quant_display_scale, layer_waveform_points,
+    HOVER_DISTANCE_PX, WAVE_SAMPLES,
 };
-use super::waveform::{hovered_layer_from_pointer, peak_point};
+use super::waveform::{hovered_layer_from_pointer, peak_point, selection_from_curve_click};
 
 pub struct WtViewResultResponse {
     pub frame_edited: bool,
@@ -36,7 +36,6 @@ pub struct WtViewResult<'a> {
     pub selected_layer_idx: &'a mut Option<usize>,
     pub stack_mode: &'a mut String,
     pub wave_quant: u8,
-    pub quant_interp: WtQuantInterp,
     pub wavetable_id: Option<String>,
     #[allow(dead_code)]
     pub active_osc: usize,
@@ -77,6 +76,12 @@ impl WtViewResult<'_> {
             .unwrap_or(0);
 
         // Layer pick + level/phase drag (no quant grab).
+        let selected_wt = (*self.selected_layer_idx).filter(|&i| {
+            self.wave_layers
+                .get(i)
+                .is_some_and(|l| l.is_wavetable() && l.enabled && l.level > 0.0)
+        });
+        let selected_layer_quant = self.wave_quant > 0 && selected_wt.is_some();
         let mut quant_grab = false;
         if quant_active {
             if let Some(bank) = self.bank.as_ref() {
@@ -93,6 +98,23 @@ impl WtViewResult<'_> {
                         && nearest_quant_handle(pos, inner, &points, 1.0, 14.0).is_some()
                     {
                         quant_grab = true;
+                    }
+                }
+            }
+        }
+        if selected_layer_quant && !quant_grab {
+            if let (Some(bank), Some(layer_i)) = (self.bank.as_ref(), selected_wt) {
+                if let Some(layer) = self.wave_layers.get(layer_i) {
+                    let slot_count = effective_quant_count(self.wave_quant);
+                    let scale = layer_quant_display_scale(layer);
+                    let frame_i = super::waveform::frame_index(layer.wt_position, bank.num_frames);
+                    let points = quant_control_points(bank.frame(frame_i), slot_count);
+                    if let Some(pos) = ui.ctx().pointer_latest_pos() {
+                        if inner.contains(pos)
+                            && nearest_quant_handle(pos, inner, &points, scale, 14.0).is_some()
+                        {
+                            quant_grab = true;
+                        }
                     }
                 }
             }
@@ -125,11 +147,12 @@ impl WtViewResult<'_> {
 
             if response.clicked() || response.drag_started() {
                 if let Some(pos) = response.interact_pointer_pos() {
-                    if let Some(idx) = hovered_layer_from_pointer(
+                    let hovered = hovered_layer_from_pointer(
                         layer_pts.iter().map(|(i, pts)| (*i, pts.as_slice())),
                         pos,
                         HOVER_DISTANCE_PX,
-                    ) {
+                    );
+                    if let Some(idx) = selection_from_curve_click(hovered, false) {
                         *self.selected_layer_idx = Some(idx);
                         stack_changed = true;
                     }
@@ -342,6 +365,7 @@ impl WtViewResult<'_> {
             };
 
             let drag_slot_id = ui.id().with("result_quant_drag");
+            let drag_kind_id = ui.id().with("result_quant_kind"); // 0 = result, 1 = selected layer
             let sense = Sense::click_and_drag();
             let response = ui.allocate_rect(inner, sense);
             let pointer = response
@@ -349,67 +373,234 @@ impl WtViewResult<'_> {
                 .filter(|p| inner.contains(*p));
 
             let locked: Option<usize> = ui.ctx().data(|d| d.get_temp(drag_slot_id));
+            let locked_kind: Option<u8> = ui.ctx().data(|d| d.get_temp(drag_kind_id));
+
+            // Nearest selected-layer knob (when selected is WT).
+            let selected_knob: Option<(usize, usize, f32)> =
+                if let (Some(layer_i), Some(bank)) = (selected_wt, self.bank.as_ref()) {
+                    self.wave_layers.get(layer_i).and_then(|layer| {
+                        let scale = layer_quant_display_scale(layer);
+                        let frame_i =
+                            super::waveform::frame_index(layer.wt_position, bank.num_frames);
+                        let points = quant_control_points(bank.frame(frame_i), slot_count);
+                        pointer.and_then(|pos| {
+                            nearest_quant_handle(pos, inner, &points, scale, 14.0).map(|slot| {
+                                let x = slot_x(slot, slot_count, inner);
+                                let y = knob_y_on_curve(points[slot], scale, inner);
+                                (layer_i, slot, pos.distance(Pos2::new(x, y)))
+                            })
+                        })
+                    })
+                } else {
+                    None
+                };
+            let result_knob: Option<(usize, f32)> = pointer.and_then(|pos| {
+                nearest_quant_handle(pos, inner, &desired, 1.0, 14.0).map(|slot| {
+                    let x = slot_x(slot, slot_count, inner);
+                    let y = knob_y_on_curve(desired[slot], 1.0, inner);
+                    (slot, pos.distance(Pos2::new(x, y)))
+                })
+            });
+
+            // Prefer whichever knob is closer; ties go to Result composite.
+            let pick = match (result_knob, selected_knob) {
+                (Some((_rs, rd)), Some((li, ls, sd))) if sd + 0.01 < rd => {
+                    Some((1u8, li, ls))
+                }
+                (Some((rs, _)), _) => Some((0u8, 0, rs)),
+                (None, Some((li, ls, _))) => Some((1u8, li, ls)),
+                (None, None) => None,
+            };
 
             if response.drag_started() {
+                if let Some((kind, layer_i, slot)) = pick {
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(drag_slot_id, slot);
+                        d.insert_temp(drag_kind_id, kind);
+                        if kind == 1 {
+                            d.insert_temp(ui.id().with("result_sel_layer"), layer_i);
+                        }
+                    });
+                } else if let Some(pos) = pointer {
+                    // Click/drag on a curve (not a knob) → select that layer.
+                    let bank_ro = self.bank.as_ref().map(|b| &**b).unwrap_or(&empty);
+                    let layer_pts: Vec<(usize, Vec<Pos2>)> = self
+                        .wave_layers
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.enabled && l.level > 0.0)
+                        .map(|(i, l)| {
+                            (
+                                i,
+                                layer_waveform_points(l, bank_ro, inner, 0.0, WAVE_SAMPLES),
+                            )
+                        })
+                        .collect();
+                    let hovered = hovered_layer_from_pointer(
+                        layer_pts.iter().map(|(i, pts)| (*i, pts.as_slice())),
+                        pos,
+                        HOVER_DISTANCE_PX,
+                    );
+                    if let Some(idx) = selection_from_curve_click(hovered, false) {
+                        *self.selected_layer_idx = Some(idx);
+                        stack_changed = true;
+                    }
+                }
+            }
+            if response.clicked() && pick.is_none() {
                 if let Some(pos) = pointer {
-                    if let Some(slot) = nearest_quant_handle(pos, inner, &desired, 1.0, 14.0) {
-                        ui.ctx().data_mut(|d| d.insert_temp(drag_slot_id, slot));
+                    let bank_ro = self.bank.as_ref().map(|b| &**b).unwrap_or(&empty);
+                    let layer_pts: Vec<(usize, Vec<Pos2>)> = self
+                        .wave_layers
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.enabled && l.level > 0.0)
+                        .map(|(i, l)| {
+                            (
+                                i,
+                                layer_waveform_points(l, bank_ro, inner, 0.0, WAVE_SAMPLES),
+                            )
+                        })
+                        .collect();
+                    let hovered = hovered_layer_from_pointer(
+                        layer_pts.iter().map(|(i, pts)| (*i, pts.as_slice())),
+                        pos,
+                        HOVER_DISTANCE_PX,
+                    );
+                    if let Some(idx) = selection_from_curve_click(hovered, false) {
+                        *self.selected_layer_idx = Some(idx);
+                        stack_changed = true;
                     }
                 }
             }
             if !response.dragged() && response.drag_stopped() {
-                ui.ctx().data_mut(|d| d.remove::<usize>(drag_slot_id));
+                ui.ctx().data_mut(|d| {
+                    d.remove::<usize>(drag_slot_id);
+                    d.remove::<u8>(drag_kind_id);
+                    d.remove::<usize>(ui.id().with("result_sel_layer"));
+                });
             }
 
-            let active_slot = locked.or_else(|| {
-                pointer.and_then(|pos| nearest_quant_handle(pos, inner, &desired, 1.0, 14.0))
-            });
+            let active_kind = locked_kind.or(pick.map(|(k, _, _)| k));
+            let active_slot = locked.or(pick.map(|(_, _, s)| s));
 
-            if let Some(slot) = active_slot {
+            if let (Some(kind), Some(slot)) = (active_kind, active_slot) {
                 if response.dragged() {
                     if let Some(pos) = pointer {
-                        let sample = sample_from_knob_y(pos.y, 1.0, inner);
-                        desired[slot] = sample;
+                        if kind == 0 {
+                            let sample = sample_from_knob_y(pos.y, 1.0, inner);
+                            desired[slot] = sample;
 
-                        let (residual_idx, mode_changed) = ensure_residual_layer(
-                            self.wave_layers,
-                            self.stack_mode,
-                            self.wavetable_id.clone(),
-                        );
-                        *self.selected_layer_idx = Some(residual_idx);
-                        stack_changed = true;
-                        if mode_changed {
-                            status_hint.get_or_insert_with(|| "Stack → add (Result edit)".into());
-                        }
-
-                        let stack_mode_now = self.stack_mode.clone();
-                        let raw = {
-                            let b = self.bank.as_ref().map(|x| &**x).unwrap_or(&empty);
-                            residual_frame_from_desired(
-                                &desired,
+                            let (residual_idx, mode_changed) = ensure_residual_layer(
                                 self.wave_layers,
-                                b,
-                                &stack_mode_now,
-                                residual_idx,
-                            )
-                        };
-                        if let Some(bank) = self.bank.as_mut() {
-                            let frame = bank.frame_mut(frame_idx);
-                            resample_frame_from_quant_points(frame, &raw, self.quant_interp);
+                                self.stack_mode,
+                                self.wavetable_id.clone(),
+                            );
+                            *self.selected_layer_idx = Some(residual_idx);
+                            stack_changed = true;
+                            if mode_changed {
+                                status_hint
+                                    .get_or_insert_with(|| "Stack → add (Result edit)".into());
+                            }
+
+                            let stack_mode_now = self.stack_mode.clone();
+                            let raw = {
+                                let b = self.bank.as_ref().map(|x| &**x).unwrap_or(&empty);
+                                residual_frame_from_desired(
+                                    &desired,
+                                    self.wave_layers,
+                                    b,
+                                    &stack_mode_now,
+                                    residual_idx,
+                                )
+                            };
+                            if let Some(bank) = self.bank.as_mut() {
+                                let frame = bank.frame_mut(frame_idx);
+                                let layer = &mut self.wave_layers[residual_idx];
+                                layer.ensure_segment_interps(slot_count);
+                                let segs = layer.quant_segment_interps.clone();
+                                let curve_default = layer.quant_interp;
+                                resample_frame_from_quant_points(
+                                    frame,
+                                    &raw,
+                                    &segs,
+                                    curve_default,
+                                );
+                            }
+                            frame_edited = true;
+                            let interp_label = self.wave_layers[residual_idx]
+                                .quant_segment_interps
+                                .get(slot)
+                                .copied()
+                                .unwrap_or(self.wave_layers[residual_idx].quant_interp)
+                                .label();
+                            status_hint = Some(format!(
+                                "Result {} · {}",
+                                quant_hover_status_label(slot, sample),
+                                interp_label
+                            ));
+                        } else if let Some(layer_i) = selected_wt.or_else(|| {
+                            ui.ctx()
+                                .data(|d| d.get_temp(ui.id().with("result_sel_layer")))
+                        }) {
+                            if let Some(layer) = self.wave_layers.get_mut(layer_i) {
+                                layer.ensure_segment_interps(slot_count);
+                                let segs = layer.quant_segment_interps.clone();
+                                let curve_default = layer.quant_interp;
+                                let scale = layer_quant_display_scale(layer);
+                                let sample = sample_from_knob_y(pos.y, scale, inner);
+                                let wt_pos = layer.wt_position;
+                                if let Some(bank) = self.bank.as_mut() {
+                                    let frame_i =
+                                        super::waveform::frame_index(wt_pos, bank.num_frames);
+                                    apply_quant_slot_amplitude(
+                                        bank.frame_mut(frame_i),
+                                        slot,
+                                        slot_count,
+                                        sample,
+                                        &segs,
+                                        curve_default,
+                                    );
+                                    frame_edited = true;
+                                    status_hint = Some(format!(
+                                        "L{} · {}",
+                                        layer_i + 1,
+                                        quant_hover_status_label(slot, sample)
+                                    ));
+                                }
+                            }
                         }
-                        frame_edited = true;
-                        status_hint = Some(format!(
-                            "Result {} · {}",
-                            quant_hover_status_label(slot, sample),
-                            self.quant_interp.label()
-                        ));
                     }
                 } else if pointer.is_some() {
-                    let amp = desired.get(slot).copied().unwrap_or(0.0);
-                    status_hint = Some(format!(
-                        "Result · {}",
-                        quant_hover_status_label(slot, amp)
-                    ));
+                    if kind == 0 {
+                        let amp = desired.get(slot).copied().unwrap_or(0.0);
+                        status_hint = Some(format!(
+                            "Result · {}",
+                            quant_hover_status_label(slot, amp)
+                        ));
+                    } else if let Some(layer_i) = selected_wt {
+                        status_hint = Some(format!(
+                            "L{} · {}",
+                            layer_i + 1,
+                            quant_hover_status_label(slot, 0.0)
+                        ));
+                        if let Some(bank) = self.bank.as_ref() {
+                            if let Some(layer) = self.wave_layers.get(layer_i) {
+                                let frame_i = super::waveform::frame_index(
+                                    layer.wt_position,
+                                    bank.num_frames,
+                                );
+                                let points =
+                                    quant_control_points(bank.frame(frame_i), slot_count);
+                                let amp = points.get(slot).copied().unwrap_or(0.0);
+                                status_hint = Some(format!(
+                                    "L{} · {}",
+                                    layer_i + 1,
+                                    quant_hover_status_label(slot, amp)
+                                ));
+                            }
+                        }
+                    }
                     ui.ctx().set_cursor_icon(if response.dragged() {
                         CursorIcon::Grabbing
                     } else {
@@ -428,8 +619,8 @@ impl WtViewResult<'_> {
                 )
             };
             for i in 0..slot_count {
-                let hovered = locked.is_none() && active_slot == Some(i);
-                let dragged = locked == Some(i);
+                let hovered = locked.is_none() && active_kind == Some(0) && active_slot == Some(i);
+                let dragged = locked_kind == Some(0) && locked == Some(i);
                 let show = self.wave_quant <= 64
                     || hovered
                     || dragged
@@ -449,6 +640,52 @@ impl WtViewResult<'_> {
                     tokens.surface2
                 };
                 paint_quant_knob(&painter, center, visual, fill, accent_ui, inner);
+            }
+
+            // Selected WT/residual curve knobs (siblings stay stroke-only).
+            if let (Some(layer_i), Some(bank)) = (selected_wt, self.bank.as_ref()) {
+                if let Some(layer) = self.wave_layers.get(layer_i) {
+                    let scale = layer_quant_display_scale(layer);
+                    let frame_i =
+                        super::waveform::frame_index(layer.wt_position, bank.num_frames);
+                    let points = quant_control_points(bank.frame(frame_i), slot_count);
+                    let color = layer_palette(layer_i);
+                    let pointer = ui
+                        .ctx()
+                        .pointer_latest_pos()
+                        .filter(|p| inner.contains(*p));
+                    let hover_slot = if locked_kind != Some(1) {
+                        pointer.and_then(|pos| {
+                            nearest_quant_handle(pos, inner, &points, scale, 14.0)
+                        })
+                    } else {
+                        None
+                    };
+                    for i in 0..slot_count {
+                        let dragged =
+                            locked_kind == Some(1) && locked == Some(i);
+                        let hovered = hover_slot == Some(i);
+                        let show = self.wave_quant <= 64
+                            || hovered
+                            || dragged
+                            || i == 0
+                            || i + 1 == slot_count;
+                        if !show {
+                            continue;
+                        }
+                        let x = slot_x(i, slot_count, inner);
+                        let sample = points.get(i).copied().unwrap_or(0.0);
+                        let y = knob_y_on_curve(sample, scale, inner);
+                        let center = Pos2::new(x, y);
+                        let visual = quant_knob_visual(hovered, dragged);
+                        let fill = if visual.fill_brighter {
+                            color.gamma_multiply(if dragged { 0.65 } else { 0.5 })
+                        } else {
+                            color.gamma_multiply(0.22)
+                        };
+                        paint_quant_knob(&painter, center, visual, fill, color, inner);
+                    }
+                }
             }
         }
 
