@@ -4,7 +4,7 @@ use egui::{Sense, Ui};
 use reelsynth_ui_theme::Tokens;
 
 use crate::layout::{RADIUS_SM, WT_TOOLBAR_HEIGHT};
-use crate::quant_interp::WtQuantInterp;
+use crate::quant_interp::{toolbar_curve_label, toolbar_segment_label, WtQuantInterp};
 use crate::region::region;
 use crate::widgets::button_tool;
 
@@ -175,7 +175,7 @@ impl WtToolbar {
                     const COMBO_W: f32 = 64.0;
                     ui.add_space(4.0);
                     let combo = egui::ComboBox::from_id_salt("wt_quant_interp_curve")
-                        .selected_text(format!("All·{}", curve_interp.label()))
+                        .selected_text(toolbar_curve_label(*curve_interp))
                         .width(COMBO_W)
                         .show_ui(ui, |ui| {
                             for (idx, &label) in WtQuantInterp::LABELS.iter().enumerate() {
@@ -198,7 +198,7 @@ impl WtToolbar {
                     if let Some(seg) = segment_interp {
                         let slot = selected_slot.unwrap_or(0);
                         let combo = egui::ComboBox::from_id_salt("wt_quant_interp_seg")
-                            .selected_text(format!("{}→{}", slot + 1, slot + 2))
+                            .selected_text(toolbar_segment_label(slot, *seg))
                             .width(COMBO_W)
                             .show_ui(ui, |ui| {
                                 for (idx, &label) in WtQuantInterp::LABELS.iter().enumerate() {

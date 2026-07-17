@@ -88,9 +88,27 @@ impl WtQuantInterp {
             "poly" | "polynomial" => Self::Polynomial,
             "expo" | "exponential" => Self::Exponential,
             "ma" | "moving_average" | "moving-average" => Self::MovingAverage,
+            // Legacy / unset — never surface raw `none` in UI labels.
+            "" | "none" | "hold" => Self::Hold,
             _ => Self::Hold,
         }
     }
+}
+
+/// User-facing label for the curve-wide toolbar combo (`All·Hold`, …).
+pub fn toolbar_curve_label(mode: WtQuantInterp) -> String {
+    format!("All·{}", mode.label())
+}
+
+/// User-facing label for a per-segment toolbar combo (`1→2·Linear`, …).
+pub fn toolbar_segment_label(slot: usize, mode: WtQuantInterp) -> String {
+    format!("{}→{}·{}", slot + 1, slot + 2, mode.label())
+}
+
+/// Map a patch / preset string to a toolbar-safe label (defaults to Hold).
+#[allow(dead_code)] // exercised in unit tests; for raw preset strings at UI boundaries
+pub fn display_label_from_patch_str(s: &str) -> &'static str {
+    WtQuantInterp::from_patch_str(s).label()
 }
 
 /// Number of interp segments for `slot_count` knobs (`max(0, N−1)`).
@@ -192,5 +210,18 @@ mod tests {
         }
         assert_eq!(WtQuantInterp::from_patch_str("cubic"), WtQuantInterp::Spline);
         assert_eq!(WtQuantInterp::from_patch_str(""), WtQuantInterp::Hold);
+        assert_eq!(WtQuantInterp::from_patch_str("none"), WtQuantInterp::Hold);
+    }
+
+    #[test]
+    fn display_labels_never_show_none() {
+        assert_eq!(display_label_from_patch_str("none"), "Hold");
+        assert_eq!(display_label_from_patch_str(""), "Hold");
+        assert_eq!(display_label_from_patch_str("linear"), "Linear");
+        assert_eq!(toolbar_curve_label(WtQuantInterp::Hold), "All·Hold");
+        assert_eq!(
+            toolbar_segment_label(2, WtQuantInterp::Spline),
+            "3→4·Spline"
+        );
     }
 }

@@ -204,7 +204,7 @@ impl ReelSynthApp {
         } else if self.midi_selected != 0 && changed {
             self.midi_selected = 0;
             self.midi_handle = MidiInputHandle::disconnected();
-            self.state.midi_device = "None".into();
+            self.state.midi_device = crate::midi_input::MIDI_NONE_LABEL.into();
         }
     }
 
@@ -792,7 +792,7 @@ impl ReelSynthApp {
                     .cloned()
                     .unwrap_or_else(|| "MIDI".into());
                 self.state.midi_device = if index == 0 {
-                    "None".into()
+                    crate::midi_input::MIDI_NONE_LABEL.into()
                 } else {
                     label.clone()
                 };

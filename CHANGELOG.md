@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Header status / MIDI** — MIDI device combo shows **No MIDI** instead of raw `None` when disconnected; Quant interp patch value `none` maps to **Hold** and toolbar segment combo shows mode labels (`1→2·Linear`)
 - **Design Selected column hover** — right Selected pane now previews the displayed layer curve (thicker/brighter stroke, hand cursor, status `Hover · Ln · type`); Quant knob hover still wins when the pointer is on a knob
 - **Design Quant knobs (Layers)** — multi-curve Layers pane no longer traps selection on the last WT/residual (often L3): hovering/clicking L1 or L2 prefers that curve over overlapping Quant knobs; knobs follow `selected_layer_idx` for any editable layer
 - **Design Quant knobs (Selected)** — right Selected column paints Quant knobs on the plot painter after the wave (and keeps the toolbar above the fill) so editable WT/residual layers always show draggable knobs when Quant > 0

@@ -19,7 +19,7 @@ use super::shape_editor::ShapeEditor;
 use super::slots::effective_quant_count;
 use super::toolbar::{WtEditTool, WtToolbar, WtToolbarResponse};
 use super::view_2d::{apply_waveform_drag_inner, va_layer_waveform_points};
-use super::residual::layer_curve_label;
+use super::residual::{layer_curve_label, layer_type_display};
 use super::view_3d_stack::{
     layer_palette, layer_quant_display_scale, layer_waveform_points, HOVER_DISTANCE_PX,
     WAVE_SAMPLES,
@@ -266,12 +266,12 @@ impl WtSelectedLayerView<'_> {
             .get(layer_idx)
             .map(|l| {
                 if l.residual {
-                    "residual"
+                    "residual".to_string()
                 } else {
-                    l.source_type.as_str()
+                    layer_type_display(&l.source_type)
                 }
             })
-            .unwrap_or("saw");
+            .unwrap_or_else(|| "saw".to_string());
         let label = format!("Edit · Layer {} · {layer_type}", layer_idx + 1);
         painter.text(
             Pos2::new(rect.min.x + 8.0, rect.min.y + 4.0),
@@ -449,6 +449,15 @@ impl WtSelectedLayerView<'_> {
                     self.wave_quant,
                 );
                 frame_edited = true;
+            }
+            if seg_scratch_for_toolbar {
+                let s = selected_slot.unwrap();
+                status_hint = Some(format!(
+                    "Segment {}→{} · {}",
+                    s + 1,
+                    s + 2,
+                    seg_scratch.label()
+                ));
             }
         }
 

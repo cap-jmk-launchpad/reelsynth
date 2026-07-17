@@ -60,12 +60,22 @@ pub fn residual_samples_from_desired(
         .collect()
 }
 
+/// User-facing layer type — maps empty / legacy `none` to a sensible default.
+pub fn layer_type_display(source_type: &str) -> String {
+    let s = source_type.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("none") {
+        "layer".to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 /// Label for a layer curve in the Layers pane.
 pub fn layer_curve_label(i: usize, layer: &WaveLayerUi) -> String {
     let ty = if layer.residual {
         "residual".to_string()
     } else {
-        layer.source_type.clone()
+        layer_type_display(&layer.source_type)
     };
     format!("L{} · {}", i + 1, ty)
 }
@@ -233,6 +243,11 @@ mod tests {
             ..WaveLayerUi::default()
         };
         assert_eq!(layer_curve_label(2, &residual), "L3 · residual");
+        let unset = WaveLayerUi {
+            source_type: "none".into(),
+            ..WaveLayerUi::default()
+        };
+        assert_eq!(layer_curve_label(0, &unset), "L1 · layer");
     }
 
     #[test]

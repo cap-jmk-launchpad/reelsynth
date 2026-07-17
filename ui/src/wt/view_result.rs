@@ -713,14 +713,10 @@ impl WtViewResult<'_> {
                         .color(tokens.text_secondary),
                 );
                 let combo = egui::ComboBox::from_id_salt(mode_id)
-                    .selected_text(match mode_idx {
-                        1 => "avg",
-                        2 => "avg_equal",
-                        _ => "add",
-                    })
+                    .selected_text(crate::osc_column::stack_mode_label(self.stack_mode))
                     .width(72.0)
                     .show_ui(ui, |ui| {
-                        for (i, label) in ["add", "avg", "avg_equal"].iter().enumerate() {
+                        for (i, label) in crate::osc_column::STACK_MODES.iter().enumerate() {
                             if ui.selectable_label(mode_idx == i, *label).clicked() {
                                 mode_idx = i;
                             }
@@ -735,7 +731,10 @@ impl WtViewResult<'_> {
         if self.stack_mode != new_mode {
             *self.stack_mode = new_mode.into();
             stack_changed = true;
-            status_hint = Some(format!("Stack → {new_mode}"));
+            status_hint = Some(format!(
+                "Stack → {}",
+                crate::osc_column::stack_mode_label(new_mode)
+            ));
         }
 
         record_region(ui.ctx(), AuditId::CenterWtResult, rect, rect);

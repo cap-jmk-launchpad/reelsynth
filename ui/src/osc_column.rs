@@ -22,7 +22,7 @@ const WARP_MODES: [&str; 3] = ["None", "Sync", "Bend"];
 const FM_ALGORITHMS: [&str; 4] = ["Off", "2→1", "3→1", "2+3→1"];
 const FM_SOURCES: [&str; 5] = ["None", "Osc 2", "Osc 3", "2+3→1", "Feedback"];
 const STACK_LAYER_TYPES: [&str; 6] = ["Saw", "Sine", "Square", "Triangle", "Pulse", "Wavetable"];
-const STACK_MODES: [&str; 3] = ["Add", "Avg", "Avg Equal"];
+pub(crate) const STACK_MODES: [&str; 3] = ["Add", "Avg", "Avg Equal"];
 
 pub fn stack_mode_index(mode: &str) -> usize {
     match mode.to_ascii_lowercase().as_str() {
@@ -46,6 +46,11 @@ pub fn stack_mode_tooltip(mode: &str) -> &'static str {
         "avg_equal" | "avgequal" | "avg equal" => "Each layer counts equally (1/N)",
         _ => "Signed sum of all layers",
     }
+}
+
+/// User-facing stack mode label (never raw patch tokens like `none`).
+pub fn stack_mode_label(mode: &str) -> &'static str {
+    STACK_MODES[stack_mode_index(mode)]
 }
 
 pub fn stack_layer_type_index(ty: &str) -> usize {
