@@ -28,3 +28,9 @@ python brand/artifacts/render_benchmark_matrix.py
 # Full paper:
 #   cd ../denoise-opt-meta/paper/v3 && pdflatex main.tex
 ```
+
+## v4 (2026-07-18)
+
+Draft: **Hybrid Reinforcement Learning and Genetic Algorithms for Meta-Learning Audio Denoising**.
+Full Introduction + Literature landscape; Results deferred while overnight GPU experiments run.
+See `v4/main.tex` (canonical upstream: `denoise-opt-meta/paper/v4`).

@@ -1,0 +1,34 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Audio denoising asks how to recover a usable signal from observations that are corrupted by structured or unstructured interference.
+In many practical settings the corruption is not additive white noise but a deterministic, periodically reinforced artifact:
+a discontinuity that reappears every period under cyclic playback.
+Wavetable and related one-cycle synthesizers make this concrete.
+A single-period frame is stored and phase wraps modulo one; if the sample values at the two ends disagree, the wrap injects a broadband click that repeats at the fundamental---audible as seam crackle.
+The same geometry appears whenever a short cyclic buffer is looped, crossfaded poorly, or tiled for evaluation.
+We therefore treat \emph{cycle-local seam restoration} as an instance of audio signal denoising: the operator edits a short neighborhood of the wrap (and optionally a lightweight residual cell over the cycle) so that prolonged tiled playback agrees with an ideal reference that withholds the open-wrap cliff.
+
+Classical virtual-analog and anti-aliasing practice already supplies useful local mechanisms---cosine crossfades, BLEP/BLAMP-style discontinuity control, and related oscillator design~\cite{valimaki2006va,esqueda2016aliasing,esqueda2016blamp}---yet edited frames still need an \emph{outer} score that measures prolonged agreement, not only a seam-local energy proxy.
+Label-free restoration philosophies such as Noise2Noise show that useful reconstructors can be trained without paired clean targets when the evaluation geometry is carefully defined~\cite{lehtinen2018}.
+On the architecture side, surveys of neural architecture search (NAS)~\cite{elsken2019}, reinforcement-learning controllers with parameter sharing~\cite{pham2018}, aging/regularized evolution~\cite{real2019}, population-based hyperparameter schedules~\cite{jaderberg2017}, and evolution-guided policy gradients~\cite{khadka2018} collectively argue that discrete search over operators benefits from \emph{hybrid} outer loops: population diversity from genetic algorithms (GA), directed proposals from reinforcement learning (RL), and exploit--mutate schedules from population-based training (PBT).
+Proximal policy optimization (PPO) offers a stable clipped surrogate for proposing discrete edits~\cite{schulman2017}; sparsely gated mixture-of-experts (MoE) layers motivate soft routing among heterogeneous blocks~\cite{shazeer2017}.
+Waveform and time-domain separation networks such as Wave-U-Net and Conv-TasNet~\cite{stoller2018,luo2019}, together with broader deep audio surveys~\cite{purwins2019}, inform searchable cell families (tiny U-Net / dilated / attention blocks) without requiring full production separators at every trial.
+
+The gap we address is not ``yet another end-to-end denoiser,'' but a \emph{meta-learning} protocol for this periodic instance:
+an outer hybrid RL+GA search that proposes denoising architectures and bake parameters, scored by a prolonged residual $R\in[0,1]$ (1~=~best) against an ideal multi-period tiling, without assuming paired studio-clean waveforms for every candidate.
+Differentiable DSP modules~\cite{engel2020} situate seam operators in an interpretable audio stack; Bayesian and multi-objective evolutionary HPO~\cite{snoek2012,zhang2007} inform prior families that compete under the same residual objective.
+We deliberately avoid claiming a finished large-scale leaderboard in this draft: a GPU overnight run (PPO+GA+PBT+NAS with depth and MoE biases) is still in progress.
+Early checkpoints already exceed historical DualCosine baselines on residual, but final budgets and held-out matrices will be reported only after completion.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item \textbf{Problem framing.} Cast periodic wrap crackle / cycle-local seam restoration as audio signal denoising under prolonged tiled evaluation, separating seam-local diagnostics from a residual score $R$.
+  \item \textbf{Hybrid meta-outer loop.} Specify an RL+GA(+PBT) search over discrete operator graphs and continuous bake parameters, with literature-grounded branch names (GA crossover, PPO mutation, PBT exploit, MoE soft gates) rather than undifferentiated ``AutoML.''
+  \item \textbf{Literature protocol.} Organize used versus screened prior work for audio denoise architectures and RL--evolutionary hybrids, grounded on attached OA PDFs where available.
+  \item \textbf{Open evaluation path.} Release companion code for the synthesizer engine and meta search; report interim protocol honestly while large-scale experiments finish.
+\end{enumerate}
+
+Section~\ref{sec:related_work} surveys the literature landscape.
+Sections~\ref{sec:methods}--\ref{sec:experiments} outline the residual objective and search protocol (placeholders pending final ingest).
+Results and discussion will be completed when the overnight campaign reaches its declared budget.

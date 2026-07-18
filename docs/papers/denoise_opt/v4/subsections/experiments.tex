@@ -1,0 +1,13 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\textit{Placeholder --- protocol sketch only; numbers below are interim and must not be read as final.}
+
+\paragraph{Ongoing overnight campaign.}
+A CUDA search tagged \texttt{PPO+GA+PBT+NAS+depth+MoE} is running with a large iteration budget (order $10^{5}$).
+Early fitted champions already reach residual $\approx 0.987$ on the training/validation geometry used by the runner, against historical DualCosine baselines near $\approx 0.70$ on prior held-out matrices (v3 reported DualCosine residual $\approx 0.698$ at $N{=}2000$).
+We will replace this paragraph with the completed budget, seeds, population size, and held-out matrix when the job finishes---without interrupting the live GPU process.
+
+\paragraph{Prior completed study (v3 reference).}
+A 1500-trial literature-informed CPU/GPU study selected \texttt{evo\_explore\_515} at residual $\approx 0.824$ versus DualCosine $\approx 0.698$ ($\Delta\approx +0.126$).
+That result anchors the residual-primary protocol; the overnight hybrid RL+GA run is the scale-up under test.

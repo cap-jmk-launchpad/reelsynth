@@ -1,0 +1,138 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{xurl}
+\usepackage{amsmath,amssymb}
+
+\title{Hybrid Reinforcement Learning and Genetic Algorithms for Meta-Learning Audio Denoising}
+\author{Julian~M.~Kleber\\ORCID: \href{https://orcid.org/0000-0001-5518-0932}{0000-0001-5518-0932}\\Email: \href{mailto:julian.m.kleber@gmail.com}{julian.m.kleber@gmail.com}}
+\date{18 July 2026 \\ \small Paper version \texttt{v4} (introduction + literature landscape; experiments ongoing)}
+
+\begin{document}
+\maketitle
+\begin{center}\small
+Code: \url{https://github.com/reeldemo/reelsynth}, \url{https://github.com/reeldemo/denoise-opt-meta}
+\end{center}
+
+\begin{abstract}
+Periodic discontinuities in cyclic audio frames inject broadband crackle under wrap-around playback.
+We treat cycle-local seam restoration as an instance of audio signal denoising and search denoising operators with a hybrid meta-learning outer loop that interleaves genetic-algorithm population updates with reinforcement-learning architecture proposals, optionally with population-based exploit--mutate schedules and mixture-of-experts soft gates.
+Candidates are scored by a prolonged residual $R\in[0,1]$ (1~=~best) against an ideal multi-period tiling, without paired clean waveforms for every trial.
+This draft delivers the problem framing and a used-versus-screened literature landscape grounded on OA PDF analyses (Noise2Noise, PBT, Aging Evolution, ERL, ENAS/PPO, Wave-U-Net/Conv-TasNet, MoE, DDSP; Demucs/DiffWave/MAML/DARTS screened).
+A large GPU campaign (\texttt{PPO+GA+PBT+NAS}) is ongoing; final quantitative tables are deferred until the declared budget completes.
+\end{abstract}
+
+\input{subsections/introduction}
+\input{subsections/related_work}
+\input{subsections/methods}
+\input{subsections/experiments}
+\input{subsections/results}
+\input{subsections/discussion}
+\input{subsections/limitations}
+\input{subsections/conclusion}
+
+\begin{thebibliography}{99}
+
+\bibitem{valimaki2006va} V.~V\"alim\"aki, A.~Huovilainen (2006).
+\emph{Oscillator and Filter Algorithms for Virtual Analog Synthesis}.
+Computer Music Journal, 30(2).
+
+\bibitem{esqueda2016aliasing} F.~Esqueda, S.~Bilbao, V.~V\"alim\"aki (2016).
+\emph{Aliasing Reduction in Clipped Signals}.
+IEEE Transactions on Signal Processing.
+
+\bibitem{esqueda2016blamp} F.~Esqueda, V.~V\"alim\"aki, S.~Bilbao (2016).
+\emph{Rounding Corners with BLAMP}.
+Proc.\ DAFx.
+
+\bibitem{lehtinen2018} J.~Lehtinen et al.\ (2018).
+\emph{Noise2Noise: Learning Image Restoration without Clean Data}.
+ICML.\ arXiv:1803.04189.
+
+\bibitem{engel2020} J.~Engel, L.~Hantrakul, C.~Gu, A.~Roberts (2020).
+\emph{DDSP: Differentiable Digital Signal Processing}.
+ICLR.\ arXiv:2001.04643.
+
+\bibitem{purwins2019} H.~Purwins et al.\ (2019).
+\emph{Deep Learning for Audio Signal Processing}.
+IEEE J.\ Sel.\ Topics Signal Process.\ arXiv:1905.00078.
+
+\bibitem{stoller2018} D.~Stoller, S.~Ewert, S.~Dixon (2018).
+\emph{Wave-U-Net: A Multi-Scale Neural Network for End-to-End Audio Source Separation}.
+ISMIR.\ arXiv:1806.03185.
+
+\bibitem{jansson2017} A.~Jansson et al.\ (2017).
+\emph{Singing Voice Separation with Deep U-Net Convolutional Networks}.
+ISMIR.
+
+\bibitem{luo2019} Y.~Luo, N.~Mesgarani (2019).
+\emph{Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation}.
+IEEE/ACM TASLP.
+
+\bibitem{elsken2019} T.~Elsken, J.~H.~Metzen, F.~Hutter (2019).
+\emph{Neural Architecture Search: A Survey}.
+JMLR.\ arXiv:1808.05377.
+
+\bibitem{pham2018} H.~Pham et al.\ (2018).
+\emph{Efficient Neural Architecture Search via Parameter Sharing}.
+ICML.\ arXiv:1802.03268.
+
+\bibitem{schulman2017} J.~Schulman et al.\ (2017).
+\emph{Proximal Policy Optimization Algorithms}.
+arXiv:1707.06347.
+
+\bibitem{real2019} E.~Real, A.~Aggarwal, Y.~Huang, Q.~V.~Le (2019).
+\emph{Regularized Evolution for Image Classifier Architecture Search}.
+AAAI.\ arXiv:1802.01548.
+
+\bibitem{jaderberg2017} M.~Jaderberg et al.\ (2017).
+\emph{Population Based Training of Neural Networks}.
+arXiv:1711.09846.
+
+\bibitem{khadka2018} S.~Khadka, K.~Tumer (2018).
+\emph{Evolution-Guided Policy Gradient in Reinforcement Learning}.
+NeurIPS.\ arXiv:1805.07917.
+
+\bibitem{shazeer2017} N.~Shazeer et al.\ (2017).
+\emph{Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer}.
+ICLR.\ arXiv:1701.06538.
+
+\bibitem{snoek2012} J.~Snoek, H.~Larochelle, R.~P.~Adams (2012).
+\emph{Practical Bayesian Optimization of Machine Learning Algorithms}.
+NeurIPS.\ arXiv:1206.2944.
+
+\bibitem{zhang2007} Q.~Zhang, H.~Li (2007).
+\emph{MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition}.
+IEEE Trans.\ Evolutionary Computation.
+
+\bibitem{finn2017} C.~Finn, P.~Abbeel, S.~Levine (2017).
+\emph{Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks}.
+ICML.\ arXiv:1703.03400.\ \textit{(Screened.)}
+
+\bibitem{liu2019} H.~Liu, K.~Simonyan, Y.~Yang (2019).
+\emph{DARTS: Differentiable Architecture Search}.
+ICLR.\ arXiv:1806.09055.\ \textit{(Screened.)}
+
+\bibitem{dfossez2019} A.~D\'efossez et al.\ (2019).
+\emph{Demucs: Deep Extractor for Music Sources}.
+arXiv:1911.13254.\ \textit{(Screened.)}
+
+\bibitem{dfossez2021} A.~D\'efossez (2021).
+\emph{Hybrid Spectrogram and Waveform Source Separation}.
+arXiv:2111.03600.\ \textit{(Screened.)}
+
+\bibitem{kong2021} Z.~Kong et al.\ (2021).
+\emph{DiffWave: A Versatile Diffusion Model for Audio Synthesis}.
+ICLR.\ arXiv:2009.00713.\ \textit{(Screened.)}
+
+\bibitem{pascual2017} S.~Pascual, A.~Bonafonte, J.~Serr\`a (2017).
+\emph{SEGAN: Speech Enhancement Generative Adversarial Network}.
+INTERSPEECH.\ \textit{(Screened.)}
+
+\end{thebibliography}
+\end{document}
