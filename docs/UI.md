@@ -193,8 +193,11 @@ Separate from **Quant Seam** (WT toolbar; edits the frame wrap). Session-only fo
 
 ### Filter
 
-- Filter 1 + Filter 2 (serial)
-- Cutoff, resonance, type, key tracking, drive
+- **Chainable** serial SVF slots (FxChain / Overtone UX): **+ Add filter**, type combo, ◀ ▶ ✕ reorder/remove, per-slot On/Off
+- Types: **Lowpass**, **Highpass**, **Bandpass**, **Notch** (up to 8 slots)
+- Per-slot cutoff, resonance, drive, key tracking
+- Empty chain = bypass; legacy presets without `filters` keep Filter 1 → Filter 2 dual behavior
+- Distinct from header **Overtone** (master-bus anti-crackle)
 
 ### Envelopes
 

@@ -165,39 +165,73 @@ impl SynthEngine {
 
     pub fn set_filter_cutoff(&mut self, cutoff: f32) {
         self.patch.filter.cutoff = cutoff;
+        self.patch.sync_chain_slot0_from_legacy();
         self.params.filter_cutoff.set_target(cutoff);
     }
 
     pub fn set_filter_resonance(&mut self, resonance: f32) {
         self.patch.filter.resonance = resonance.clamp(0.0, 0.95);
+        self.patch.sync_chain_slot0_from_legacy();
     }
 
     pub fn set_filter_type(&mut self, filter_type: &str) {
         self.patch.filter.filter_type = filter_type.to_string();
+        self.patch.sync_chain_slot0_from_legacy();
     }
 
     pub fn set_filter_key_tracking(&mut self, key_tracking: f32) {
         self.patch.filter.key_tracking = key_tracking.clamp(0.0, 1.0);
+        self.patch.sync_chain_slot0_from_legacy();
     }
 
     pub fn set_filter_drive(&mut self, drive: f32) {
         self.patch.filter.drive = drive.clamp(0.0, 1.0);
+        self.patch.sync_chain_slot0_from_legacy();
     }
 
     pub fn set_filter2_cutoff(&mut self, cutoff: f32) {
         self.patch.filter2.cutoff = cutoff;
+        if let Some(slots) = &mut self.patch.filters {
+            if let Some(slot) = slots.get_mut(1) {
+                slot.cutoff = cutoff;
+            }
+        }
     }
 
     pub fn set_filter2_resonance(&mut self, resonance: f32) {
         self.patch.filter2.resonance = resonance.clamp(0.0, 0.95);
+        if let Some(slots) = &mut self.patch.filters {
+            if let Some(slot) = slots.get_mut(1) {
+                slot.resonance = self.patch.filter2.resonance;
+            }
+        }
     }
 
     pub fn set_filter2_type(&mut self, filter_type: &str) {
         self.patch.filter2.filter_type = filter_type.to_string();
+        if let Some(slots) = &mut self.patch.filters {
+            if let Some(slot) = slots.get_mut(1) {
+                slot.filter_type = filter_type.to_string();
+            }
+        }
     }
 
     pub fn set_filter2_drive(&mut self, drive: f32) {
         self.patch.filter2.drive = drive.clamp(0.0, 1.0);
+        if let Some(slots) = &mut self.patch.filters {
+            if let Some(slot) = slots.get_mut(1) {
+                slot.drive = self.patch.filter2.drive;
+            }
+        }
+    }
+
+    pub fn set_filter_chain(&mut self, slots: Vec<crate::patch::FilterSlot>) {
+        let capped: Vec<_> = slots.into_iter().take(crate::patch::FilterSlot::MAX_SLOTS).collect();
+        self.patch.filters = Some(capped);
+        self.patch.sync_legacy_filters_from_chain();
+        self.params
+            .filter_cutoff
+            .set_target(self.patch.filter.cutoff);
     }
 
     pub fn set_unison_stereo_spread(&mut self, spread: f32) {
@@ -506,6 +540,7 @@ impl SynthEngine {
             self.params.filter_cutoff.process();
             self.params.master_gain.process();
             self.scratch_patch.filter.cutoff = self.params.filter_cutoff.current();
+            self.scratch_patch.sync_chain_slot0_from_legacy();
             let auto_mods = self.sequencer.automation_mods(&self.patch.sequence);
             apply_mods_to_patch(&mut self.scratch_patch, &auto_mods);
             let patch = &self.scratch_patch;
@@ -573,6 +608,7 @@ impl SynthEngine {
             self.params.filter_cutoff.process();
             self.params.master_gain.process();
             self.scratch_patch.filter.cutoff = self.params.filter_cutoff.current();
+            self.scratch_patch.sync_chain_slot0_from_legacy();
             let auto_mods = self.sequencer.automation_mods(&self.patch.sequence);
             apply_mods_to_patch(&mut self.scratch_patch, &auto_mods);
             let patch = &self.scratch_patch;

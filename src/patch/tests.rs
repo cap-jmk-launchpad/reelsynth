@@ -195,3 +195,39 @@ fn wave_layer_quant_interp_defaults_and_roundtrips() {
     assert_eq!(back.quant_interp, "expo");
     assert_eq!(back.quant_segment_interps.len(), 3);
 }
+
+#[test]
+fn missing_filters_key_uses_legacy_dual() {
+    let p = Patch::from_json(r#"{"filter":{"type":"lowpass","cutoff":800}}"#).unwrap();
+    assert!(p.filters.is_none());
+    let slots = p.effective_filter_slots();
+    assert_eq!(slots.len(), 2);
+    assert_eq!(slots[0].cutoff, 800.0);
+}
+
+#[test]
+fn empty_filters_array_is_bypass() {
+    let p = Patch::from_json(r#"{"filters":[]}"#).unwrap();
+    assert_eq!(p.filters.as_ref().map(|s| s.len()), Some(0));
+    assert!(p.effective_filter_slots().is_empty());
+}
+
+#[test]
+fn filter_chain_roundtrip_and_legacy_mirror() {
+    let json = r#"{
+        "filters":[
+            {"type":"highpass","cutoff":200,"resonance":0.2},
+            {"type":"lowpass","cutoff":4000,"resonance":0.3,"drive":0.1}
+        ]
+    }"#;
+    let mut p = Patch::from_json(json).unwrap();
+    assert_eq!(p.filters.as_ref().unwrap().len(), 2);
+    assert_eq!(p.filter.filter_type, "highpass");
+    assert_eq!(p.filter.cutoff, 200.0);
+    assert_eq!(p.filter2.filter_type, "lowpass");
+    assert_eq!(p.filter2.cutoff, 4000.0);
+    p.filters.as_mut().unwrap().swap(0, 1);
+    p.sync_legacy_filters_from_chain();
+    assert_eq!(p.filter.filter_type, "lowpass");
+    assert_eq!(p.filter2.filter_type, "highpass");
+}

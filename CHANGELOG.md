@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **Overtone suppression chain** — header **Overtone** menu: FxChain-style add / reorder / remove for **Lowpass**, **Harmonic**, and **Slew** filters on the master bus (after voices sum, before Effects). Per-slot strength 0–100% scaled by WT frame harshness; empty chain = Off. Session-only (not in `.reelpreset`); separate from Quant Seam.
+- **Chainable voice filter rack** — right sidebar **Filter** panel: add / reorder / remove serial SVF slots (**Lowpass** / **Highpass** / **Bandpass** / **Notch**), per-slot cutoff / resonance / drive / key tracking. Empty = bypass. Persisted as optional `filters` in `.reelpreset`; missing key keeps legacy Filter 1→2. Distinct from header Overtone.
 
 ### Fixed
 

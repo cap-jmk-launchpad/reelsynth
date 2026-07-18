@@ -29,7 +29,10 @@ pub use fx::{default_effects, effects_from_bypass, EffectSlot, EffectType, FxByp
 pub use overtone::{
     curve_harshness, OvertoneFilterChain, OvertoneFilterSlot, OvertoneFilterType,
 };
-pub use patch::{Envelope, Macro, ModSlot, Oscillator, Patch, WaveLayer, WaveSlot};
+pub use patch::{
+    filter_type_label, legacy_filter_slots, normalize_filter_type, Envelope, Filter, FilterSlot,
+    FILTER_TYPES, Macro, ModSlot, Oscillator, Patch, WaveLayer, WaveSlot,
+};
 pub use wt_quant::{generate_even_wave_slots, resolve_wt_position, resolved_wave_slots};
 pub use voice::{render_note, render_note_single_bank};
 pub use scope::{

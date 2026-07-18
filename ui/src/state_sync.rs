@@ -2,9 +2,9 @@
 
 use reelsynth::patch::{Envelope, Oscillator, Patch};
 use crate::{
-    effect_slots_from_patch, effect_slots_to_patch, factory_label, fm_source_from_index,
-    mod_slots_from_patch, mod_slots_to_patch, osc_type_from_index, OscillatorUi, UiState,
-    warp_mode_from_index,
+    effect_slots_from_patch, effect_slots_to_patch, factory_label, filter_slots_from_patch,
+    filter_slots_to_patch, fm_source_from_index, mod_slots_from_patch, mod_slots_to_patch,
+    osc_type_from_index, OscillatorUi, UiState, warp_mode_from_index,
 };
 use crate::oscillator_ui::{ensure_wave_layers, WaveLayerUi};
 use crate::wt::position_from_osc_ui;
@@ -43,6 +43,22 @@ pub fn filter_type_from_mode(mode: usize) -> &'static str {
         2 => "bandpass",
         3 => "notch",
         _ => "lowpass",
+    }
+}
+
+fn sync_flat_filters_from_slots(state: &mut UiState) {
+    if let Some(s0) = state.filter_slots.first() {
+        state.filter_cutoff = s0.cutoff;
+        state.filter_resonance = s0.resonance;
+        state.filter_key_tracking = s0.key_tracking;
+        state.filter_drive = s0.drive;
+        state.filter_mode = filter_mode_from_type(&s0.filter_type);
+    }
+    if let Some(s1) = state.filter_slots.get(1) {
+        state.filter2_cutoff = s1.cutoff;
+        state.filter2_resonance = s1.resonance;
+        state.filter2_drive = s1.drive;
+        state.filter2_mode = filter_mode_from_type(&s1.filter_type);
     }
 }
 
@@ -145,11 +161,8 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
     state.osc_tab = state.osc_tab.min(state.oscillators.len().saturating_sub(1));
 
     state.unison_stereo_spread = patch.unison_stereo_spread;
-    state.filter_drive = patch.filter.drive;
-    state.filter2_cutoff = patch.filter2.cutoff;
-    state.filter2_resonance = patch.filter2.resonance;
-    state.filter2_mode = filter_mode_from_type(&patch.filter2.filter_type);
-    state.filter2_drive = patch.filter2.drive;
+    state.filter_slots = filter_slots_from_patch(&patch.filter, &patch.filter2, &patch.filters);
+    sync_flat_filters_from_slots(state);
 
     let idx = state.active_osc_index();
     let active = &state.oscillators[idx];
@@ -159,10 +172,6 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
 
     state.sub_level = patch.sub_level;
     state.noise_level = patch.noise_level;
-    state.filter_cutoff = patch.filter.cutoff;
-    state.filter_resonance = patch.filter.resonance;
-    state.filter_key_tracking = patch.filter.key_tracking;
-    state.filter_mode = filter_mode_from_type(&patch.filter.filter_type);
     state.env_attack = patch.envelope.attack;
     state.env_decay = patch.envelope.decay;
     state.env_sustain = patch.envelope.sustain;
@@ -256,15 +265,15 @@ pub fn patch_from_state(state: &UiState, base: &Patch) -> Patch {
     if patch.oscillators.is_empty() {
         patch.ensure_oscillators(1);
     }
-    patch.filter.cutoff = state.filter_cutoff;
-    patch.filter.resonance = state.filter_resonance;
-    patch.filter.key_tracking = state.filter_key_tracking;
-    patch.filter.drive = state.filter_drive;
-    patch.filter.filter_type = filter_type_from_mode(state.filter_mode).into();
-    patch.filter2.cutoff = state.filter2_cutoff;
-    patch.filter2.resonance = state.filter2_resonance;
-    patch.filter2.drive = state.filter2_drive;
-    patch.filter2.filter_type = filter_type_from_mode(state.filter2_mode).into();
+    patch.filters = filter_slots_to_patch(&state.filter_slots);
+    patch.sync_legacy_filters_from_chain();
+    // Mirror slot0 into flat fields used by smoother / footer when chain is non-empty.
+    if let Some(s0) = state.filter_slots.first() {
+        patch.filter = s0.to_slot().to_filter();
+    }
+    if let Some(s1) = state.filter_slots.get(1) {
+        patch.filter2 = s1.to_slot().to_filter();
+    }
     patch.unison_stereo_spread = state.unison_stereo_spread;
     patch.envelope = Envelope {
         attack: state.env_attack,

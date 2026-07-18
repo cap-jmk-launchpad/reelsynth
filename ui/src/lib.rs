@@ -5,6 +5,7 @@ mod center_layout;
 mod compose;
 mod contrast_audit;
 mod region;
+mod filter_rack;
 mod fx_rack;
 mod overtone_rack;
 mod layout;
@@ -23,6 +24,10 @@ pub mod wt;
 
 pub use agent_api::{AgentLayerSnap, AgentSession, AgentSnapshot};
 pub use region::region;
+pub use filter_rack::{
+    draw_filter_chain, filter_slots_from_patch, filter_slots_to_patch, FilterRackResult,
+    FilterSlotUi,
+};
 pub use fx_rack::{
     default_effect_slots, draw_effect_rack, draw_effect_rack_sidebar, effect_slots_from_bypass,
     effect_slots_from_patch, effect_slots_to_bypass, effect_slots_to_patch, EffectRackState,

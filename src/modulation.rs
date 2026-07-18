@@ -121,8 +121,10 @@ pub fn apply_mods_to_patch(patch: &mut crate::patch::Patch, mods: &HashMap<Strin
     for (target, delta) in mods {
         if target == "filter_cutoff" {
             patch.filter.cutoff = (patch.filter.cutoff + delta).max(25.0);
+            patch.sync_chain_slot0_from_legacy();
         } else if target == "filter_resonance" {
             patch.filter.resonance = (patch.filter.resonance + delta).clamp(0.0, 0.95);
+            patch.sync_chain_slot0_from_legacy();
         } else if let Some(rest) = target.strip_prefix("osc") {
             if let Some((idx_str, param)) = rest.split_once('_') {
                 if let Ok(idx) = idx_str.parse::<usize>() {

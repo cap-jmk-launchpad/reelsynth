@@ -5,6 +5,7 @@ use reelsynth::{Patch, ScopeLiveTaps, WavetableBank};
 use crate::compose::ComposeUi;
 use crate::fx_rack::{effect_slots_from_patch, EffectSlotUi};
 use crate::overtone_rack::OvertoneFilterSlotUi;
+use crate::filter_rack::FilterSlotUi;
 use crate::mod_matrix::{default_mod_slots, ModSlotUi};
 use crate::oscillator_ui::{OscillatorUi, MIN_OSCILLATORS};
 use crate::scope_strip::ScopeStripState;
@@ -179,6 +180,8 @@ pub struct UiState {
     pub filter2_mode: usize,
     pub filter2_drive: f32,
     pub filter_mode: usize,
+    /// Musical voice filter chain (right rail). Empty = bypass.
+    pub filter_slots: Vec<FilterSlotUi>,
     pub env_attack: f32,
     pub env_decay: f32,
     pub env_sustain: f32,
@@ -302,6 +305,11 @@ impl Default for UiState {
             filter2_mode: 1,
             filter2_drive: lead.filter2.drive,
             filter_mode: 0,
+            filter_slots: crate::filter_rack::filter_slots_from_patch(
+                &lead.filter,
+                &lead.filter2,
+                &lead.filters,
+            ),
             env_attack: lead.envelope.attack,
             env_decay: lead.envelope.decay,
             env_sustain: lead.envelope.sustain,

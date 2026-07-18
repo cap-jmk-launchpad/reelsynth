@@ -222,6 +222,89 @@ pub struct Filter {
     pub drive: f32,
 }
 
+/// One slot in the musical voice filter chain (serial SVF).
+/// Distinct from master-bus [`crate::overtone::OvertoneFilterSlot`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct FilterSlot {
+    #[serde(default = "default_lp", rename = "type")]
+    pub filter_type: String,
+    #[serde(default = "default_cutoff")]
+    pub cutoff: f32,
+    #[serde(default)]
+    pub resonance: f32,
+    #[serde(default = "default_key_tracking")]
+    pub key_tracking: f32,
+    #[serde(default)]
+    pub drive: f32,
+    #[serde(default)]
+    pub bypassed: bool,
+}
+
+impl FilterSlot {
+    pub const MAX_SLOTS: usize = 8;
+
+    pub fn from_filter(f: &Filter) -> Self {
+        Self {
+            filter_type: f.filter_type.clone(),
+            cutoff: f.cutoff,
+            resonance: f.resonance,
+            key_tracking: f.key_tracking,
+            drive: f.drive,
+            bypassed: false,
+        }
+    }
+
+    pub fn to_filter(&self) -> Filter {
+        Filter {
+            filter_type: self.filter_type.clone(),
+            cutoff: self.cutoff,
+            resonance: self.resonance,
+            key_tracking: self.key_tracking,
+            drive: self.drive,
+        }
+    }
+
+    pub fn lowpass() -> Self {
+        Self::from_filter(&Filter::default())
+    }
+
+    pub fn for_type(filter_type: &str) -> Self {
+        let mut slot = Self::lowpass();
+        slot.filter_type = normalize_filter_type(filter_type).into();
+        slot
+    }
+
+    pub fn is_active(&self) -> bool {
+        !self.bypassed
+    }
+}
+
+/// Canonical filter type strings used by the SVF and UI.
+pub fn normalize_filter_type(filter_type: &str) -> &'static str {
+    match filter_type.to_ascii_lowercase().as_str() {
+        "highpass" | "hp" => "highpass",
+        "bandpass" | "bp" => "bandpass",
+        "notch" => "notch",
+        _ => "lowpass",
+    }
+}
+
+pub const FILTER_TYPES: [&str; 4] = ["lowpass", "highpass", "bandpass", "notch"];
+
+pub fn filter_type_label(filter_type: &str) -> &'static str {
+    match normalize_filter_type(filter_type) {
+        "highpass" => "Highpass",
+        "bandpass" => "Bandpass",
+        "notch" => "Notch",
+        _ => "Lowpass",
+    }
+}
+
+/// Build the legacy dual-filter chain (Filter 1 → Filter 2).
+pub fn legacy_filter_slots(filter: &Filter, filter2: &Filter) -> Vec<FilterSlot> {
+    vec![FilterSlot::from_filter(filter), FilterSlot::from_filter(filter2)]
+}
+
 pub(crate) fn default_lp() -> String {
     "lowpass".into()
 }
@@ -395,9 +478,13 @@ pub struct Patch {
     pub oscillators: Vec<Oscillator>,
     #[serde(default)]
     pub filter: Filter,
-    /// Second parallel filter for stereo sculpting.
+    /// Second serial filter (legacy mirror of `filters[1]` when chain is set).
     #[serde(default = "default_filter2")]
     pub filter2: Filter,
+    /// Musical voice filter chain (serial SVF). `None` = legacy `filter`+`filter2`.
+    /// `Some([])` = bypass. Distinct from header Overtone (master-bus anti-crackle).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filters: Option<Vec<FilterSlot>>,
     #[serde(default)]
     pub envelope: Envelope,
     #[serde(default = "default_filter_envelope")]
