@@ -91,6 +91,7 @@ impl AgentSession {
             "off" | "seam·off" | "seam-off" => QuantSeamMode::Off,
             "soft" | "seam·soft" | "seam-soft" => QuantSeamMode::Soft,
             "adapt" | "adaptive" | "seam·adapt" | "seam-adapt" => QuantSeamMode::Adaptive,
+            "opt" | "denoise" | "denoise_opt" | "seam·opt" | "seam-opt" => QuantSeamMode::Opt,
             other => return Err(format!("unknown seam mode: {other}")),
         };
         self.set_seam_mode(mode);

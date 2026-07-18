@@ -394,10 +394,13 @@ pub enum QuantSeamMode {
     /// Fade length scales with seam size; skips work when already closed.
     #[default]
     Adaptive,
+    /// Unsupervised DenoiseOpt (fitted denoise+shape loss) — inference only.
+    Opt,
 }
 
 impl QuantSeamMode {
-    pub const LABELS: [&'static str; 3] = ["Seam·Off", "Seam·Soft", "Seam·Adapt"];
+    pub const LABELS: [&'static str; 4] =
+        ["Seam·Off", "Seam·Soft", "Seam·Adapt", "Seam·Opt"];
 
     pub fn label(self) -> &'static str {
         Self::LABELS[self.index()]
@@ -408,6 +411,9 @@ impl QuantSeamMode {
             Self::Off => "No wrap fade — max edit freedom, may click at cycle wrap",
             Self::Soft => "Fixed fade into frame[0] (stronger crackle reduction)",
             Self::Adaptive => "Fade only as much as the wrap discontinuity needs",
+            Self::Opt => {
+                "AI DenoiseOpt — fitted once on denoise+shape loss; mid-cycle shape conserved"
+            }
         }
     }
 
@@ -416,6 +422,7 @@ impl QuantSeamMode {
             Self::Off => 0,
             Self::Soft => 1,
             Self::Adaptive => 2,
+            Self::Opt => 3,
         }
     }
 
@@ -423,6 +430,7 @@ impl QuantSeamMode {
         match idx {
             0 => Self::Off,
             1 => Self::Soft,
+            3 => Self::Opt,
             _ => Self::Adaptive,
         }
     }
@@ -541,16 +549,26 @@ pub fn periodize_quant_frame(frame: &mut [f32]) {
 
 /// Apply wrap-seam reduction with an explicit mode (tests / CLI).
 ///
-/// Delegates to [`reelsynth::periodize_cycle`]: crackle 0 = eliminate, 1 = full cliff.
-/// Seam·Off forces crackle=1; Soft/Adaptive use [`current_crackle_amount`] (default 0).
+/// Seam·Off forces crackle=1; Soft/Adaptive/Opt use [`current_crackle_amount`] (default 0).
+/// Seam·Opt runs the frozen unsupervised DenoiseOpt stack (inference only).
 pub fn periodize_quant_frame_with_mode(frame: &mut [f32], mode: QuantSeamMode) {
+    use reelsynth::artifact_reduce::{periodize_with_algo, PeriodizeAlgo};
     use reelsynth::{periodize_cycle, SeamStyle};
-    let (crackle, style) = match mode {
-        QuantSeamMode::Off => (1.0, SeamStyle::Raw),
-        QuantSeamMode::Soft => (current_crackle_amount(), SeamStyle::Soft),
-        QuantSeamMode::Adaptive => (current_crackle_amount(), SeamStyle::Adaptive),
-    };
-    periodize_cycle(frame, crackle, style);
+    match mode {
+        QuantSeamMode::Off => periodize_cycle(frame, 1.0, SeamStyle::Raw),
+        QuantSeamMode::Soft => {
+            periodize_cycle(frame, current_crackle_amount(), SeamStyle::Soft)
+        }
+        QuantSeamMode::Adaptive => {
+            periodize_cycle(frame, current_crackle_amount(), SeamStyle::Adaptive)
+        }
+        QuantSeamMode::Opt => periodize_with_algo(
+            frame,
+            current_crackle_amount(),
+            SeamStyle::Adaptive,
+            PeriodizeAlgo::DenoiseOpt,
+        ),
+    }
 }
 
 /// Uniform-mode resample (all segments share `mode`).

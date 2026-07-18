@@ -34,6 +34,8 @@ pub enum PeriodizeAlgo {
     EnsembleV2,
     /// Final: ensemble v2 + light seam lowpass (3-tap) in fade zone.
     EnsembleV3,
+    /// Unsupervised fit (denoise+shape loss) — frozen θ, inference only.
+    DenoiseOpt,
 }
 
 impl PeriodizeAlgo {
@@ -52,6 +54,23 @@ impl PeriodizeAlgo {
         PeriodizeAlgo::EnsembleV3,
     ];
 
+    /// Includes unsupervised DenoiseOpt (separate product option; not Seam default).
+    pub const ALL_WITH_OPT: &'static [PeriodizeAlgo] = &[
+        PeriodizeAlgo::Classic,
+        PeriodizeAlgo::Cosine,
+        PeriodizeAlgo::DualEnd,
+        PeriodizeAlgo::Detrend,
+        PeriodizeAlgo::Crossfade,
+        PeriodizeAlgo::SlopeMatch,
+        PeriodizeAlgo::DetrendCosine,
+        PeriodizeAlgo::DualCosine,
+        PeriodizeAlgo::CrossDetrend,
+        PeriodizeAlgo::Ensemble,
+        PeriodizeAlgo::EnsembleV2,
+        PeriodizeAlgo::EnsembleV3,
+        PeriodizeAlgo::DenoiseOpt,
+    ];
+
     pub fn label(self) -> &'static str {
         match self {
             PeriodizeAlgo::Classic => "classic",
@@ -66,10 +85,12 @@ impl PeriodizeAlgo {
             PeriodizeAlgo::Ensemble => "ensemble",
             PeriodizeAlgo::EnsembleV2 => "ensemble_v2",
             PeriodizeAlgo::EnsembleV3 => "ensemble_v3",
+            PeriodizeAlgo::DenoiseOpt => "denoise_opt",
         }
     }
 
     /// Production default after improvement loop (locked to measured winner).
+    /// DenoiseOpt is a separate option; DualCosine remains the Seam default.
     pub const BEST: PeriodizeAlgo = PeriodizeAlgo::DualCosine;
 }
 
@@ -306,6 +327,9 @@ pub fn periodize_with_algo(frame: &mut [f32], crackle: f32, style: SeamStyle, al
             if clean > 0.5 {
                 frame[n - 1] = frame[0];
             }
+        }
+        PeriodizeAlgo::DenoiseOpt => {
+            crate::denoise_opt::apply_denoise_opt(frame, crackle);
         }
     }
 }

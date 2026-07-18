@@ -67,6 +67,7 @@ pub fn seam_mode_to_crackle(mode: &str) -> (f32, SeamStyle) {
     match mode.to_ascii_lowercase().as_str() {
         "off" | "seam·off" | "seam-off" => (1.0, SeamStyle::Raw),
         "soft" | "seam·soft" | "seam-soft" => (0.15, SeamStyle::Soft),
+        "opt" | "denoise" | "denoise_opt" | "seam·opt" | "seam-opt" => (0.0, SeamStyle::Adaptive),
         _ => (0.0, SeamStyle::Adaptive), // Adaptive / clean default
     }
 }
