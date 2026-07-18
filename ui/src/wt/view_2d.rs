@@ -21,7 +21,10 @@ use super::view_3d_stack::{
     composite_waveform_points, layer_palette, layer_waveform_points, HOVER_DISTANCE_PX,
     WAVE_SAMPLES,
 };
-use super::waveform::{frame_index, hit_test_waveform, nearest_waveform_distance, peak_point, waveform_points};
+use super::waveform::{
+    frame_index, hit_test_waveform, nearest_waveform_distance, peak_point, waveform_fill_shape,
+    waveform_points,
+};
 use super::view_zoom::WtCurveViewTransform;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -531,14 +534,11 @@ impl WtView2d<'_> {
             let result_pts =
                 composite_waveform_points(layers, bank, mode, inner, 0.0, WAVE_SAMPLES);
             if result_pts.len() >= 2 {
-                let mut fill = result_pts.clone();
-                fill.push(Pos2::new(inner.max.x, mid_y));
-                fill.push(Pos2::new(inner.min.x, mid_y));
-                painter.add(Shape::convex_polygon(
-                    fill,
-                    tokens.accent.gamma_multiply(0.28),
-                    egui::Stroke::NONE,
-                ));
+                if let Some(fill) =
+                    waveform_fill_shape(&result_pts, mid_y, tokens.accent.gamma_multiply(0.28))
+                {
+                    painter.add(fill);
+                }
                 painter.add(Shape::line(
                     result_pts.clone(),
                     egui::Stroke::new(2.6, accent_ui),
@@ -554,14 +554,11 @@ impl WtView2d<'_> {
                 record_region(ui.ctx(), AuditId::CenterWt2dResult, inner, inner);
             }
         } else if wave.len() >= 2 && *self.tool != WtEditTool::Curve {
-            let mut fill = wave.clone();
-            fill.push(Pos2::new(inner.max.x, mid_y));
-            fill.push(Pos2::new(inner.min.x, mid_y));
-            painter.add(Shape::convex_polygon(
-                fill,
-                tokens.accent.gamma_multiply(0.35),
-                egui::Stroke::NONE,
-            ));
+            if let Some(fill) =
+                waveform_fill_shape(&wave, mid_y, tokens.accent.gamma_multiply(0.35))
+            {
+                painter.add(fill);
+            }
             painter.add(Shape::line(
                 wave.clone(),
                 egui::Stroke::new(2.0_f32, accent_ui),
@@ -879,9 +876,11 @@ pub(crate) fn va_layer_waveform_points(layer: &WaveLayerUi, inner: Rect, samples
     let sign = layer_sign(&patch);
     let level = if layer.enabled { layer.level.max(0.0) } else { 0.0 };
     let mid_y = inner.center().y;
-    (0..=samples)
+    let samples = samples.max(2);
+    (0..samples)
         .map(|i| {
             let phase = i as f32 / samples as f32;
+            let t = i as f32 / (samples - 1) as f32;
             let v = sign
                 * sample_layer(
                     &patch,
@@ -896,7 +895,7 @@ pub(crate) fn va_layer_waveform_points(layer: &WaveLayerUi, inner: Rect, samples
                     1.0,
                 )
                 * level;
-            let x = egui::lerp(inner.min.x..=inner.max.x, phase);
+            let x = egui::lerp(inner.min.x..=inner.max.x, t);
             let y = mid_y - v * inner.height() * 0.42;
             Pos2::new(x, y)
         })

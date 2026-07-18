@@ -130,11 +130,15 @@ pub(crate) fn layer_waveform_points(
     let patch = ui_layer_to_patch(layer);
     let sign = layer_sign(&patch);
     let level = if layer.enabled { layer.level.max(0.0) } else { 0.0 };
-    let mut pts = Vec::with_capacity(samples + 1);
-    for i in 0..=samples {
+    let samples = samples.max(2);
+    let mut pts = Vec::with_capacity(samples);
+    // Sample phase in [0, 1) only. Including phase 1.0 wraps to 0 via fract() and
+    // duplicates the start sample at the right edge (visible end jump).
+    for i in 0..samples {
         let phase = i as f32 / samples as f32;
+        let t = i as f32 / (samples - 1) as f32;
         let v = sign * sample_layer_at_phase(layer, bank, phase, wt_pos_offset) * level;
-        let x = egui::lerp(rect.min.x..=rect.max.x, phase);
+        let x = egui::lerp(rect.min.x..=rect.max.x, t);
         let y = rect.center().y - v * rect.height() * WAVE_AMP;
         pts.push(Pos2::new(x, y));
     }
@@ -149,11 +153,14 @@ pub(crate) fn composite_waveform_points(
     wt_pos_offset: f32,
     samples: usize,
 ) -> Vec<Pos2> {
-    let mut pts = Vec::with_capacity(samples + 1);
-    for i in 0..=samples {
+    let samples = samples.max(2);
+    let mut pts = Vec::with_capacity(samples);
+    // Same [0, 1) phase rule as `layer_waveform_points` — avoid phase 1.0 wrap jump.
+    for i in 0..samples {
         let phase = i as f32 / samples as f32;
+        let t = i as f32 / (samples - 1) as f32;
         let v = composite_stack_sample(layers, bank, stack_mode, phase, wt_pos_offset);
-        let x = egui::lerp(rect.min.x..=rect.max.x, phase);
+        let x = egui::lerp(rect.min.x..=rect.max.x, t);
         let y = rect.center().y - v * rect.height() * WAVE_AMP;
         pts.push(Pos2::new(x, y));
     }
@@ -1037,8 +1044,15 @@ mod tests {
         };
         let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(200.0, 80.0));
         let pts = layer_waveform_points(&layer, &bank, rect, 0.0, 32);
-        assert_eq!(pts.len(), 33);
+        assert_eq!(pts.len(), 32);
         assert!((pts.first().unwrap().x - rect.min.x).abs() < 1e-4);
         assert!((pts.last().unwrap().x - rect.max.x).abs() < 1e-4);
+        // Must not duplicate start sample at the right edge (phase 1.0 wrap).
+        let jump = (pts[pts.len() - 1].y - pts[pts.len() - 2].y).abs();
+        let full = (pts[0].y - pts[pts.len() / 4].y).abs().max(1.0);
+        assert!(
+            jump < full * 0.75,
+            "end segment jump too large (wrap artifact?): jump={jump} full~{full}"
+        );
     }
 }

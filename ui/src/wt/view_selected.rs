@@ -24,7 +24,9 @@ use super::view_3d_stack::{
     layer_palette, layer_quant_display_scale, layer_waveform_points, HOVER_DISTANCE_PX,
     WAVE_SAMPLES,
 };
-use super::waveform::{frame_index, selected_curve_hovered, selected_pane_shows_quant_knobs};
+use super::waveform::{
+    frame_index, selected_curve_hovered, selected_pane_shows_quant_knobs, waveform_fill_shape,
+};
 use super::view_zoom::{consume_plot_scroll, WtCurveViewTransform};
 use super::QuantSeamMode;
 
@@ -228,16 +230,18 @@ impl WtSelectedLayerView<'_> {
         painter.rect_stroke(rect, RADIUS_SM, egui::Stroke::new(1.0, tokens.border));
         paint_grid(&painter, inner, tokens.border);
 
+        // Zero line / fill baseline follow zoom-pan (curve points are already mapped).
+        let baseline_y = curve_view.map_pos(Pos2::new(inner.center().x, mid_y), inner).y;
+
         if let Some(pts) = layer_pts.as_ref() {
             let color = layer_palette(layer_idx);
-            let mut fill = pts.clone();
-            fill.push(Pos2::new(inner.max.x, mid_y));
-            fill.push(Pos2::new(inner.min.x, mid_y));
-            painter.add(Shape::convex_polygon(
-                fill,
+            if let Some(fill) = waveform_fill_shape(
+                pts,
+                baseline_y,
                 color.gamma_multiply(if curve_hovered { 0.32 } else { 0.25 }),
-                egui::Stroke::NONE,
-            ));
+            ) {
+                painter.add(fill);
+            }
             let (stroke_w, stroke_alpha) = if curve_hovered {
                 (3.4, 1.0)
             } else {
@@ -256,7 +260,10 @@ impl WtSelectedLayerView<'_> {
         }
 
         painter.line_segment(
-            [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
+            [
+                Pos2::new(inner.min.x, baseline_y),
+                Pos2::new(inner.max.x, baseline_y),
+            ],
             egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
         );
 

@@ -1,6 +1,6 @@
 //! Shared waveform sampling for WT strip and views.
 
-use egui::{Pos2, Rect};
+use egui::{Color32, Mesh, Pos2, Rect, Shape};
 
 pub fn frame_index(position: f32, num_frames: usize) -> usize {
     if num_frames == 0 {
@@ -29,6 +29,37 @@ pub fn waveform_points(frame: &[f32], inner: Rect, sample_count: usize, amp: f32
             Pos2::new(x, y)
         })
         .collect()
+}
+
+/// Area fill between a waveform polyline and the zero baseline.
+///
+/// egui's [`Shape::convex_polygon`] only tessellates convex shapes (fan from the
+/// first vertex). Oscillating waveforms are non-convex, so that API produces
+/// crossed triangles / a hull-like blob. This builds a per-segment strip mesh
+/// so the fill follows the curve down to `baseline_y` without self-crossing.
+pub fn waveform_fill_shape(points: &[Pos2], baseline_y: f32, fill: Color32) -> Option<Shape> {
+    if points.len() < 2 {
+        return None;
+    }
+    let segs = points.len() - 1;
+    let mut mesh = Mesh::default();
+    mesh.reserve_vertices(segs * 4);
+    mesh.reserve_triangles(segs * 2);
+    for window in points.windows(2) {
+        let a = window[0];
+        let b = window[1];
+        // Degenerate / vertical segment — still fine for a thin strip.
+        let a0 = Pos2::new(a.x, baseline_y);
+        let b0 = Pos2::new(b.x, baseline_y);
+        let i = mesh.vertices.len() as u32;
+        mesh.colored_vertex(a, fill);
+        mesh.colored_vertex(b, fill);
+        mesh.colored_vertex(b0, fill);
+        mesh.colored_vertex(a0, fill);
+        mesh.add_triangle(i, i + 1, i + 2);
+        mesh.add_triangle(i, i + 2, i + 3);
+    }
+    Some(Shape::mesh(mesh))
 }
 
 pub fn peak_point(points: &[Pos2]) -> Option<Pos2> {
@@ -161,12 +192,18 @@ fn distance_point_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui::Rect;
+    use egui::{Color32, Rect, Shape};
 
     #[test]
     fn frame_index_clamps() {
         assert_eq!(frame_index(300.0, 64), 63);
         assert_eq!(frame_index(0.0, 0), 0);
+    }
+
+    #[test]
+    fn waveform_fill_shape_none_for_short_polyline() {
+        assert!(waveform_fill_shape(&[], 50.0, Color32::WHITE).is_none());
+        assert!(waveform_fill_shape(&[Pos2::new(0.0, 10.0)], 50.0, Color32::WHITE).is_none());
     }
 
     #[test]
@@ -178,6 +215,37 @@ mod tests {
         for p in &pts {
             assert!(p.x >= rect.min.x && p.x <= rect.max.x);
             assert!(p.y >= rect.min.y && p.y <= rect.max.y);
+        }
+    }
+
+    #[test]
+    fn waveform_fill_shape_strips_to_baseline_without_hull() {
+        // Non-convex sine-like polyline that would look wrong with convex_polygon fan.
+        let pts = vec![
+            Pos2::new(0.0, 40.0),
+            Pos2::new(25.0, 10.0),
+            Pos2::new(50.0, 40.0),
+            Pos2::new(75.0, 70.0),
+            Pos2::new(100.0, 40.0),
+        ];
+        let baseline = 40.0;
+        let shape = waveform_fill_shape(&pts, baseline, Color32::from_rgb(1, 2, 3)).unwrap();
+        let Shape::Mesh(mesh) = shape else {
+            panic!("expected mesh fill");
+        };
+        assert_eq!(mesh.indices.len() / 3, (pts.len() - 1) * 2);
+        assert_eq!(mesh.vertices.len(), (pts.len() - 1) * 4);
+        // Every other pair of verts is on the baseline (indices 2,3 of each quad).
+        for quad in 0..(pts.len() - 1) {
+            let base = quad * 4;
+            assert!((mesh.vertices[base + 2].pos.y - baseline).abs() < 1e-4);
+            assert!((mesh.vertices[base + 3].pos.y - baseline).abs() < 1e-4);
+            assert_eq!(mesh.vertices[base].pos, pts[quad]);
+            assert_eq!(mesh.vertices[base + 1].pos, pts[quad + 1]);
+        }
+        // No vertex jumps to plot corners at x=0/100 with wrong Y — fill stays under segments.
+        for v in &mesh.vertices {
+            assert!(v.pos.x >= 0.0 - 1e-3 && v.pos.x <= 100.0 + 1e-3);
         }
     }
 

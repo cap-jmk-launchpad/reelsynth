@@ -23,6 +23,7 @@ use super::view_3d_stack::{
 };
 use super::waveform::{
     hovered_layer_from_pointer, peak_point, quant_knobs_for_selection, selection_from_curve_click,
+    waveform_fill_shape,
 };
 use super::view_zoom::{consume_plot_scroll, WtCurveViewTransform};
 
@@ -339,15 +340,13 @@ impl WtViewResult<'_> {
                 ),
                 inner,
             );
+            let baseline_y = curve_view.map_pos(Pos2::new(inner.center().x, mid_y), inner).y;
             if result_pts.len() >= 2 {
-                let mut fill = result_pts.clone();
-                fill.push(Pos2::new(inner.max.x, mid_y));
-                fill.push(Pos2::new(inner.min.x, mid_y));
-                painter.add(Shape::convex_polygon(
-                    fill,
-                    tokens.accent.gamma_multiply(0.28),
-                    egui::Stroke::NONE,
-                ));
+                if let Some(fill) =
+                    waveform_fill_shape(&result_pts, baseline_y, tokens.accent.gamma_multiply(0.28))
+                {
+                    painter.add(fill);
+                }
                 let result_knob_hot = quant_active
                     && ui.ctx().pointer_latest_pos().is_some_and(|pos| {
                         if !inner.contains(pos) {
@@ -389,12 +388,20 @@ impl WtViewResult<'_> {
                 }
                 record_region(ui.ctx(), AuditId::CenterWt2dResult, inner, inner);
             }
-        }
 
-        painter.line_segment(
-            [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
-            egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
-        );
+            painter.line_segment(
+                [
+                    Pos2::new(inner.min.x, baseline_y),
+                    Pos2::new(inner.max.x, baseline_y),
+                ],
+                egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
+            );
+        } else {
+            painter.line_segment(
+                [Pos2::new(inner.min.x, mid_y), Pos2::new(inner.max.x, mid_y)],
+                egui::Stroke::new(1.0, tokens.border.gamma_multiply(0.75)),
+            );
+        }
 
         if quant_active {
             let slot_count = effective_quant_count(self.wave_quant);
