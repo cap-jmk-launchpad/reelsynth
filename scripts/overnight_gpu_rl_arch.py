@@ -1094,11 +1094,8 @@ def main() -> int:
         if weights_blob and weights_blob.get("cell_state_dict") is not None:
             warm_cell = SeamCell(warm_cfg).to(device)
             warm_cell.load_state_dict(weights_blob["cell_state_dict"], strict=False)
-            if weights_blob.get("policy_state_dict") is not None:
-                try:
-                    policy.load_state_dict(weights_blob["policy_state_dict"], strict=False)
-                except Exception as exc:  # noqa: BLE001 — warm-start is best-effort
-                    log_line(log_path, f"WARM_START policy load skipped: {exc}")
+            # Do NOT load policy_state_dict: prior fitted policies can inject NaNs into
+            # Categorical logits and crash the run. Arch/hp/cell warm-start is enough.
         log_line(
             log_path,
             f"WARM_START seed_fitted={fitted_path} residual={warm_residual:.6f} "

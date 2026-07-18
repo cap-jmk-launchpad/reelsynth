@@ -22,7 +22,8 @@ $TargetIters = 500000
 $Deadline = (Get-Date).AddHours(240)
 $script:LastRestart = [datetime]::MinValue
 # PPO+GA+PBT+depth+MoE; seed 1902771841; max-hours 240; MUST match live training (not complex_arch / 1M)
-$script:LastArgs = @($Script, "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE")
+$SeedFitted = Join-Path $Artifacts "models\gpu-rl-arch-20260718T175603Z\fitted\champion_iter_000795_fitted.json"
+$script:LastArgs = @($Script, "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE", "--seed-fitted", $SeedFitted)
 $script:KnownLauncher = 0
 $script:KnownWorker = 0
 

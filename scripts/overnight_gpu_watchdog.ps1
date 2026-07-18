@@ -21,7 +21,8 @@ $StartedAt = Get-Date
 $JobScript = Join-Path $RepoRoot "scripts\overnight_gpu_rl_arch.py"
 # Keep aligned with live 500k overnight; only used if watchdog must restart a dead job.
 # MUST match babysit / start_overnight_gpu_detached: PPO+GA+PBT+NAS+depth+MoE @ 500k (not complex_arch / 1M).
-$JobArgs = @($JobScript, "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE")
+$SeedFitted = Join-Path $Artifacts "models\gpu-rl-arch-20260718T175603Z\fitted\champion_iter_000795_fitted.json"
+$JobArgs = @($JobScript, "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE", "--seed-fitted", $SeedFitted)
 
 function Write-Heartbeat([string]$Message) {
     $ts = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
