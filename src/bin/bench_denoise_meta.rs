@@ -1,18 +1,18 @@
-//! Meta-learning + hyperparameter / lit-combo search for DenoiseOpt.
+//! Meta-learning + hyperparameter / lit-combo / overnight multi-branch search.
 //!
 //! Primary objective: prolonged residual score ∈ [0,1] (1 = best).
 //!
 //! ```bash
-//! # Lit-combo 500-iter release timing (fit-until-convergence each trial)
+//! # Lit-combo 500-iter release timing
 //! cargo run -p reelsynth --release --bin bench_denoise_meta -- 500
-//! # or: set DENOISE_META_TRIALS=500 / DENOISE_META_MODE=lit_combo
 //!
-//! # Full 1500-trial legacy prior search
-//! cargo run -p reelsynth --release --bin bench_denoise_meta -- 1500
-//! # (omit args → 1500 legacy)
+//! # Overnight multi-branch (~273k)
+//! set DENOISE_META_MODE=overnight
+//! cargo run -p reelsynth --release --bin bench_denoise_meta -- 273000
 //!
-//! # Short sanity (e.g. 8 lit-combo trials)
-//! cargo run -p reelsynth --release --bin bench_denoise_meta -- 8
+//! # Short overnight smoke
+//! set DENOISE_META_MODE=overnight
+//! cargo run -p reelsynth --release --bin bench_denoise_meta -- 100
 //! ```
 
 fn main() {
@@ -29,13 +29,25 @@ fn main() {
     let mode_env = std::env::var("DENOISE_META_MODE")
         .unwrap_or_default()
         .to_lowercase();
-    // Default: lit_combo for ≤500 (incl. sanity), legacy prior search for 1500+.
-    let lit_combo = mode_env == "lit_combo"
-        || mode_env == "combo"
-        || (mode_env == "auto" && n_trials <= 500)
-        || (mode_env.is_empty() && n_trials <= 500);
 
-    let (val_fast, val_final) = if lit_combo {
+    let overnight = mode_env == "overnight"
+        || mode_env == "multi"
+        || mode_env == "branches"
+        || (mode_env.is_empty() && n_trials >= 10_000);
+
+    let lit_combo = !overnight
+        && (mode_env == "lit_combo"
+            || mode_env == "combo"
+            || (mode_env == "auto" && n_trials <= 500)
+            || (mode_env.is_empty() && n_trials <= 500));
+
+    let (val_fast, val_final) =     if overnight {
+        if n_trials >= 10_000 {
+            (32usize, 160usize)
+        } else {
+            (24usize, 48usize)
+        }
+    } else if lit_combo {
         if n_trials >= 500 {
             (80usize, 400usize)
         } else {
@@ -47,12 +59,20 @@ fn main() {
         (400usize, 2000usize)
     };
 
+    let mode_label = if overnight {
+        "overnight"
+    } else if lit_combo {
+        "lit_combo"
+    } else {
+        "legacy"
+    };
     eprintln!(
-        "Running {n_trials} DenoiseOpt meta trials mode={} (residual objective, val_fast={val_fast}, val_final={val_final})…",
-        if lit_combo { "lit_combo" } else { "legacy" }
+        "Running {n_trials} DenoiseOpt meta trials mode={mode_label} (residual objective, val_fast={val_fast}, val_final={val_final})…"
     );
 
-    let report = if lit_combo {
+    let report = if overnight {
+        reelsynth::denoise_meta_overnight::run_overnight_meta_n(n_trials, val_fast, val_final)
+    } else if lit_combo {
         reelsynth::denoise_meta::run_lit_combo_meta_n(n_trials, val_fast, val_final)
     } else {
         reelsynth::denoise_meta::run_meta_learning_search_n(n_trials, val_fast, val_final)
@@ -105,13 +125,14 @@ fn main() {
         report["artifact_path"].as_str().unwrap_or("?")
     );
 
-    if lit_combo && n_trials == 500 {
+    if overnight {
+        println!("OVERNIGHT_WALL_TIME_SEC={:.6}", iter_sec);
+        println!("OVERNIGHT_ITERS={}", n_trials);
+        println!("OVERNIGHT_WALL_TIME_MS={}", iter_ms);
+    } else if lit_combo && n_trials == 500 {
         println!("500_ITER_WALL_TIME_SEC={:.6}", iter_sec);
         println!("500_ITER_WALL_TIME_MS={}", iter_ms);
     } else if lit_combo {
-        println!(
-            "{}_ITER_WALL_TIME_SEC={:.6}",
-            n_trials, iter_sec
-        );
+        println!("{}_ITER_WALL_TIME_SEC={:.6}", n_trials, iter_sec);
     }
 }

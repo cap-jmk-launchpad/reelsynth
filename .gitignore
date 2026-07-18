@@ -15,3 +15,5 @@ docs-images.zip
 .cursor/mcp.json
 
 .superpowers/
+
+.venv_gpu/

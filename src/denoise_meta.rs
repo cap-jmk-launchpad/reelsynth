@@ -128,33 +128,33 @@ struct TrialHp {
 
 /// Hybrid / combo trial configuration for lit-combo meta.
 #[derive(Debug, Clone)]
-struct ComboTrial {
-    name: String,
-    family: String,
-    ops: Vec<&'static str>,
-    lambda_shape: f32,
-    residual_primary: bool,
-    use_racing: bool,
-    use_pbt: bool,
-    use_mo_weight: f32,
-    bake: Option<PeriodizeAlgo>,
-    seam: SeamStyle,
-    theta_polish: bool,
-    refine_lambda: bool,
-    algo_seed: u64,
+pub(crate) struct ComboTrial {
+    pub name: String,
+    pub family: String,
+    pub ops: Vec<&'static str>,
+    pub lambda_shape: f32,
+    pub residual_primary: bool,
+    pub use_racing: bool,
+    pub use_pbt: bool,
+    pub use_mo_weight: f32,
+    pub bake: Option<PeriodizeAlgo>,
+    pub seam: SeamStyle,
+    pub theta_polish: bool,
+    pub refine_lambda: bool,
+    pub algo_seed: u64,
 }
 
 #[derive(Debug, Clone)]
-struct FitResult {
-    theta: [f32; N_THETA],
-    lambda: f32,
-    fit_loss: f32,
-    conv_steps: usize,
-    converged: bool,
+pub(crate) struct FitResult {
+    pub theta: [f32; N_THETA],
+    pub lambda: f32,
+    pub fit_loss: f32,
+    pub conv_steps: usize,
+    pub converged: bool,
 }
 
 /// Auxiliary D/S wrap-energy proxy (kept for reports; not meta ranking).
-fn score_with_lambda(raw: &[f32], out: &[f32], lambda: f32) -> (f32, f32, f32, f32) {
+pub(crate) fn score_with_lambda(raw: &[f32], out: &[f32], lambda: f32) -> (f32, f32, f32, f32) {
     let c_raw = crackle_fast(raw);
     let c_out = crackle_fast(out);
     let denoise = if c_raw < 1e-6 {
@@ -177,12 +177,16 @@ fn score_with_lambda(raw: &[f32], out: &[f32], lambda: f32) -> (f32, f32, f32, f
     (loss, denoise, shape, 0.5 * (denoise + shape))
 }
 
-fn residual_for_cycle(ideal: &[f32], out: &[f32]) -> f32 {
+pub(crate) fn residual_for_cycle(ideal: &[f32], out: &[f32]) -> f32 {
     residual_score_prolonged(ideal, out, PROLONG)
 }
 
+pub(crate) const PROLONG_PERIODS: usize = PROLONG;
+pub(crate) const INNER_FIT_COUNT_PUB: usize = INNER_FIT_COUNT;
+pub(crate) const INNER_FIT_START_PUB: u64 = INNER_FIT_START;
+
 /// Soft shape gate: keep mid-cycle preservation as a secondary constraint.
-fn meta_rank(residual: f32, shape: f32) -> f32 {
+pub(crate) fn meta_rank(residual: f32, shape: f32) -> f32 {
     if shape >= 0.97 {
         residual
     } else {
@@ -190,7 +194,7 @@ fn meta_rank(residual: f32, shape: f32) -> f32 {
     }
 }
 
-fn apply_pipeline(
+pub(crate) fn apply_pipeline(
     frame: &mut [f32],
     theta: &[f32; N_THETA],
     bake: Option<PeriodizeAlgo>,
@@ -222,7 +226,7 @@ fn mean_unsupervised_loss(
     mean_unsupervised_loss_pipe(theta, start_seed, count, n, lambda, None, SeamStyle::Adaptive, false)
 }
 
-fn mean_unsupervised_loss_pipe(
+pub(crate) fn mean_unsupervised_loss_pipe(
     theta: &[f32; N_THETA],
     start_seed: u64,
     count: usize,
@@ -244,7 +248,7 @@ fn mean_unsupervised_loss_pipe(
     sum / count.max(1) as f32
 }
 
-fn mean_residual_fit(
+pub(crate) fn mean_residual_fit(
     theta: &[f32; N_THETA],
     start_seed: u64,
     count: usize,
@@ -374,7 +378,7 @@ fn refine_lambda_1d(
 /// - If `rel < CONV_EPS` (1e-4) for `CONV_PATIENCE` (3) consecutive sweeps → converged.
 /// - Else continue until `CONV_MAX_SWEEPS` (16). Residual-primary **maximizes** J;
 ///   loss / MO modes **minimize** J.
-fn fit_until_convergence(
+pub(crate) fn fit_until_convergence(
     mut theta: [f32; N_THETA],
     mut lambda: f32,
     n: usize,
@@ -585,7 +589,7 @@ fn eval_theta_fast(
     )
 }
 
-fn eval_pipeline_fast(
+pub(crate) fn eval_pipeline_fast(
     theta: &[f32; N_THETA],
     start_seed: u64,
     count: usize,
@@ -618,19 +622,19 @@ fn eval_pipeline_fast(
     (sum_l / c, d, s, 0.5 * (d + s), r)
 }
 
-struct Rng(u64);
+pub(crate) struct Rng(pub u64);
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1);
         self.0
     }
-    fn f01(&mut self) -> f32 {
+    pub fn f01(&mut self) -> f32 {
         (self.next() >> 33) as f32 / (u32::MAX as f32)
     }
-    fn range(&mut self, lo: f32, hi: f32) -> f32 {
+    pub fn range(&mut self, lo: f32, hi: f32) -> f32 {
         lo + (hi - lo) * self.f01()
     }
-    fn usize(&mut self, n: usize) -> usize {
+    pub fn usize(&mut self, n: usize) -> usize {
         if n == 0 {
             0
         } else {
@@ -692,7 +696,7 @@ fn bake_from_atom(a: OpAtom) -> (Option<PeriodizeAlgo>, SeamStyle, bool) {
 }
 
 /// Sample a combinatorial hybrid: 1–3 operator atoms (search ± bake).
-fn sample_combo(rng: &mut Rng, idx: usize) -> (ComboTrial, [f32; N_THETA]) {
+pub(crate) fn sample_combo(rng: &mut Rng, idx: usize) -> (ComboTrial, [f32; N_THETA]) {
     let n_ops = 1 + rng.usize(3); // 1, 2, or 3
     let mut ops: Vec<OpAtom> = Vec::with_capacity(n_ops);
     // Always include at least one search atom.
@@ -804,7 +808,7 @@ fn sample_combo(rng: &mut Rng, idx: usize) -> (ComboTrial, [f32; N_THETA]) {
 }
 
 /// irace-style: race a small population on growing budgets; keep winners.
-fn race_init_population(
+pub(crate) fn race_init_population(
     rng: &mut Rng,
     base: [f32; N_THETA],
     n_cand: usize,
@@ -822,7 +826,7 @@ fn race_init_population(
     pop
 }
 
-fn race_select(
+pub(crate) fn race_select(
     pop: &mut Vec<[f32; N_THETA]>,
     trial: &ComboTrial,
     n: usize,
@@ -864,7 +868,7 @@ fn race_select(
 }
 
 /// PBT-style exploit: copy elite, mutate offspring.
-fn pbt_exploit_mutate(rng: &mut Rng, elite: [f32; N_THETA], n_offspring: usize) -> Vec<[f32; N_THETA]> {
+pub(crate) fn pbt_exploit_mutate(rng: &mut Rng, elite: [f32; N_THETA], n_offspring: usize) -> Vec<[f32; N_THETA]> {
     let mut out = vec![elite];
     for _ in 0..n_offspring {
         let mut t = elite;
@@ -883,7 +887,7 @@ fn family_stress(theta: &[f32; N_THETA], lambda: f32, n: usize) -> Vec<serde_jso
     family_stress_pipe(theta, lambda, n, None, SeamStyle::Adaptive, false)
 }
 
-fn family_stress_pipe(
+pub(crate) fn family_stress_pipe(
     theta: &[f32; N_THETA],
     lambda: f32,
     n: usize,
@@ -930,7 +934,7 @@ fn family_stress_pipe(
     fam_q
 }
 
-fn eval_bake_baseline(
+pub(crate) fn eval_bake_baseline(
     algo: PeriodizeAlgo,
     seam: SeamStyle,
     start_seed: u64,
