@@ -12,4 +12,6 @@ __pycache__/
 docs-images-staging/
 docs-images.zip
 .cursor/compile-clean.stamp
+.cursor/mcp.json
+
 .superpowers/

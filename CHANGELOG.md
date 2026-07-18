@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **DenoiseOpt (Seam·Opt)** — unsupervised fit of a seam-local periodize stack on joint denoise+shape loss (no labels); frozen θ for fast inference. Fit/investigate on a **100k** procedural bench (FFT harmonic overlays, mix modes, extremes) via `bench_denoise_opt`. See `docs/WHITEPAPER_DENOISE_OPT.md`.
+- **DenoiseOpt (Seam·Opt)** — unsupervised fit of a seam-local periodize stack on joint denoise+shape loss (no labels); frozen θ for fast inference. Fit/investigate on a **100k** procedural bench; **meta-learning + HPO** selects champion `fft_overlay_specialist`. Paper: `docs/papers/denoise_opt/`. See also `docs/WHITEPAPER_DENOISE_OPT.md`.
 - **Overtone suppression chain** — header **Overtone** menu: FxChain-style add / reorder / remove for **Lowpass**, **Harmonic**, and **Slew** filters on the master bus (after voices sum, before Effects). Per-slot strength 0–100% scaled by WT frame harshness; empty chain = Off. Session-only (not in `.reelpreset`); separate from Quant Seam.
 - **Chainable voice filter rack** — right sidebar **Filter** panel: add / reorder / remove serial SVF slots (**Lowpass** / **Highpass** / **Bandpass** / **Notch**), per-slot cutoff / resonance / drive / key tracking. Empty = bypass. Persisted as optional `filters` in `.reelpreset`; missing key keeps legacy Filter 1→2. Distinct from header Overtone.
 

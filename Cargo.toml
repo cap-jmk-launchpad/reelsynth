@@ -26,6 +26,11 @@ path = "src/bin/gen_qa_goldens.rs"
 required-features = []
 
 [[bin]]
+name = "bench_denoise_meta"
+path = "src/bin/bench_denoise_meta.rs"
+required-features = []
+
+[[bin]]
 name = "bench_denoise_opt"
 path = "src/bin/bench_denoise_opt.rs"
 required-features = []
