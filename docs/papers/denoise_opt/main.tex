@@ -1,21 +1,34 @@
-\documentclass[11pt]{article}
+\documentclass[11pt,a4paper]{article}
 
-% arXiv-friendly minimal preamble
 \usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,amsthm}
+\usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{microtype}
 \usepackage{setspace}
-\setstretch{1.08}
+\usepackage{tabularx}
+\setstretch{1.07}
 
-\title{\textbf{DenoiseOpt:} Label-Free Meta-Learned Periodization\\
-for Wavetable Wrap Crackle}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!60!black
+}
+
+\title{\textbf{DenoiseOpt:} Literature-Informed Meta-Learning\\
+for Label-Free Wavetable Wrap Crackle Reduction}
 \author{
-  ReelSynth Contributors\\
-  \texttt{reeldemo/reelsynth} \quad MIT License
+  Julian~M.~Kleber\\
+  ORCID: \href{https://orcid.org/0000-0001-5518-0932}{0000-0001-5518-0932}\\
+  Email: \href{mailto:julian.m.kleber@gmail.com}{julian.m.kleber@gmail.com}\\[0.6em]
+  \small
+  Synth implementation:
+  \href{https://github.com/reeldemo/reelsynth}{github.com/reeldemo/reelsynth}\\
+  Meta-learning artifacts:
+  \href{https://github.com/reeldemo/denoise-opt-meta}{github.com/reeldemo/denoise-opt-meta}
 }
 \date{18 July 2026}
 
@@ -23,204 +36,202 @@ for Wavetable Wrap Crackle}
 \maketitle
 
 \begin{abstract}
-Periodic wavetable frames with open wrap seams $x[0]\neq x[N-1]$ induce audible
-\emph{crackle} under cyclic playback. We treat wrap denoising as an
-\emph{unsupervised} optimization problem: a seam-local periodize stack with
-parameters $\theta\in[0,1]^{12}$ is fit by minimizing a joint loss of
-\textbf{denoise gain} and \textbf{mid-cycle shape retention}, without paired
-clean/noisy labels. We construct a procedural \textbf{100\,000}-cycle bench
-spanning morphs, FFT-style harmonic overlays, mix modes, and forced cliffs;
-run coordinate-descent fit; then apply an outer \textbf{meta-learning /
-hyperparameter} loop over $\lambda$, fade/polish biases, and training budgets.
-The champion recipe (\texttt{fft\_overlay\_specialist}) locks frozen $\theta^\star$
-for $O(N)$ inference as ReelSynth \texttt{Seam·Opt}. On held-out validation,
-quality $Q=\tfrac12(\mathcal{D}+\mathcal{S})$ reaches $\approx 0.791$, matching or
-exceeding DualCosine while keeping $\mathcal{S}\approx 0.99$. We situate the
-method relative to classical VA anti-aliasing (BLEP/BLAMP), wavetable DSP, and
-label-free audio restoration literature.
+Open wrap seams in periodic wavetable cycles inject audible \emph{crackle} under
+cyclic playback. We cast bake-time periodization as an unsupervised optimization
+problem: a seam-local stack $f_\theta$ with $\theta\in[0,1]^{12}$ is scored by a
+joint denoise/shape loss without paired clean labels. After constructing a
+procedural 100\,000-cycle bench (FFT-style extreme overlays, mix modes, forced
+cliffs), we run a \textbf{1500-trial} literature-informed meta-learning /
+hyperparameter search whose priors follow Bayesian HPO localization, population-based
+training (PBT) mutation, multi-objective shape preference, evolutionary explore,
+and algorithm-configuration racing. On held-out validation ($N{=}2000$), a
+\textbf{five-algorithm matrix} compares a naive DualCosine baseline against the
+top-4 meta champions. Meta Top~1 reaches $Q\approx 0.790$ vs naive
+$Q\approx 0.789$ while keeping $\mathcal{S}\approx 0.997$. We survey related
+work in VA anti-aliasing, wavetable / DDSP, label-free restoration, and AutoML,
+explicitly listing which sources informed our priors and which were screened out.
 \end{abstract}
 
 \section{Introduction}
+Wavetable synthesizers store one-period frames and wrap phase modulo one.
+Discontinuous ends $r[0]\neq r[N-1]$ produce periodic broadband clicks.
+Classical DualCosine / Soft fades and live BLEP address related phenomena, but
+edited Quant frames need a fast bake operator that is both aggressive on wrap
+energy and conservative on mid-cycle timbre.
 
-Wavetable synthesizers store one-period waveforms and advance a phase accumulator
-modulo~$1$. If the stored cycle is not continuous at the wrap, each period
-boundary injects a broadband transient. Classical remedies include linear
-detrend, raised-cosine fades, and bandlimited steps (BLEP) for geometric
-oscillators~\cite{valimaki2006va,esqueda2016aliasing}. Quantized / edited
-wavetable frames, however, often need a \emph{bake-time} periodizer that (i)
-closes wrap, (ii) preserves mid-cycle timbre, and (iii) remains $O(N)$ for UI
-rebuilds.
+\paragraph{Contributions.}
+(1)~Measurable functionals $\mathcal{D},\mathcal{S}$ and loss
+$L=(1-\mathcal{D})+\lambda(1-\mathcal{S})$.
+(2)~DenoiseOpt seam-local inference with exact mid-cycle copy.
+(3)~100k procedural dataset for unlabeled fit.
+(4)~1500 lit-informed meta trials with six prior families.
+(5)~Five-algorithm benchmark matrix (naive + top-4).
+(6)~Open synth and meta-learning repositories.
 
-We contribute: (1)~a measurable crackle functional $C(\cdot)$ and joint loss
-$L=(1-\mathcal{D})+\lambda(1-\mathcal{S})$; (2)~DenoiseOpt, a moderately deep
-seam-local stack with shape invariant mid-cycle copy; (3)~a 100k procedural
-dataset with extreme harmonic overlays; (4)~meta-learning over hyperparameters
-to select a champion $\theta^\star$; (5)~empirical figures and an open
-implementation in ReelSynth.
+\section{Related work and literature triage}
+Literature was harvested with the Klaut Research MCP (local OpenAlex / Crossref /
+arXiv providers; hosted \texttt{research.klaut.pro} was misrouted during this study).
+We distinguish \emph{used} vs \emph{screened} sources.
 
-\section{Related work}
+\subsection{Used --- virtual analog \& wavetable DSP}
+V\"alim\"aki \& Huovilainen's survey of VA oscillator/filter algorithms and
+aliasing control~\cite{valimaki2006va} and subsequent BLEP/BLAMP / antialiasing
+work~\cite{esqueda2016aliasing,esqueda2016blamp,valimaki2007aa} motivate treating
+discontinuities as first-class DSP objects. Differentiable wavetable / DDSP
+reviews~\cite{shan2021dwt,ddsp_review2024} show learnable tables but target
+different objectives than bake wrap close.
 
-\paragraph{Virtual-analog anti-aliasing.}
-PolyBLEP / BLAMP methods suppress aliasing from geometric discontinuities in
-VA oscillators~\cite{valimaki2006va,esqueda2016blamp,esqueda2016aliasing}.
-These operate on continuous-time event models; our target is discrete
-\emph{stored} cycles after user edits.
+\subsection{Used --- label-free restoration}
+Noise2Noise~\cite{lehtinen2018n2n} shows restoration without clean targets when
+noise statistics are structured. We adopt the same philosophy at cycle scale:
+the ``noise'' is wrap cliff energy measured by $C(\cdot)$.
 
-\paragraph{Wavetable DSP.}
-Integrated / higher-order wavetable methods and differentiable wavetable
-synthesis improve interpolation and learnable tables~\cite{idealintegrator2013,shan2021dwt,ddsp_review2024}.
-We instead optimize a small periodize operator for wrap character.
+\subsection{Used --- meta-learning \& hyperparameter optimization}
+Practical Bayesian optimization of ML algorithms~\cite{snoek2012bo} and later HPO
+surveys~\cite{bischl2023hpo} motivate densifying search near previously good
+$\lambda$ (\texttt{bayes\_local} prior). Population-based training ideas
+(exploit/mutate elite configs) inform \texttt{pbt\_exploit}. Algorithm
+configuration / iterated racing~\cite{lopez2016irace} inform \texttt{racing\_mid}.
+Multi-objective evolutionary decomposition~\cite{zhang2007moead} informs
+\texttt{mo\_shape} (higher $\lambda$). Wide evolutionary explore covers
+\texttt{evo\_explore}.
 
-\paragraph{Label-free / self-supervised audio restoration.}
-Unpaired denoising and self-supervised restoration avoid clean targets by
-exploiting measurable structure~\cite{unsupervised_audio_note}. DenoiseOpt is
-analogous at cycle scale: the ``noise'' is the wrap cliff, scored by $C(\cdot)$.
-
-\paragraph{Meta-learning \& HPO in audio.}
-Outer-loop search over training knobs is standard in AutoML; we apply a
-lightweight grid + named priors over $\lambda$ and seam biases, evaluating on
-held-out procedural seeds.
+\subsection{Screened / not used as design drivers}
+High-citation but off-domain hits (medical imaging surveys, federated learning,
+prompting surveys, molecular ML) appeared in broad keyword harvests and were
+\textbf{not} used to set priors. Generic optimizers (Adam~\cite{kingma2015adam})
+are assumed as ambient ML context but do not define our outer loop. MAML-style
+few-shot gradient meta-learning~\cite{finn2017maml} is related philosophically
+yet not applicable: we have no task-gradient through a deep net, only a
+12-parameter bake stack.
 
 \section{Problem formulation}
-
-Let $r\in\mathbb{R}^N$ be a raw cycle and $y=f_\theta(r)$ the periodized output.
-Define
 \begin{align}
-C(x) &= 2\,\mathrm{wrap}(x)+\mathrm{max\_step}(x)+0.35\,\mathrm{hf}(x),\\
-\mathcal{D}(r,y) &= \mathrm{clamp}\!\Big(\frac{C(r)-C(y)}{\max(C(r),\varepsilon)},0,1\Big),\\
-\mathcal{S}(r,y) &= 1-\mathrm{clamp}\!\Big(\frac{\mathrm{MAE}_{\mathrm{mid}}(y,r)}{\mathrm{RMS}(r)+\varepsilon},0,1\Big),\\
-L &= (1-\mathcal{D})+\lambda(1-\mathcal{S}),\qquad
-Q=\tfrac12(\mathcal{D}+\mathcal{S}).
+C(x) &= 2\,\mathrm{wrap}(x)+\mathrm{max\_step}(x)+0.35\,\mathrm{hf}_{\mathrm{proxy}}(x),\\
+\mathcal{D} &= \mathrm{clamp}\!\big((C(r)-C(y))/\max(C(r),\varepsilon),0,1\big),\\
+\mathcal{S} &= 1-\mathrm{clamp}\!\big(\mathrm{MAE}_{\mathrm{mid}}(y,r)/(\mathrm{RMS}(r)+\varepsilon),0,1\big),\\
+L &= (1-\mathcal{D})+\lambda(1-\mathcal{S}),\qquad Q=\tfrac12(\mathcal{D}+\mathcal{S}).
 \end{align}
-Mid-band excludes the outer $N/8$ samples so legitimate seam edits are not
-penalized as shape loss. \textbf{Shape invariant:} $y[i]=r[i]$ for
-$i\notin$ fade zones.
+Shape invariant: $y[i]=r[i]$ outside fade zones.
 
 \section{Method}
-
-\subsection{DenoiseOpt stack}
-Five seam stages controlled by $\theta$: soft pull to a closed target, asymmetric
-dual-end fade, ease mix (smoothstep / raised-cosine) with gamma, secondary tail
-fade, dual 3-tap polish + wrap pin (Fig.~\ref{fig:pipeline}).
+\subsection{DenoiseOpt}
+Five seam stages (pull, dual-end fade, ease/gamma, secondary fade, polish+pin)
+controlled by $\theta$ (Fig.~\ref{fig:pipeline}).
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{figures/fig_pipeline.png}
-\caption{DenoiseOpt inference pipeline. Mid-cycle samples are copied from $r$.}
+\includegraphics[width=0.98\linewidth]{figures/fig_pipeline.png}
+\caption{DenoiseOpt inference. Mid-cycle samples are an exact copy of $r$.}
 \label{fig:pipeline}
 \end{figure}
 
-\subsection{100k bench (dataset)}
-Seeds $0..99999$ generate ten families (10k each, $N=256$): morph, harmonic\_fft,
-extreme\_overlay, combo (Add/Avg/invert/half), quant\_steps, nonlinear,
-am\_fm, noise\_tone, triple\_mix, open\_wrap\_bias. Harmonic families synthesize
-FFT-style additive spectra with optional extreme high-partial tilt and forced
-cliffs---a diverse unlabeled corpus for fit + investigation.
+\subsection{Dataset}
+Seeds $0..10^5{-}1$ generate ten families (morph, harmonic\_fft, extreme\_overlay,
+combo modes, quant\_steps, nonlinear, am\_fm, noise\_tone, triple\_mix,
+open\_wrap\_bias) at $N{=}256$.
 
-\subsection{Fit and meta-learning}
-Inner loop: coordinate descent on $\theta$ (random restarts). Outer loop: 28
-hyperparameter trials over $\lambda\in\{0.5,1,1.5,2\}$, fade/polish/pin biases,
-and named recipes (\texttt{aggressive\_denoise}, \texttt{shape\_first},
-\texttt{balanced\_meta}, \texttt{fft\_overlay\_specialist}). Meta objective:
-maximize $Q$ subject to $\mathcal{S}\ge 0.97$ on 1500 held-out seeds.
+\subsection{1500-trial meta-learning}
+Each trial samples a prior family, mutates $\theta$ near the frozen champion,
+applies fade/polish/pin/detrend biases, and scores on 400 held-out cycles.
+Top-12 are revalidated on 2000 cycles with family stress tests.
 
 \section{Experiments}
+\subsection{Five-algorithm matrix}
+We compare \textbf{naive DualCosine} against \textbf{Meta Top~1--4} from the
+1500-trial search (Fig.~\ref{fig:matrix}).
 
-\subsection{Baselines}
-On validation, DualCosine $Q\approx 0.788$, prior DenoiseOpt $Q\approx 0.790$,
-classic $Q\approx 0.772$. EnsembleV3 collapses shape ($\mathcal{S}\approx 0.34$)
-and is rejected. Meta champion \texttt{fft\_overlay\_specialist}:
-$\mathcal{D}\approx 0.590$, $\mathcal{S}\approx 0.992$, $Q\approx 0.791$
-(Fig.~\ref{fig:baselines}, Fig.~\ref{fig:pareto}).
+\begin{table}[t]
+\centering
+\caption{Benchmark matrix (validation $N{=}2000$).}
+\label{tab:matrix}
+\begin{tabular}{llccc}
+\toprule
+Algorithm & Prior / kind & $\mathcal{D}$ & $\mathcal{S}$ & $Q$ \\
+\midrule
+Naive DualCosine & hand baseline & 0.582 & 0.995 & 0.789 \\
+Meta Top~1 & racing\_mid & 0.583 & 0.997 & 0.790 \\
+Meta Top~2 & racing\_mid & 0.583 & 0.996 & 0.790 \\
+Meta Top~3 & pbt\_exploit & 0.585 & 0.995 & 0.790 \\
+Meta Top~4 & pbt\_exploit & 0.585 & 0.994 & 0.790 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{figures/fig_algo_baselines.png}
-\caption{Algorithm comparison on held-out validation.}
-\label{fig:baselines}
+\includegraphics[width=\linewidth]{figures/fig_benchmark_matrix.png}
+\caption{Naive vs top-4 meta algorithms: bars and metric$\times$algo heatmap.}
+\label{fig:matrix}
 \end{figure}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.92\linewidth]{figures/fig_meta_pareto.png}
-\caption{Meta-learning Pareto front in $(\mathcal{D},\mathcal{S})$ space.}
+\includegraphics[width=0.9\linewidth]{figures/fig_pareto_1500.png}
+\caption{Elite $(\mathcal{D},\mathcal{S})$ points after 1500 trials.}
 \label{fig:pareto}
 \end{figure}
 
-\subsection{100k family breakdown}
-Open-wrap and harmonic families respond strongest; nonlinear / combo retain
-interior discontinuities outside the seam model (Fig.~\ref{fig:family}).
-
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{figures/fig_family_breakdown.png}
-\caption{Per-family $\mathcal{D}$/$\mathcal{S}$ and quality ranking on 100k.}
-\label{fig:family}
+\includegraphics[width=0.85\linewidth]{figures/fig_prior_families.png}
+\caption{Which literature-informed priors dominate the elite set.}
+\label{fig:priors}
 \end{figure}
 
-\subsection{Bake algorithm lineage}
-A twelve-algorithm bake search (classic$\to$dual cosine$\to$ensembles) reduced
-mean $C(\cdot)$ by $\sim 87\%$ vs untreated on a harsh fixture set
-(Fig.~\ref{fig:crackle}).
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{figures/fig_crackle_curve.png}
-\caption{Iterative bake-algorithm search over the crackle functional $C$.}
-\label{fig:crackle}
-\end{figure}
+Racing-mid and PBT-exploit priors dominate elites (Fig.~\ref{fig:priors}),
+consistent with algorithm-configuration and exploit-mutate practice.
 
 \section{Discussion}
-Seam-local depth + explicit $\mathcal{S}$ yields aggressive denoise without
-flattening musical mid-cycle content. Meta-learning shifts $\theta$ toward
-overlay-heavy regimes without sacrificing the shape floor. Residual crackle in
-combo/nonlinear families is expected: interior edges need BLEP-class live
-processing~\cite{valimaki2006va}, not bake periodize alone.
+Gains over DualCosine are small but consistent under a hard shape floor
+($\mathcal{S}\ge 0.97$). The method's value is a \emph{principled, reproducible}
+selection of $\theta^\star$ and an auditable link from AutoML literature to DSP
+knobs. Residual crackle in combo/nonlinear families remains a live-BLEP concern.
 
 \section{Limitations}
-Bake metrics $\neq$ live BLEP; hosted \texttt{research.klaut.pro} edge routing
-was unavailable during writing---literature harvested via local Klaut Research
-MCP (OpenAlex/Crossref/arXiv). Fit is bench-specific; retune with
-\texttt{bench\_denoise\_meta}.
+Bake metrics $\neq$ perceptual MOS; no MAML-style task gradients; hosted Klaut
+gateway routing was unavailable (local MCP used). Meta search mutates around a
+strong frozen init---a cold-start evolutionary run may explore further.
 
 \section{Conclusion}
-DenoiseOpt casts wavetable wrap crackle as label-free optimization of a
-measurable loss, scaled on a 100k procedural bench and refined by
-meta-learning. Frozen $\theta^\star$ ships as a fast inference option in
-ReelSynth.
+DenoiseOpt combines label-free seam optimization, a 100k procedural bench, and
+1500 literature-informed meta trials. Frozen $\theta^\star$ ships in ReelSynth
+(\texttt{Seam·Opt}); artifacts live in the public meta-learning repository.
+
+\section*{Repositories}
+\begin{itemize}
+  \item Synth: \url{https://github.com/reeldemo/reelsynth}
+  \item Meta-learning paper/artifacts: \url{https://github.com/reeldemo/denoise-opt-meta}
+\end{itemize}
 
 \section*{Reproducibility}
 \begin{verbatim}
-cargo run -p reelsynth --release --bin bench_denoise_opt
 cargo run -p reelsynth --release --bin bench_denoise_meta
-python brand/artifacts/render_paper_figures.py
+python brand/artifacts/render_benchmark_matrix.py
+pdflatex docs/papers/denoise_opt/main.tex
 \end{verbatim}
-Artifacts: \texttt{brand/artifacts/denoise\_opt\_*.json},
-\texttt{docs/papers/denoise\_opt/}.
 
 \begin{thebibliography}{99}
 
 \bibitem{valimaki2006va}
 V.~V\"alim\"aki and A.~Huovilainen,
 ``Oscillator and Filter Algorithms for Virtual Analog Synthesis,''
-\emph{Computer Music Journal}, 30(2):19--31, 2006.
-doi:\href{https://doi.org/10.1162/comj.2006.30.2.19}{10.1162/comj.2006.30.2.19}.
+\emph{Computer Music Journal}, 30(2), 2006.
+
+\bibitem{valimaki2007aa}
+V.~V\"alim\"aki et~al.,
+``Antialiasing Oscillators in Subtractive Synthesis,''
+\emph{IEEE Signal Processing Magazine} / related VA literature, 2007.
 
 \bibitem{esqueda2016aliasing}
 F.~Esqueda, S.~Bilbao, and V.~V\"alim\"aki,
 ``Aliasing Reduction in Clipped Signals,''
 \emph{IEEE Trans.\ Signal Processing}, 2016.
-doi:\href{https://doi.org/10.1109/tsp.2016.2585091}{10.1109/tsp.2016.2585091}.
 
 \bibitem{esqueda2016blamp}
 F.~Esqueda, V.~V\"alim\"aki, and S.~Bilbao,
 ``Rounding corners with BLAMP,''
 \emph{Proc.\ DAFx}, 2016.
-
-\bibitem{idealintegrator2013}
-J.~Pekonen et~al.,
-``An ideal integrator for higher-order integrated wavetable synthesis,''
-\emph{EURASIP}, related wavetable literature, 2013.
 
 \bibitem{shan2021dwt}
 S.~Shan et~al.,
@@ -228,13 +239,45 @@ S.~Shan et~al.,
 arXiv:2111.10003, 2021.
 
 \bibitem{ddsp_review2024}
-A review of differentiable digital signal processing for music and speech synthesis,
-\emph{OpenAlex survey}, 2024.
+``A review of differentiable digital signal processing for music and speech synthesis,''
+OpenAlex survey record, 2024.
 
-\bibitem{unsupervised_audio_note}
-Self-supervised / unpaired audio restoration literature (see harvested Klaut
-Research corpus in \texttt{brand/artifacts/literature\_klaut\_research.json}).
+\bibitem{lehtinen2018n2n}
+J.~Lehtinen et~al.,
+``Noise2Noise: Learning Image Restoration without Clean Data,''
+\emph{ICML}, 2018.
+
+\bibitem{snoek2012bo}
+J.~Snoek, H.~Larochelle, and R.~P.~Adams,
+``Practical Bayesian Optimization of Machine Learning Algorithms,''
+\emph{NeurIPS}, 2012.
+
+\bibitem{bischl2023hpo}
+B.~Bischl et~al.,
+``Hyperparameter optimization: Foundations, algorithms, best practices, and open challenges,''
+2023.
+
+\bibitem{lopez2016irace}
+M.~L\'opez-Ib\'a\~nez et~al.,
+``The irace package: Iterated racing for automatic algorithm configuration,''
+\emph{Operations Research Perspectives}, 2016.
+
+\bibitem{zhang2007moead}
+Q.~Zhang and H.~Li,
+``MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition,''
+\emph{IEEE Trans.\ Evolutionary Computation}, 2007.
+
+\bibitem{finn2017maml}
+C.~Finn, P.~Abbeel, and S.~Levine,
+``Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks,''
+\emph{ICML}, 2017.
+\textit{(Screened: inspirational, not used as outer-loop mechanism.)}
+
+\bibitem{kingma2015adam}
+D.~P.~Kingma and J.~Ba,
+``Adam: A Method for Stochastic Optimization,''
+\emph{ICLR}, 2015.
+\textit{(Screened as ambient optimizer; not a meta prior.)}
 
 \end{thebibliography}
-
 \end{document}
