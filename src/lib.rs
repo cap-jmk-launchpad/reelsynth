@@ -5,6 +5,7 @@ pub mod osc;
 pub mod fm;
 pub mod fx;
 pub mod overtone;
+pub mod crackle_diag;
 pub mod voice;
 pub mod scope;
 pub mod import;

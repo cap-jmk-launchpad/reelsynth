@@ -260,4 +260,77 @@ mod tests {
         assert_eq!(back.wave_quant, snap.wave_quant);
         assert_eq!(back.layers.len(), snap.layers.len());
     }
+
+    /// Automated Seam A/B (no GUI): Soft/Adaptive pin wrap closed after Quant edits.
+    #[test]
+    fn automated_seam_modes_on_quant_frame() {
+        let mut session = AgentSession::new();
+        session.select_layer(0).unwrap();
+        session.promote_selected_for_quant().unwrap();
+        session.set_wave_quant(16);
+
+        let measure = |session: &AgentSession| {
+            let layer = &session.state.oscillators[0].wave_layers[0];
+            let fi = frame_index(layer.wt_position, session.bank.num_frames);
+            let frame = session.bank.frame(fi);
+            let n = frame.len();
+            let wrap = (frame[n - 1] - frame[0]).abs();
+            let mut max_step = 0.0f32;
+            for w in frame.windows(2) {
+                max_step = max_step.max((w[1] - w[0]).abs());
+            }
+            (wrap, max_step)
+        };
+
+        session.set_seam_mode_label("off").unwrap();
+        let nslots = effective_quant_count(session.state.oscillators[0].wave_quant);
+        session.set_quant_slot(0, -0.9).unwrap();
+        session.set_quant_slot(nslots - 1, 0.9).unwrap();
+        let (wrap_off, _) = measure(&session);
+
+        session.set_seam_mode_label("soft").unwrap();
+        session.set_quant_slot(0, -0.9).unwrap();
+        session.set_quant_slot(nslots - 1, 0.9).unwrap();
+        let (wrap_soft, step_soft) = measure(&session);
+
+        session.set_seam_mode_label("adaptive").unwrap();
+        session.set_quant_slot(0, -0.85).unwrap();
+        let (wrap_ad, step_ad) = measure(&session);
+
+        let payload = serde_json::json!({
+            "sessionId": "0ab8f9",
+            "runId": "automated-agent-seam",
+            "hypothesisId": "H-automate-debug",
+            "location": "agent_api.rs:automated_seam_modes_on_quant_frame",
+            "message": "AgentSession Seam A/B without GUI",
+            "data": {
+                "wrap_off": wrap_off,
+                "wrap_soft": wrap_soft,
+                "wrap_adaptive": wrap_ad,
+                "max_step_soft": step_soft,
+                "max_step_adaptive": step_ad,
+            },
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        });
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("debug-0ab8f9.log")
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "{payload}");
+        }
+
+        assert!(
+            wrap_soft < 0.05,
+            "Soft should close wrap, got {wrap_soft} (off was {wrap_off})"
+        );
+        assert!(
+            wrap_ad < 0.05,
+            "Adaptive should close wrap, got {wrap_ad}"
+        );
+    }
 }
