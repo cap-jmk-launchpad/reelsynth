@@ -120,6 +120,7 @@ pub(super) fn draw_center(
         if config.show_wt_editor && views_rect.is_positive() {
             let views_h = views_rect.height().max(WT_VIEW_MIN_HEIGHT * s * 0.5);
             crate::wt::set_quant_seam_mode(state.wt_quant_seam);
+            crate::wt::set_crackle_amount(state.patch_crackle);
             region(ui, views_rect, |ui| {
             ui.set_width(views_rect.width());
             ui.painter().rect_filled(views_rect, 8.0, Tokens::default().bg);
@@ -222,6 +223,7 @@ pub(super) fn draw_center(
                             analyze_dialog_open: Some(&mut state.analyze_dialog_open),
                             curve_view: &mut state.wt_curve_view,
                             quant_seam: &mut state.wt_quant_seam,
+                            patch_crackle: &mut state.patch_crackle,
                         };
                         let sel_resp = view_sel.show(ui);
                         if sel_resp.frame_edited {
@@ -233,6 +235,9 @@ pub(super) fn draw_center(
                         if sel_resp.stack_changed || sel_resp.analyze_requested {
                             sync_osc_from_wt(state, num_frames);
                             sync_morph_from_active_tab(state);
+                            actions.params_changed = true;
+                        }
+                        if sel_resp.params_changed {
                             actions.params_changed = true;
                         }
                     },

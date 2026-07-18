@@ -31,7 +31,8 @@ pub use quant_handles::{
     paint_quant_knob, periodize_quant_frame, periodize_quant_frame_with_mode, quant_control_points,
     quant_curve_stroke, quant_hover_status_label, quant_knob_visual, quantized_curve_polyline,
     resample_frame_from_quant_points, resample_frame_from_quant_points_uniform,
-    sample_at_quant_phase, sample_from_knob_y, sample_to_y, set_quant_seam_mode, snap_x_to_slot,
+    sample_at_quant_phase, sample_from_knob_y, sample_to_y, set_crackle_amount,
+    current_crackle_amount, set_quant_seam_mode, snap_x_to_slot,
     slot_x, y_to_frame, y_to_sample, QuantHandleEditor, QuantHandleResponse, QuantKnobVisual,
     QuantSeamMode,
 };

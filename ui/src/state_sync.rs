@@ -193,6 +193,7 @@ pub fn sync_state_from_patch(state: &mut UiState, patch: &Patch) {
     state.mod_route_total = state.mod_routes.len().max(24);
     state.fx_slots = effect_slots_from_patch(&patch.effects);
     state.performance = crate::performance::PerformanceUi::from_settings(&patch.performance);
+    state.patch_crackle = patch.crackle.clamp(0.0, 1.0);
     sync_compose_from_patch(state, patch);
 }
 
@@ -302,6 +303,7 @@ pub fn patch_from_state(state: &UiState, base: &Patch) -> Patch {
     patch.effects = effect_slots_to_patch(&state.fx_slots);
     patch.performance = state.performance.to_settings();
     patch.sequence = compose_to_patch_sequence(&state.compose);
+    patch.crackle = state.patch_crackle.clamp(0.0, 1.0);
     patch
 }
 
@@ -321,6 +323,18 @@ mod tests {
         assert_eq!(state.oscillators[0].wave_layers[1].source_type, "sine");
         assert_eq!(state.oscillators[0].wave_layers[2].source_type, "square");
         assert_eq!(state.selected_layer_idx, Some(0));
+    }
+
+    #[test]
+    fn crackle_amount_roundtrip() {
+        let mut original = Patch::factory_lead();
+        original.crackle = 0.42;
+        let mut state = UiState::default();
+        sync_state_from_patch(&mut state, &original);
+        assert!((state.patch_crackle - 0.42).abs() < 1e-6);
+        state.patch_crackle = 0.75;
+        let patch = patch_from_state(&state, &original);
+        assert!((patch.crackle - 0.75).abs() < 1e-6);
     }
 
     #[test]

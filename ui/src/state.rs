@@ -151,6 +151,8 @@ pub struct UiState {
     pub wt_quant_interp: WtQuantInterp,
     /// Wrap-seam reduction after Quant rebuilds (Off / Soft / Adaptive).
     pub wt_quant_seam: QuantSeamMode,
+    /// Artistic crackle 0..1 (0 = eliminate / clean default). Synced to patch.crackle.
+    pub patch_crackle: f32,
     /// Selected Quant knob on the active layer (for per-segment interp UI).
     pub selected_quant_slot: Option<usize>,
     pub wt_view_3d_mode: WtView3dMode,
@@ -278,6 +280,7 @@ impl Default for UiState {
             wt_edit_tool: WtEditTool::Select,
             wt_quant_interp: WtQuantInterp::default(),
             wt_quant_seam: QuantSeamMode::Adaptive,
+            patch_crackle: 0.0,
             selected_quant_slot: None,
             wt_view_3d_mode: WtView3dMode::Stack,
             selected_layer_idx: Some(0),

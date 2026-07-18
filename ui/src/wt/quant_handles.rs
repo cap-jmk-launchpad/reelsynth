@@ -431,6 +431,7 @@ impl QuantSeamMode {
 thread_local! {
     static QUANT_SEAM_MODE: std::cell::Cell<QuantSeamMode> =
         std::cell::Cell::new(QuantSeamMode::Adaptive);
+    static CRACKLE_AMOUNT: std::cell::Cell<f32> = std::cell::Cell::new(0.0);
 }
 
 /// Set seam mode for Quant rebuilds on this UI thread (call once per Design frame).
@@ -440,6 +441,15 @@ pub fn set_quant_seam_mode(mode: QuantSeamMode) {
 
 fn current_quant_seam_mode() -> QuantSeamMode {
     QUANT_SEAM_MODE.with(|c| c.get())
+}
+
+/// Artistic crackle 0..1 (0 = eliminate / professional clean). Synced from patch.
+pub fn set_crackle_amount(amount: f32) {
+    CRACKLE_AMOUNT.with(|c| c.set(amount.clamp(0.0, 1.0)));
+}
+
+pub fn current_crackle_amount() -> f32 {
+    CRACKLE_AMOUNT.with(|c| c.get())
 }
 
 /// Update one quant knob, then rebuild using per-segment interpolation.
@@ -530,41 +540,17 @@ pub fn periodize_quant_frame(frame: &mut [f32]) {
 }
 
 /// Apply wrap-seam reduction with an explicit mode (tests / CLI).
+///
+/// Delegates to [`reelsynth::periodize_cycle`]: crackle 0 = eliminate, 1 = full cliff.
+/// Seam·Off forces crackle=1; Soft/Adaptive use [`current_crackle_amount`] (default 0).
 pub fn periodize_quant_frame_with_mode(frame: &mut [f32], mode: QuantSeamMode) {
-    let n = frame.len();
-    if n < 8 {
-        return;
-    }
-    let seam = (frame[n - 1] - frame[0]).abs();
-    let fade = match mode {
-        QuantSeamMode::Off => {
-            // Still pin exact seam sample so BLEP has a defined discontinuity width of 1.
-            // Do not fade the body — preserves last-knob amplitude in the approach.
-            return;
-        }
-        QuantSeamMode::Soft => (n / 16).max(16).min(128),
-        QuantSeamMode::Adaptive => {
-            if seam < 0.02 {
-                // Already closed enough — tiny 2-sample ease only.
-                2
-            } else {
-                // Scale fade with discontinuity; cap so mid-cycle shape stays intact.
-                let t = (seam / 2.0).clamp(0.0, 1.0);
-                let min_f = 4;
-                let max_f = (n / 12).max(24).min(96);
-                (min_f as f32 + t * (max_f - min_f) as f32).round() as usize
-            }
-        }
+    use reelsynth::{periodize_cycle, SeamStyle};
+    let (crackle, style) = match mode {
+        QuantSeamMode::Off => (1.0, SeamStyle::Raw),
+        QuantSeamMode::Soft => (current_crackle_amount(), SeamStyle::Soft),
+        QuantSeamMode::Adaptive => (current_crackle_amount(), SeamStyle::Adaptive),
     };
-    let fade = fade.min(n / 2).max(1);
-    let start = frame[0];
-    for i in 0..fade {
-        let w = (i as f32 + 1.0) / (fade as f32 + 1.0);
-        let w = w * w;
-        let idx = n - fade + i;
-        frame[idx] = frame[idx] * (1.0 - w) + start * w;
-    }
-    frame[n - 1] = start;
+    periodize_cycle(frame, crackle, style);
 }
 
 /// Uniform-mode resample (all segments share `mode`).

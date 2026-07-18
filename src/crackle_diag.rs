@@ -214,6 +214,7 @@ pub fn run_automated_crackle_report() -> serde_json::Value {
                 "factory_lead": held_note_metrics(&lead, 1.0),
                 "quieter_avg_stack": held_note_metrics(&quiet, 1.0),
             },
+            "signal_library": crate::signal_library::run_library_matrix(256),
             "conclusions": [
                 "Soft/Adaptive close wrap on Quant frames but leave non-zero tail_step",
                 "VA saw never sees Seam — cracks there are expected regardless of Seam UI",
@@ -287,7 +288,7 @@ mod tests {
         assert!(quiet_step.is_finite() && lead_step.is_finite());
 
         // Extensive signal library matrix (singles + combinations).
-        let lib = signal_library::run_library_matrix(256);
+        let lib = &data["signal_library"];
         assert!(lib["single_count"].as_u64().unwrap() >= 28);
         assert!(lib["combo_count"].as_u64().unwrap() >= 80);
         eprintln!(

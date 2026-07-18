@@ -34,6 +34,8 @@ pub struct WtSelectedLayerResponse {
     pub frame_edited: bool,
     pub stack_changed: bool,
     pub analyze_requested: bool,
+    /// Patch-level params changed (e.g. crackle) — sync to engine without WT rebuild.
+    pub params_changed: bool,
     pub status_hint: Option<String>,
 }
 
@@ -52,6 +54,8 @@ pub struct WtSelectedLayerView<'a> {
     pub analyze_dialog_open: Option<&'a mut bool>,
     pub curve_view: &'a mut WtCurveViewTransform,
     pub quant_seam: &'a mut QuantSeamMode,
+    /// Artistic crackle 0..1 synced to `patch.crackle`.
+    pub patch_crackle: &'a mut f32,
 }
 
 impl WtSelectedLayerView<'_> {
@@ -64,6 +68,7 @@ impl WtSelectedLayerView<'_> {
         let mut frame_edited = false;
         let mut stack_changed = false;
         let mut analyze_requested = false;
+        let mut params_changed = false;
         let mut status_hint: Option<String> = None;
 
         if !ui.is_rect_visible(rect) {
@@ -71,6 +76,7 @@ impl WtSelectedLayerView<'_> {
                 frame_edited,
                 stack_changed,
                 analyze_requested,
+                params_changed,
                 status_hint,
             };
         }
@@ -432,6 +438,7 @@ impl WtSelectedLayerView<'_> {
                     None
                 },
                 Some(self.quant_seam),
+                Some(self.patch_crackle),
             )
         });
         record_region(
@@ -446,8 +453,13 @@ impl WtSelectedLayerView<'_> {
             interp_changed,
             segment_interp_changed,
             seam_changed: _,
+            crackle_changed,
             ..
         } = toolbar_resp;
+        if crackle_changed {
+            params_changed = true;
+            crate::wt::set_crackle_amount(*self.patch_crackle);
+        }
 
         if req {
             if let Some(open) = self.analyze_dialog_open {
@@ -530,6 +542,7 @@ impl WtSelectedLayerView<'_> {
             frame_edited,
             stack_changed,
             analyze_requested,
+            params_changed,
             status_hint,
         }
     }

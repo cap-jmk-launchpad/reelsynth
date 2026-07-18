@@ -17,6 +17,7 @@ pub use crate::scope::ScopeMonitor;
 
 use crate::fx::FxChain;
 use crate::overtone::OvertoneFilterChain;
+use crate::seam::CrackleVoice;
 use crate::modulation::apply_mods_to_patch;
 use crate::patch::Patch;
 use crate::sequence::{SequencerRuntime, TransportState};
@@ -35,6 +36,9 @@ pub struct SynthEngine {
     params: EngineParams,
     fx: FxChain,
     overtone: OvertoneFilterChain,
+    /// Artistic crackle character (0 = clean; modulatable via patch.crackle).
+    crackle_l: CrackleVoice,
+    crackle_r: CrackleVoice,
     /// Cached frame index used for overtone harshness (osc 0).
     overtone_harsh_frame: Option<usize>,
     sample_rate: u32,
@@ -66,6 +70,8 @@ impl SynthEngine {
         let pool = VoicePool::new(&patch);
         let fx = FxChain::new(sample_rate);
         let overtone = OvertoneFilterChain::new(sample_rate);
+        let crackle_l = CrackleVoice::default();
+        let crackle_r = CrackleVoice::default();
         let banks = BankSet::from_primary(bank, &patch);
         let bpm = patch.sequence.bpm;
         let mut sequencer = SequencerRuntime::new(bpm);
@@ -79,6 +85,8 @@ impl SynthEngine {
             params,
             fx,
             overtone,
+            crackle_l,
+            crackle_r,
             overtone_harsh_frame: None,
             sample_rate,
             global_time: 0.0,
@@ -579,9 +587,9 @@ impl SynthEngine {
             acc_osc *= headroom;
             let gain = self.params.master_gain.current();
             let filt_mono = (acc_l + acc_r) * 0.5 * gain;
-            let suppressed = self
-                .overtone
-                .process_sample((acc_l + acc_r) * 0.5 * gain);
+            let mixed = (acc_l + acc_r) * 0.5 * gain;
+            let cracked = self.crackle_l.process(mixed, self.scratch_patch.crackle);
+            let suppressed = self.overtone.process_sample(cracked);
             let mono = self.fx.process_sample(suppressed);
             let fx_mono = mono;
             *sample = sanitize_sample(mono);
@@ -647,7 +655,9 @@ impl SynthEngine {
             acc_osc *= headroom;
             let gain = self.params.master_gain.current();
             let filt_mono = (acc_l + acc_r) * 0.5 * gain;
-            let [sl, sr_] = self.overtone.process_stereo(acc_l * gain, acc_r * gain);
+            let cl = self.crackle_l.process(acc_l * gain, self.scratch_patch.crackle);
+            let cr = self.crackle_r.process(acc_r * gain, self.scratch_patch.crackle);
+            let [sl, sr_] = self.overtone.process_stereo(cl, cr);
             let [l, r] = self.fx.process_stereo(sl, sr_);
             let fx_mono = (l + r) * 0.5;
             let out_mono = fx_mono;

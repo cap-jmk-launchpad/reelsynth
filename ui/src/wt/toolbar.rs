@@ -61,6 +61,8 @@ pub struct WtToolbarResponse {
     pub segment_interp_changed: bool,
     /// Wrap-seam reduction mode changed.
     pub seam_changed: bool,
+    /// Artistic crackle amount (patch.crackle) changed.
+    pub crackle_changed: bool,
 }
 
 pub struct WtToolbar;
@@ -72,7 +74,8 @@ impl WtToolbar {
         wave_quant: u8,
         curve_interp: &mut WtQuantInterp,
     ) -> bool {
-        Self::show_with_analyze(ui, tool, wave_quant, curve_interp, None, None, None).tool_changed
+        Self::show_with_analyze(ui, tool, wave_quant, curve_interp, None, None, None, None)
+            .tool_changed
     }
 
     pub fn show_with_analyze(
@@ -83,6 +86,7 @@ impl WtToolbar {
         selected_slot: Option<usize>,
         segment_interp: Option<&mut WtQuantInterp>,
         seam_mode: Option<&mut QuantSeamMode>,
+        crackle_amount: Option<&mut f32>,
     ) -> WtToolbarResponse {
         let tokens = Tokens::default();
         let (rect, _) = ui.allocate_exact_size(
@@ -96,6 +100,7 @@ impl WtToolbar {
         let mut interp_changed = false;
         let mut segment_interp_changed = false;
         let mut seam_changed = false;
+        let mut crackle_changed = false;
 
         if !ui.is_rect_visible(rect) {
             return WtToolbarResponse {
@@ -105,6 +110,7 @@ impl WtToolbar {
                 interp_changed,
                 segment_interp_changed,
                 seam_changed,
+                crackle_changed,
             };
         }
 
@@ -265,6 +271,13 @@ impl WtToolbar {
                                 "Wrap crackle reduction — Adaptive fades only as needed",
                             );
                         }
+                        if let Some(crackle) = crackle_amount {
+                            crackle_changed |= paint_crackle_slider(ui, crackle, &tokens);
+                        }
+                    });
+                } else if let Some(crackle) = crackle_amount {
+                    ui.horizontal(|ui| {
+                        crackle_changed |= paint_crackle_slider(ui, crackle, &tokens);
                     });
                 }
             });
@@ -277,6 +290,27 @@ impl WtToolbar {
             interp_changed,
             segment_interp_changed,
             seam_changed,
+            crackle_changed,
         }
+    }
+}
+
+fn paint_crackle_slider(ui: &mut Ui, crackle: &mut f32, tokens: &Tokens) -> bool {
+    ui.label(
+        egui::RichText::new("Crackle")
+            .size(10.0)
+            .color(tokens.text_secondary),
+    );
+    let resp = ui
+        .add_sized(
+            egui::vec2(56.0, 14.0),
+            egui::Slider::new(crackle, 0.0..=1.0).show_value(false),
+        )
+        .on_hover_text("0 = eliminate (clean default) · 1 = amplify wrap grit · modulatable");
+    if resp.changed() {
+        *crackle = crackle.clamp(0.0, 1.0);
+        true
+    } else {
+        false
     }
 }
