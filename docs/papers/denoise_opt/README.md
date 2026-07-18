@@ -1,79 +1,30 @@
-# DenoiseOpt paper (arXiv-style)
+# DenoiseOpt paper (local mirror)
 
-**Author:** Julian M. Kleber  
-**ORCID:** [0000-0001-5518-0932](https://orcid.org/0000-0001-5518-0932)  
-**Email:** [julian.m.kleber@gmail.com](mailto:julian.m.kleber@gmail.com)
+Canonical versioned paper: **[reeldemo/denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta)** → `paper/v2/`.
 
-## Repositories
-
-| Repo | Role |
-|------|------|
-| [reeldemo/reelsynth](https://github.com/reeldemo/reelsynth) | Synth DSP, frozen `FROZEN_THETA`, benches |
-| [reeldemo/denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta) | Public paper PDF, 1500-trial JSON, figures, scripts |
-
-Sources: `main.tex` (article class, arXiv-friendly). Figures under `figures/`. Compiled PDF: `main.pdf`.
-
-## Meta objective (residual vs ideal)
-
-Primary outer objective for champion ranking is a **prolonged residual score** ∈ [0, 1] (**1 = best**):
+## Meta objective (residual)
 
 \[
 \mathrm{score}=\mathrm{clamp}\!\left(1-\frac{\mathrm{rms}(y_{\mathrm{engine}}-y_{\mathrm{ideal}})}{\max(\mathrm{rms}(y_{\mathrm{ideal}}),\varepsilon)},\,0,\,1\right)
 \]
 
-- \(y_{\mathrm{ideal}}\): same seed / family generator **without** open-wrap cliffs (`generate_sound_ideal`), tiled \(N{=}16\) periods.
-- \(y_{\mathrm{engine}}\): DenoiseOpt on the (possibly open-wrap) baked cycle, then tiled \(N{=}16\) (cyclic playback).
-- Wrap-energy D/S proxies remain **auxiliaries** in reports; soft shape gate \(\mathcal{S}\ge 0.97\) still applies.
+- Ideal: `generate_sound_ideal`, tiled $N{=}16$
+- Engine: DenoiseOpt(`generate_sound`), tiled $N{=}16$
+- Soft gate: $\mathcal{S}\ge 0.97$ else $\times 0.45$
+- Nested inner loss opt on $L=(1-\mathcal{D})+\lambda(1-\mathcal{S})$
 
-`FROZEN_THETA` is **not** auto-updated by residual ranking — re-lock only after an intentional full 1500 run.
+## Headline (1500 trials)
 
-## 1500-trial summary
+| Algorithm | Residual |
+|-----------|----------|
+| Naive DualCosine | 0.698 |
+| Meta Top 1 `evo_explore_515` | **0.824** |
 
-Literature-informed meta-learning / HPO over six prior families (`bayes_local`, `pbt_exploit`, `mo_shape`, `evo_explore`, `racing_mid`, …). Prior D/S champion: **`racing_mid_1043`** (historical Q≈0.790). Re-run under residual objective to refresh Top-4.
-
-| Algorithm | \(Q\) (matrix, \(N{=}2000\), historical D/S) |
-|-----------|------------------------------|
-| Naive DualCosine | ≈ 0.789 |
-| Meta Top 1 (`racing_mid`) | ≈ 0.790 |
-| Meta Top 2–4 | ≈ 0.790 |
-
-Shape stays \(\mathcal{S}\approx 0.997\) on Top 1. Artifacts: `brand/artifacts/denoise_opt_meta_1500.json`. Frozen θ in `src/denoise_opt.rs` matches prior champion `theta`.
-
-### Re-run commands
-
-```bash
-# Short sanity (residual ranking smoke test)
-cargo run -p reelsynth --release --bin bench_denoise_meta -- 40
-
-# Full 1500 (writes brand/artifacts/denoise_opt_meta_1500.json)
-cargo run -p reelsynth --release --bin bench_denoise_meta
-```
-
-## Build
-
-```bash
-cd docs/papers/denoise_opt
-pdflatex -interaction=nonstopmode main.tex
-pdflatex -interaction=nonstopmode main.tex
-```
-
-Or upload `main.tex` + `figures/` to Overleaf / arXiv. Mirror release: [denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta).
-
-## Regenerating figures
+## Reproduce
 
 ```bash
 cargo run -p reelsynth --release --bin bench_denoise_meta
 python brand/artifacts/render_benchmark_matrix.py
-python brand/artifacts/render_paper_figures.py
-copy brand\artifacts\fig_*.png docs\papers\denoise_opt\figures\
+# Full paper:
+#   cd ../denoise-opt-meta/paper/v2 && pdflatex main.tex
 ```
-
-## Literature
-
-Harvested with **Klaut Research MCP** (local mode → OpenAlex/Crossref/arXiv):
-
-- `brand/artifacts/literature_klaut_research.json`
-- `brand/artifacts/literature_meta_audio.json`
-- `brand/artifacts/literature_core_citations.json`
-
-Paper distinguishes **used** vs **screened** sources in Related Work and the bibliography.

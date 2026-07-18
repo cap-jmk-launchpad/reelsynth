@@ -12,21 +12,22 @@ use serde_json::json;
 pub const N_THETA: usize = 12;
 pub const LAMBDA_SHAPE: f32 = 1.0;
 
-/// Frozen after 1500-trial literature-informed meta-learning (champion meta_top1 /
-/// `racing_mid_1043`). Regenerate via `bench_denoise_meta`.
+/// Frozen after 1500-trial residual-objective bi-level meta (champion meta_top1 /
+/// `evo_explore_515`). Primary score: prolonged residual vs ideal. Regenerate via
+/// `bench_denoise_meta`.
 pub const FROZEN_THETA: [f32; N_THETA] = [
-    0.8718, // detrend / seam pull
-    0.7899, // fade length scale
-    0.8005, // dual target blend
-    0.4205, // raised-cosine weight
-    0.8460, // secondary tail fade
-    0.5204, // ease gamma
-    0.4648, // polish wet
+    0.6743, // detrend / seam pull
+    0.3573, // fade length scale
+    0.7695, // dual target blend
+    0.2606, // raised-cosine weight
+    0.7395, // secondary tail fade
+    0.4262, // ease gamma
+    0.2884, // polish wet
     0.0,    // reserved (mid always dry)
-    0.4965, // head/tail asymmetry
-    0.9064, // wrap pin
-    0.5363, // base fade scale knob
-    0.6869, // second polish wet
+    0.4770, // head/tail asymmetry
+    0.6788, // wrap pin
+    0.4341, // base fade scale knob
+    0.4200, // second polish wet
 ];
 
 #[derive(Debug, Clone, Copy)]

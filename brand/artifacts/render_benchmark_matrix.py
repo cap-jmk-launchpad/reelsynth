@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Benchmark matrix + paper figures for 1500-trial meta-learning study."""
+"""Benchmark matrix + paper figures for residual-objective meta-learning."""
 
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -12,6 +13,7 @@ import numpy as np
 ART = Path(__file__).resolve().parent
 BG, PANEL, TEXT, MUTED = "#0b0f14", "#121820", "#e8eef4", "#8b9aab"
 ACCENT, ACCENT2, WARN, GRID = "#3d9ecb", "#5ec8a0", "#e0a15c", "#1e2a36"
+RES = "#c77dff"
 
 
 def style():
@@ -34,17 +36,15 @@ def style():
 def fig_benchmark_matrix():
     meta = json.loads((ART / "denoise_opt_meta_1500.json").read_text())
     rows = meta["benchmark_matrix_5"]
-    # ensure order: naive then top1..4
-    labels = []
-    D, S, Q = [], [], []
+    labels, R, D, S = [], [], [], []
     for r in rows:
         name = r["algo"].replace("naive_dual_cosine", "Naive\nDualCosine").replace(
             "meta_top", "Meta\nTop "
         )
         labels.append(name)
+        R.append(r["residual"])
         D.append(r["denoise"])
         S.append(r["shape"])
-        Q.append(r["quality"])
 
     style()
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.8), dpi=220)
@@ -52,31 +52,30 @@ def fig_benchmark_matrix():
     ax = axes[0]
     x = np.arange(len(labels))
     w = 0.25
-    ax.bar(x - w, D, w, color=ACCENT, label=r"$\mathcal{D}$ denoise")
-    ax.bar(x, S, w, color=ACCENT2, label=r"$\mathcal{S}$ shape")
-    ax.bar(x + w, Q, w, color=WARN, label=r"$Q$ quality")
+    ax.bar(x - w, R, w, color=RES, label=r"residual (primary)")
+    ax.bar(x, D, w, color=ACCENT, label=r"$\mathcal{D}$ denoise")
+    ax.bar(x + w, S, w, color=ACCENT2, label=r"$\mathcal{S}$ shape")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=9)
     ax.set_ylim(0.55, 1.02)
     ax.set_ylabel("Score")
-    ax.set_title("Five-algorithm benchmark matrix (val $N{=}2000$)")
+    ax.set_title("Five-algorithm matrix — residual primary (val $N{=}2000$)")
     ax.legend(facecolor=PANEL, edgecolor=GRID, labelcolor=TEXT, fontsize=9)
     ax.grid(True, axis="y", alpha=0.85)
     ax.text(
         0.02,
         0.04,
-        r"$L=(1-\mathcal{D})+\lambda(1-\mathcal{S})$  ·  1500 lit-informed trials",
+        r"outer: residual  ·  inner: $L=(1-\mathcal{D})+\lambda(1-\mathcal{S})$  ·  1500 trials",
         transform=ax.transAxes,
-        fontsize=9,
+        fontsize=8,
         color=MUTED,
     )
 
     ax = axes[1]
-    # Heatmap matrix metrics x algorithms
-    M = np.array([D, S, Q])
+    M = np.array([R, D, S])
     im = ax.imshow(M, aspect="auto", cmap="viridis", vmin=0.55, vmax=1.0)
     ax.set_yticks([0, 1, 2])
-    ax.set_yticklabels([r"$\mathcal{D}$", r"$\mathcal{S}$", r"$Q$"])
+    ax.set_yticklabels([r"residual", r"$\mathcal{D}$", r"$\mathcal{S}$"])
     ax.set_xticks(range(len(labels)))
     ax.set_xticklabels(labels, fontsize=9)
     ax.set_title("Metric × algorithm heatmap")
@@ -105,10 +104,7 @@ def fig_benchmark_matrix():
 def fig_prior_hist():
     meta = json.loads((ART / "denoise_opt_meta_1500.json").read_text())
     top = meta.get("pareto_top20_fast") or []
-    from collections import Counter
-
     c = Counter(t.get("prior", "?") for t in top)
-    # also count from top4
     for t in meta["top4"]:
         c[t.get("prior", "?")] += 3
 
@@ -118,7 +114,7 @@ def fig_prior_hist():
     vals = [c[k] for k in keys]
     ax.barh(keys, vals, color=ACCENT)
     ax.set_xlabel("Weighted presence in top-20 / top-4")
-    ax.set_title("Literature-informed prior families among elite trials")
+    ax.set_title("Prior families among elite residual-ranked trials")
     ax.grid(True, axis="x", alpha=0.8)
     fig.tight_layout()
     out = ART / "fig_prior_families.png"
@@ -130,34 +126,36 @@ def fig_prior_hist():
 def fig_pareto_1500():
     meta = json.loads((ART / "denoise_opt_meta_1500.json").read_text())
     pts = meta.get("pareto_top20_fast") or []
-    d = [p["val_fast"]["denoise"] for p in pts]
-    s = [p["val_fast"]["shape"] for p in pts]
+    res = [p["val_fast"]["residual"] for p in pts]
+    loss = [p["val_fast"]["loss"] for p in pts]
     style()
     fig, ax = plt.subplots(figsize=(8.5, 6.5), dpi=200)
-    ax.scatter(d, s, c=range(len(d)), cmap="plasma", s=80, edgecolors=BG)
+    ax.scatter(loss, res, c=range(len(res)), cmap="plasma", s=80, edgecolors=BG)
     for i, p in enumerate(pts[:5]):
         ax.annotate(
             p.get("prior", ""),
-            (d[i], s[i]),
+            (loss[i], res[i]),
             textcoords="offset points",
             xytext=(6, 4),
             fontsize=8,
             color=MUTED,
         )
-    # mark matrix algos
     for r in meta["benchmark_matrix_5"]:
         if r["kind"] == "meta":
+            L = (1.0 - r["denoise"]) + (1.0 - r["shape"])
             ax.scatter(
-                [r["denoise"]],
-                [r["shape"]],
+                [L],
+                [r["residual"]],
                 s=160,
                 facecolors=ACCENT2,
                 edgecolors=TEXT,
                 zorder=5,
             )
+    naive = meta["benchmark_matrix_5"][0]
+    Ln = (1.0 - naive["denoise"]) + (1.0 - naive["shape"])
     ax.scatter(
-        [meta["benchmark_matrix_5"][0]["denoise"]],
-        [meta["benchmark_matrix_5"][0]["shape"]],
+        [Ln],
+        [naive["residual"]],
         s=160,
         marker="D",
         facecolors=WARN,
@@ -165,9 +163,9 @@ def fig_pareto_1500():
         zorder=5,
         label="naive DualCosine",
     )
-    ax.set_xlabel(r"Denoise $\mathcal{D}$")
-    ax.set_ylabel(r"Shape $\mathcal{S}$")
-    ax.set_title("Elite trials after 1500-run meta search")
+    ax.set_xlabel(r"Unsupervised loss proxy $(1-\mathcal{D})+(1-\mathcal{S})$")
+    ax.set_ylabel(r"Residual score (1 = best)")
+    ax.set_title("Elite trials — residual vs loss (1500-run meta)")
     ax.grid(True, alpha=0.85)
     ax.legend(facecolor=PANEL, edgecolor=GRID, labelcolor=TEXT)
     fig.tight_layout()

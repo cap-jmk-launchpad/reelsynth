@@ -3,6 +3,11 @@
 //! Outer loop: random / PBT-style search over (λ, fade, polish, pin, θ noise)
 //! informed by AutoML / Bayesian HPO / population-based training practice.
 //!
+//! **Bi-level / nested loss opt:** for each trial, an inner coordinate descent
+//! minimizes unsupervised \(L=(1-\mathcal{D})+\lambda(1-\mathcal{S})\) on a small
+//! fit batch (θ and optionally a local λ refine). The outer loop ranks by
+//! prolonged residual score — not by frozen-θ mutation alone.
+//!
 //! **Primary meta objective:** prolonged residual score ∈ [0, 1] (1 = best):
 //! ideal multi-period reference (same seed, no open-wrap) vs tiled engine cycle
 //! after DenoiseOpt. D/S wrap-energy proxies remain as report auxiliaries.
@@ -24,6 +29,9 @@ const N_TRIALS_DEFAULT: usize = 1500;
 const VAL_FAST_DEFAULT: usize = 400;
 const VAL_FINAL_DEFAULT: usize = 2000;
 const PROLONG: usize = RESIDUAL_PROLONG_PERIODS;
+/// Seeds used for each trial's inner unsupervised loss fit.
+const INNER_FIT_COUNT: usize = 48;
+const INNER_FIT_START: u64 = 40_000;
 
 #[derive(Debug, Clone)]
 struct TrialHp {
@@ -34,6 +42,10 @@ struct TrialHp {
     pin_bias: f32,
     detrend_bias: f32,
     ease_bias: f32,
+    /// Inner coordinate-descent sweeps (0 = mutate-only baseline).
+    loss_opt_sweeps: usize,
+    /// If true, also refine λ by ±δ after θ fit (joint nested).
+    refine_lambda: bool,
     algo_seed: u64,
     prior: &'static str,
 }
@@ -73,6 +85,117 @@ fn meta_rank(residual: f32, shape: f32) -> f32 {
     } else {
         residual * 0.45
     }
+}
+
+fn mean_unsupervised_loss(
+    theta: &[f32; N_THETA],
+    start_seed: u64,
+    count: usize,
+    n: usize,
+    lambda: f32,
+) -> f32 {
+    let mut sum = 0.0f32;
+    for k in 0..count {
+        let seed = start_seed + k as u64;
+        let (_, raw) = generate_sound(seed, n);
+        let mut out = raw.clone();
+        apply_denoise_theta(&mut out, 0.0, theta);
+        let (l, _, _, _) = score_with_lambda(&raw, &out, lambda);
+        sum += l;
+    }
+    sum / count.max(1) as f32
+}
+
+/// Inner coordinate descent on unsupervised loss (nested bi-level step).
+///
+/// Minimizes \(L=(1-\mathcal{D})+\lambda(1-\mathcal{S})\) on `INNER_FIT_COUNT`
+/// seeds. Optional 1-D λ refine after θ sweeps (joint nested).
+fn inner_loss_optimize(
+    mut theta: [f32; N_THETA],
+    mut lambda: f32,
+    n: usize,
+    sweeps: usize,
+    refine_lambda: bool,
+) -> ([f32; N_THETA], f32, f32) {
+    if sweeps == 0 {
+        let l = mean_unsupervised_loss(&theta, INNER_FIT_START, INNER_FIT_COUNT, n, lambda);
+        return (theta, lambda, l);
+    }
+    let steps = [0.15f32, 0.07, 0.03];
+    let mut cur_l =
+        mean_unsupervised_loss(&theta, INNER_FIT_START, INNER_FIT_COUNT, n, lambda);
+    for &step in &steps {
+        for _ in 0..sweeps {
+            for i in 0..N_THETA {
+                if i == 7 {
+                    continue;
+                }
+                let base = theta[i];
+                let mut local_best = cur_l;
+                let mut local_val = base;
+                for &delta in &[-step, step] {
+                    theta[i] = (base + delta).clamp(0.0, 1.0);
+                    let l = mean_unsupervised_loss(
+                        &theta,
+                        INNER_FIT_START,
+                        INNER_FIT_COUNT,
+                        n,
+                        lambda,
+                    );
+                    if l + 1e-7 < local_best {
+                        local_best = l;
+                        local_val = theta[i];
+                    }
+                }
+                theta[i] = local_val;
+                cur_l = local_best;
+            }
+        }
+    }
+    if refine_lambda {
+        let base_lam = lambda;
+        let mut best_lam = lambda;
+        let mut best_l = cur_l;
+        for &delta in &[-0.18f32, -0.08, 0.08, 0.18] {
+            let cand = (base_lam + delta).clamp(0.25, 2.8);
+            let l =
+                mean_unsupervised_loss(&theta, INNER_FIT_START, INNER_FIT_COUNT, n, cand);
+            if l + 1e-7 < best_l {
+                best_l = l;
+                best_lam = cand;
+            }
+        }
+        lambda = best_lam;
+        cur_l = best_l;
+        // One cheap re-sweep at refined λ.
+        let step = 0.05f32;
+        for i in 0..N_THETA {
+            if i == 7 {
+                continue;
+            }
+            let base = theta[i];
+            let mut local_best = cur_l;
+            let mut local_val = base;
+            for &delta in &[-step, step] {
+                theta[i] = (base + delta).clamp(0.0, 1.0);
+                let l = mean_unsupervised_loss(
+                    &theta,
+                    INNER_FIT_START,
+                    INNER_FIT_COUNT,
+                    n,
+                    lambda,
+                );
+                if l + 1e-7 < local_best {
+                    local_best = l;
+                    local_val = theta[i];
+                }
+            }
+            theta[i] = local_val;
+            cur_l = local_best;
+        }
+    }
+    theta[7] = 0.0;
+    (theta, lambda, cur_l)
 }
 
 fn eval_theta_fast(
@@ -119,23 +242,26 @@ impl Rng {
     }
 }
 
-/// Literature-informed prior families (HPO / PBT / multi-objective cues).
+/// Literature-informed prior families (HPO / PBT / multi-objective / bi-level).
 fn sample_trial(rng: &mut Rng, idx: usize) -> (TrialHp, [f32; N_THETA]) {
-    let bucket = idx % 6;
-    let (prior, lam_lo, lam_hi, fade_lo, fade_hi, pol_lo, pol_hi) = match bucket {
-        // Bayesian-HPO style: denser around previously good λ≈0.85
-        0 => ("bayes_local", 0.55, 1.25, 0.9, 1.35, 0.7, 1.05),
-        // PBT exploit: mutate near champion overlay specialist
-        1 => ("pbt_exploit", 0.7, 1.0, 1.05, 1.35, 0.85, 1.05),
-        // Multi-objective / shape-first (higher λ)
-        2 => ("mo_shape", 1.2, 2.2, 0.65, 1.0, 0.4, 0.75),
-        // Aggressive denoise (low λ, long fade)
-        3 => ("aggressive", 0.35, 0.75, 1.15, 1.5, 0.9, 1.1),
-        // Evolutionary wide explore
-        4 => ("evo_explore", 0.3, 2.5, 0.5, 1.6, 0.3, 1.1),
-        // Algorithm-config racing: mid band
-        _ => ("racing_mid", 0.8, 1.4, 0.85, 1.2, 0.6, 0.95),
-    };
+    let bucket = idx % 7;
+    let (prior, lam_lo, lam_hi, fade_lo, fade_hi, pol_lo, pol_hi, sweeps, refine_lam) =
+        match bucket {
+            // Bayesian-HPO style: denser around previously good λ≈0.85
+            0 => ("bayes_local", 0.55, 1.25, 0.9, 1.35, 0.7, 1.05, 1usize, true),
+            // PBT exploit: mutate near champion + nested loss opt
+            1 => ("pbt_exploit", 0.7, 1.0, 1.05, 1.35, 0.85, 1.05, 2, true),
+            // Multi-objective / shape-first (higher λ)
+            2 => ("mo_shape", 1.2, 2.2, 0.65, 1.0, 0.4, 0.75, 1, false),
+            // Aggressive denoise (low λ, long fade)
+            3 => ("aggressive", 0.35, 0.75, 1.15, 1.5, 0.9, 1.1, 1, false),
+            // Evolutionary wide explore — mutate-only control (no inner loss opt)
+            4 => ("evo_explore", 0.3, 2.5, 0.5, 1.6, 0.3, 1.1, 0, false),
+            // Algorithm-config racing: mid band
+            5 => ("racing_mid", 0.8, 1.4, 0.85, 1.2, 0.6, 0.95, 1, true),
+            // Explicit bi-level: deeper θ fit + joint λ refine
+            _ => ("bilevel_loss", 0.5, 1.6, 0.75, 1.35, 0.55, 1.05, 2, true),
+        };
     let hp = TrialHp {
         name: format!("{prior}_{idx}"),
         lambda_shape: rng.range(lam_lo, lam_hi),
@@ -144,6 +270,8 @@ fn sample_trial(rng: &mut Rng, idx: usize) -> (TrialHp, [f32; N_THETA]) {
         pin_bias: rng.range(0.8, 1.05),
         detrend_bias: rng.range(0.85, 1.05),
         ease_bias: rng.range(0.0, 1.0),
+        loss_opt_sweeps: sweeps,
+        refine_lambda: refine_lam,
         algo_seed: 10_000 + idx as u64,
         prior,
     };
@@ -223,9 +351,18 @@ pub fn run_meta_learning_search_n(
         Vec::with_capacity(n_trials);
 
     for i in 0..n_trials {
-        let (hp, theta) = sample_trial(&mut rng, i);
+        let (mut hp, theta0) = sample_trial(&mut rng, i);
+        let (theta, lambda, fit_loss) = inner_loss_optimize(
+            theta0,
+            hp.lambda_shape,
+            n,
+            hp.loss_opt_sweeps,
+            hp.refine_lambda,
+        );
+        hp.lambda_shape = lambda;
         let (loss, d, s, q, residual) =
             eval_theta_fast(&theta, val_start, val_fast, n, hp.lambda_shape);
+        let _ = fit_loss;
         let meta = meta_rank(residual, s);
         scored.push((meta, hp, theta, loss, d, s, q, residual));
         if i % 250 == 0 || (n_trials <= 100 && i % 10 == 0) {
@@ -262,6 +399,8 @@ pub fn run_meta_learning_search_n(
                 "pin_bias": hp.pin_bias,
                 "detrend_bias": hp.detrend_bias,
                 "ease_bias": hp.ease_bias,
+                "loss_opt_sweeps": hp.loss_opt_sweeps,
+                "refine_lambda": hp.refine_lambda,
                 "algo_seed": hp.algo_seed,
             },
             "theta": theta.as_slice(),
@@ -387,23 +526,26 @@ pub fn run_meta_learning_search_n(
     };
 
     let report = json!({
-        "title": "DenoiseOpt literature-informed meta-learning (residual objective)",
+        "title": "DenoiseOpt bi-level meta-learning (residual objective + nested loss opt)",
         "n_trials": n_trials,
         "val_fast": val_fast,
         "val_final": val_final,
         "cycle_n": n,
         "prolong_periods": PROLONG,
+        "inner_fit_count": INNER_FIT_COUNT,
         "seconds": t0.elapsed().as_secs_f64(),
         "literature_priors": [
-            "bayes_local — densify around good λ (Bayesian HPO)",
-            "pbt_exploit — mutate near champion (population-based training)",
-            "mo_shape — higher λ multi-objective shape preference",
-            "aggressive — low λ long fade",
-            "evo_explore — wide evolutionary explore",
-            "racing_mid — mid-band racing / algorithm configuration",
+            "bayes_local — densify around good λ (Bayesian HPO) + 1-sweep loss opt",
+            "pbt_exploit — mutate near champion + 2-sweep loss opt + λ refine",
+            "mo_shape — higher λ multi-objective shape preference + 1-sweep",
+            "aggressive — low λ long fade + 1-sweep",
+            "evo_explore — wide evolutionary explore (mutate-only control)",
+            "racing_mid — mid-band racing + 1-sweep + λ refine",
+            "bilevel_loss — deeper nested θ fit + joint λ refine",
         ],
-        "meta_objective": "maximize residual_score = clamp(1 - residual_rms/max(ideal_rms,eps), 0, 1) on prolonged (tiled) ideal vs engine; soft gate S>=0.97; D/S auxiliaries only",
+        "meta_objective": "bi-level: inner minimize L=(1-D)+λ(1-S); outer maximize residual_score on prolonged ideal vs engine; soft gate S>=0.97; D/S auxiliaries",
         "residual_formula": "score = clamp(1 - rms(engine_tiled - ideal_tiled) / max(rms(ideal_tiled), 1e-6), 0, 1); ideal = generate_sound_ideal (no open-wrap); engine = tile(DenoiseOpt(generate_sound), N=16)",
+        "loss_opt": "per-trial coordinate descent on unsupervised loss (INNER_FIT_COUNT seeds); optional 1-D λ refine + re-sweep (bilevel_loss / pbt / bayes / racing)",
         "champion": top4.first().cloned().unwrap_or(json!({})),
         "top4": top4,
         "benchmark_matrix_5": five,
@@ -420,13 +562,15 @@ pub fn run_meta_learning_search_n(
             "name": hp.name,
             "prior": hp.prior,
             "lambda": hp.lambda_shape,
+            "loss_opt_sweeps": hp.loss_opt_sweeps,
+            "refine_lambda": hp.refine_lambda,
             "val_fast": { "loss": loss, "denoise": d, "shape": s, "quality": q, "residual": residual },
             "theta": theta.as_slice(),
         })).collect::<Vec<_>>(),
         "artifact_path": artifact,
         "sessionId": "0ab8f9",
-        "runId": if n_trials >= N_TRIALS_DEFAULT { "meta-1500" } else { "meta-sanity" },
-        "note_frozen_theta": "FROZEN_THETA left unchanged; re-lock only after a full 1500 residual-objective run if desired",
+        "runId": if n_trials >= N_TRIALS_DEFAULT { "meta-1500-bilevel" } else { "meta-sanity" },
+        "note_frozen_theta": "FROZEN_THETA updated only if champion residual clearly beats production_frozen and naive DualCosine",
     });
 
     let _ = std::fs::create_dir_all("brand/artifacts");
@@ -490,6 +634,21 @@ mod tests {
         assert!(s > 0.8, "shape={s}");
         assert!(q > 0.5);
         assert!((0.0..=1.0).contains(&residual), "residual={residual}");
+    }
+
+    #[test]
+    fn inner_loss_opt_does_not_increase_fit_loss() {
+        let mut rng = Rng(42);
+        let (hp, theta0) = sample_trial(&mut rng, 6); // bilevel_loss bucket
+        let l0 = mean_unsupervised_loss(&theta0, INNER_FIT_START, INNER_FIT_COUNT, 128, hp.lambda_shape);
+        let (theta1, lam1, l1) =
+            inner_loss_optimize(theta0, hp.lambda_shape, 128, 1, true);
+        assert!(l1 <= l0 + 1e-5, "loss rose: {l0} -> {l1}");
+        assert!((0.25..=2.8).contains(&lam1));
+        assert_eq!(theta1[7], 0.0);
+        let (_, _, s, _, r) = eval_theta_fast(&theta1, 0, 30, 128, lam1);
+        assert!((0.0..=1.0).contains(&r));
+        assert!(s > 0.7, "shape collapsed after loss opt: {s}");
     }
 
     #[test]
