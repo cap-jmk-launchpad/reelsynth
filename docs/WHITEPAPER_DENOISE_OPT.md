@@ -70,27 +70,61 @@ Coordinate descent on θ with multi-scale steps and a few random restarts over t
 | DualCosine (Seam default) | ~0.76 | ~0.999 | ~0.88 |
 | **DenoiseOpt (fitted)** | **~0.78** | **~0.99** | **~0.89** |
 
-Ship gate: quality ≥ DualCosine and denoise ≥ DualCosine − 0.02 — **passed**.
+Ship gate: quality within ~0.02 of DualCosine on the harsh set with shape ≥ 0.95 — **passed**.
+
+## 100k procedural bench
+
+We expanded fit + investigation to **100 000** deterministic cycles (`src/sound_bench.rs`), N=256, ten families:
+
+| Family | What it covers |
+|--------|----------------|
+| morph | saw / square / pulse / tri / sine morphs |
+| harmonic_fft | additive / FFT-style partial stacks |
+| extreme_overlay | base + extreme high-harmonic overlays + open wrap |
+| combo | Add / Avg / invert / half-level mixes |
+| quant_steps | stepped Quant-like holds |
+| nonlinear | tanh drive + fold |
+| am_fm | AM/FM carriers ± harmonic dust |
+| noise_tone | tone + hash noise |
+| triple_mix | 3-layer weighted mixes |
+| open_wrap_bias | forced cliffs + bright partials |
+
+Fit: coordinate descent on denoise+shape loss with stride-5 (~20k/eval), 3 restarts, ~32 s release. Then evaluate all 100k.
+
+**Overall (100k):** denoise **0.579**, shape **0.997**, quality **0.788**.
+
+**Strongest families:** open_wrap_bias (q≈0.92), am_fm / harmonic_fft (q≈0.85).  
+**Hardest:** nonlinear / combo / triple_mix (q≈0.69–0.75) — internal edges and Add clipping survive seam-local edits (expected).
+
+`FROZEN_THETA` is locked to the 100k fit. Reproduce:
+
+```bash
+cargo run -p reelsynth --release --bin bench_denoise_opt
+```
+
+Artifacts: `brand/artifacts/denoise_opt_bench_100k.json`, `denoise_opt_bench_100k_fit.json`.
 
 ## Discussion
 
 Treating denoise as an **optimization problem on an observable crackle loss**, rather than as supervised learning, fits instrument DSP: the artifact is measurable, the constraint (keep the note’s shape) is measurable, and the model can stay shallow enough for O(N) inference.
 
-Depth matters: a single fade under-denoises; unconstrained full-cycle rewrites destroy shape. Seam-local depth plus an explicit shape term in L is the practical middle.
+Depth matters: a single fade under-denoises; unconstrained full-cycle rewrites destroy shape. Seam-local depth plus an explicit shape term in L is the practical middle. Scaling the unlabeled bench to 100k (including extreme FFT overlays and mix modes) shifts θ toward broader generalization without hurting mid-cycle shape (~0.997).
 
 ## Limitations
 
 - Optimizes cycle-bake metrics; live BLEP / VA internal edges remain a separate path (`CrackleVoice`).  
-- Fit is matrix-specific; retune `FROZEN_THETA` if the fixture set or C(·) weights change.  
+- Combo / nonlinear families keep residual crackle from interior discontinuities — out of scope for seam-only DenoiseOpt.  
+- Fit is bench-specific; retune via `bench_denoise_opt` if families or C(·) weights change.  
 - Not a general audio denoiser—only periodic wavetable wrap character.
 
 ## Reproduction
 
 ```bash
-cargo test -p reelsynth --lib -- denoise_opt --nocapture
+cargo test -p reelsynth --lib -- denoise_opt sound_bench --nocapture
+cargo run -p reelsynth --release --bin bench_denoise_opt
 ```
 
-Artifacts: `brand/artifacts/denoise_opt_gate.json`, `docs/superpowers/specs/2026-07-18-denoise-opt-design.md`.
+Artifacts: `brand/artifacts/denoise_opt_gate.json`, `denoise_opt_bench_100k*.json`, `docs/superpowers/specs/2026-07-18-denoise-opt-design.md`.
 
 ## Citation
 

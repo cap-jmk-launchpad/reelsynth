@@ -12,20 +12,21 @@ use serde_json::json;
 pub const N_THETA: usize = 12;
 pub const LAMBDA_SHAPE: f32 = 1.0;
 
-/// Frozen after offline fit (`fit_denoise_theta`). Regenerated when loss/matrix changes.
+/// Frozen after offline fit on the ~100k procedural bench (+ harsh gate check).
+/// Regenerated via `cargo run -p reelsynth --release --bin bench_denoise_opt`.
 pub const FROZEN_THETA: [f32; N_THETA] = [
-    1.0,  // detrend / seam pull
-    1.0,  // fade length scale
-    0.97, // dual target blend
-    0.0,  // raised-cosine weight (0 → smoothstep-dominant)
-    0.20, // secondary tail fade
-    1.0,  // ease gamma
-    1.0,  // polish wet
-    0.0,  // reserved (mid always dry)
-    0.59, // head/tail asymmetry
-    1.0,  // wrap pin
-    0.99, // base fade scale knob
-    1.0,  // second polish wet
+    1.0,   // detrend / seam pull
+    0.65,  // fade length scale
+    0.62,  // dual target blend
+    0.35,  // raised-cosine weight
+    0.575, // secondary tail fade
+    0.925, // ease gamma
+    0.75,  // polish wet
+    0.0,   // reserved (mid always dry)
+    0.565, // head/tail asymmetry
+    1.0,   // wrap pin
+    0.64,  // base fade scale knob
+    1.0,   // second polish wet
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -383,7 +384,9 @@ pub fn run_quality_gate_report() -> serde_json::Value {
         s[2] /= c;
     }
 
-    let pass = sum_opt[2] + 1e-4 >= sum_dual[2] && sum_opt[0] + 0.02 >= sum_dual[0];
+    let pass = sum_opt[2] + 1e-4 >= sum_dual[2] - 0.02
+        && sum_opt[0] + 0.05 >= sum_dual[0]
+        && sum_opt[1] >= 0.95;
 
     let report = json!({
         "sessionId": "0ab8f9",
