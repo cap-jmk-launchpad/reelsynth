@@ -449,7 +449,134 @@ pub fn run_library_matrix(n: usize) -> serde_json::Value {
         "singles": singles,
         "combos": combos,
         "top_crackle_risks": risks,
+        "default_product": run_default_product_cases(n),
     })
+}
+
+/// Factory / UI launch defaults that users hear before any editing.
+pub fn run_default_product_cases(n: usize) -> serde_json::Value {
+    use crate::osc::{sample_stack, WtWarpMode};
+    use crate::patch::{Oscillator, Patch, WaveLayer};
+    use crate::seam::seam_mode_to_crackle;
+    use crate::voice::render_note_single_bank;
+    use crate::wavetable::WavetableBank;
+
+    let n = n.max(64);
+    let bank = WavetableBank::factory_saw_morph();
+    let dt = 1.0 / n as f32;
+
+    let render_osc = |osc: &Oscillator| -> Vec<f32> {
+        (0..n)
+            .map(|i| {
+                sample_stack(
+                    osc,
+                    &bank,
+                    std::slice::from_ref(&bank),
+                    &[],
+                    i as f32 / n as f32,
+                    dt,
+                    0.0,
+                    WtWarpMode::None,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                )
+            })
+            .collect()
+    };
+
+    // Design UI default stack (OscillatorUi::new_active): saw/sine/square Add.
+    let ui_default = Oscillator {
+        wave_layers: vec![
+            WaveLayer {
+                source_type: "saw".into(),
+                level: 0.5,
+                ..WaveLayer::default()
+            },
+            WaveLayer {
+                source_type: "sine".into(),
+                level: 0.35,
+                ..WaveLayer::default()
+            },
+            WaveLayer {
+                source_type: "square".into(),
+                level: 0.25,
+                ..WaveLayer::default()
+            },
+        ],
+        stack_mode: "add".into(),
+        ..Oscillator::default_va()
+    };
+    let ui_cycle = render_osc(&ui_default);
+    let ui_metrics = SignalMetrics::measure("ui_default_saw_sine_square_add", &ui_cycle);
+
+    // Same layers but Avg (cleaner reference).
+    let mut ui_avg = ui_default.clone();
+    ui_avg.stack_mode = "avg".into();
+    let ui_avg_metrics =
+        SignalMetrics::measure("ui_default_layers_avg", &render_osc(&ui_avg));
+
+    // Factory Lead launch preset (avg stack).
+    let lead = Patch::factory_lead();
+    let lead_osc = &lead.oscillators[0];
+    let lead_cycle = render_osc(lead_osc);
+    let lead_metrics = SignalMetrics::measure("factory_lead_stack_avg", &lead_cycle);
+
+    // Patch::default_mono — empty wave_layers, legacy single-source path.
+    let mono = Patch::default_mono();
+    let mono_osc = &mono.oscillators[0];
+    let mono_cycle = render_osc(mono_osc);
+    let mono_metrics = SignalMetrics::measure("default_mono_legacy", &mono_cycle);
+
+    // Default Seam·Adaptive → crackle 0 (eliminate).
+    let (crackle_adapt, _) = seam_mode_to_crackle("adaptive");
+    let (crackle_off, _) = seam_mode_to_crackle("off");
+
+    // Held notes (what long-tone crackle sounds like out of the box).
+    let held = |patch: &Patch, label: &str| {
+        let samples = render_note_single_bank(&bank, 261.63, 0.5, 44_100, patch);
+        let mut max_d = 0.0f32;
+        for w in samples.windows(2) {
+            max_d = max_d.max((w[1] - w[0]).abs());
+        }
+        json!({
+            "id": label,
+            "peak": peak_of(&samples),
+            "max_step": max_d,
+            "n": samples.len(),
+            "crackle_field": patch.crackle,
+        })
+    };
+
+    json!({
+        "ui_default_stack_mode": "add",
+        "ui_default_layers": ["saw@0.5", "sine@0.35", "square@0.25"],
+        "factory_lead_stack_mode": lead_osc.stack_mode,
+        "patch_crackle_default": lead.crackle,
+        "seam_adaptive_crackle": crackle_adapt,
+        "seam_off_crackle": crackle_off,
+        "cycles": [
+            ui_metrics.to_json(),
+            ui_avg_metrics.to_json(),
+            lead_metrics.to_json(),
+            mono_metrics.to_json(),
+        ],
+        "held_0_5s": [
+            held(&lead, "factory_lead"),
+            held(&mono, "default_mono"),
+        ],
+        "assertions_hint": {
+            "ui_default_add_riskier_than_avg": ui_metrics.max_step >= ui_avg_metrics.max_step
+                || ui_metrics.wrap >= ui_avg_metrics.wrap,
+            "factory_crackle_is_zero": lead.crackle.abs() < 1e-6,
+            "adaptive_means_eliminate": crackle_adapt < 0.05,
+        }
+    })
+}
+
+fn peak_of(frame: &[f32]) -> f32 {
+    frame.iter().copied().map(f32::abs).fold(0.0f32, f32::max)
 }
 
 #[cfg(test)]
@@ -530,5 +657,65 @@ mod tests {
             let w = wrap_harshness(&s.samples);
             assert!(w < 0.02, "{} wrap {w}", s.id);
         }
+    }
+
+    #[test]
+    fn default_product_cases_are_covered() {
+        let d = run_default_product_cases(256);
+        let cycles = d["cycles"].as_array().unwrap();
+        let ids: Vec<_> = cycles
+            .iter()
+            .filter_map(|c| c["id"].as_str())
+            .collect();
+        for need in [
+            "ui_default_saw_sine_square_add",
+            "ui_default_layers_avg",
+            "factory_lead_stack_avg",
+            "default_mono_legacy",
+        ] {
+            assert!(ids.contains(&need), "missing default case {need} in {ids:?}");
+        }
+        assert_eq!(d["ui_default_stack_mode"], "add");
+        assert!(
+            d["assertions_hint"]["factory_crackle_is_zero"]
+                .as_bool()
+                .unwrap_or(false),
+            "factory patch.crackle should default to 0 (clean)"
+        );
+        assert!(
+            d["assertions_hint"]["adaptive_means_eliminate"]
+                .as_bool()
+                .unwrap_or(false),
+            "Seam Adaptive should map to crackle≈0"
+        );
+        // UI default Add (saw+sine+square) must appear in diagnostics — it's the home sound.
+        let ui_add = cycles
+            .iter()
+            .find(|c| c["id"] == "ui_default_saw_sine_square_add")
+            .unwrap();
+        assert!(ui_add["max_step"].as_f64().unwrap() > 0.0);
+
+        // #region agent log
+        let payload = json!({
+            "sessionId": "0ab8f9",
+            "runId": "default-product",
+            "hypothesisId": "H-default-case",
+            "location": "signal_library.rs:default_product_cases_are_covered",
+            "message": "default UI + factory cases covered",
+            "data": d,
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        });
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("debug-0ab8f9.log")
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "{payload}");
+        }
+        // #endregion
     }
 }
