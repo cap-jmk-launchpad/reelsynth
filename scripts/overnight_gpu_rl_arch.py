@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-Overnight DenoiseOpt meta: PPO + PBT architecture search on CUDA.
+Overnight DenoiseOpt meta: PPO + GA + PBT architecture search on CUDA.
 
 Algorithms (named accurately — not claimed as SOTA):
   - PPO (Schulman et al.): clipped surrogate actor-critic for discrete arch/edit actions
+  - GA (Holland / Real aging-evo spirit): tournament + crossover + mutate on arch graphs
+  - ERL-inspired interleave (Khadka & Tumer spirit): GA generations between PPO rollouts
   - PBT-style population (Jaderberg et al.-inspired): exploit elites + mutate arch/hyperparams
-  - Discrete NAS over lit-inspired composable seam/cycle cells (U-Net, dilated, attn, …)
+  - Discrete NAS over lit-inspired composable seam/cycle cells (U-Net, dilated, attn, MoE, …)
+  - Depth bias: deeper graphs rewarded when residual holds above DualCosine + margin
+  - MoE soft gates over heterogeneous parallel experts (Shazeer-inspired, tiny)
 
 Primary score: prolonged residual R in [0,1] (1=best), vs DualCosine baseline.
 Dense history.jsonl every iter. Saves unfitted (arch JSON) and fitted (weights+arch).
 
-Arch complexity preferred over raw it/s; paper target remains 1M if rate allows,
+Arch complexity / depth / mixtures preferred over raw it/s; paper target remains 1M if rate allows,
 else honest retarget documented in run_meta.json.
 """
 from __future__ import annotations
@@ -37,10 +41,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from denoise_arch_blocks import (  # noqa: E402
     BLOCKS,
     CELL_KINDS,
+    MAX_GRAPH_LEN,
+    MAX_SEARCH_DEPTH,
+    MOE_MODES,
     ComposedSeamNet,
     TinyAdvHead,
     normalize_graph,
     random_block_graph,
+    random_moe_mode,
+)
+from denoise_meta_evo import (  # noqa: E402
+    depth_mixture_bonus,
+    ga_generation,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,17 +82,21 @@ OPS = [
 ]
 ACTS = ["relu", "tanh", "gelu", "silu"]
 
-# PPO action space expanded for block-graph edits
+# PPO action space expanded for block-graph / depth / MoE edits
 # 0 depth, 1 width, 2 act, 3 ops, 4 wet, 5 fir, 6 cell, 7 softmix,
-# 8 widen jump, 9 reset, 10 toggle block, 11 mutate graph, 12 adv aux
-N_ACTIONS = 13
-STATE_DIM = 32
-DEFAULT_SEED = 1_701_668_511  # complex-arch restart (Int32-safe for PS launchers)
+# 8 widen+deepen jump, 9 reset, 10 toggle block, 11 mutate graph,
+# 12 adv aux, 13 deepen bias, 14 toggle moe_parallel, 15 diversify mix
+N_ACTIONS = 16
+STATE_DIM = 36
+DEFAULT_SEED = 1_902_771_841  # RL+GA+depth+MoE restart (Int32-safe)
 ALGORITHMS = [
     "PPO",
+    "GA_crossover_mutate",
+    "ERL_inspired_interleave",
     "PBT",
     "discrete_NAS",
-    "soft_mix_cell",
+    "depth_bias",
+    "MoE_softgate_parallel",
     "composed_arch_graph",
     "lit_blocks_unet_dilated_attn_dualpath",
 ]
@@ -92,7 +108,7 @@ def utc_now() -> str:
 
 @dataclass
 class ArchConfig:
-    depth: int = 2
+    depth: int = 3
     width: int = 8
     act: str = "gelu"
     ops: list[str] = field(default_factory=lambda: ["mlp_seam", "dual_cosine", "fir3"])
@@ -100,14 +116,18 @@ class ArchConfig:
     fir: list[float] = field(default_factory=lambda: [0.25, 0.5, 0.25])
     cell_kind: str = "residual"
     soft_logits: list[float] = field(default_factory=lambda: [0.0] * len(OPS))
-    # Composable lit-inspired block graph (max 4)
+    # Composable lit-inspired block graph (max MAX_GRAPH_LEN)
     blocks: list[str] = field(default_factory=lambda: ["residual"])
     # Optional tiny adversarial auxiliary (generator-side only; not full GAN)
     use_adv_aux: bool = False
+    # sequential | moe_parallel (MoE soft gates over heterogeneous experts)
+    moe_mode: str = "sequential"
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["blocks"] = normalize_graph(self.blocks, self.cell_kind)
+        if d.get("moe_mode") not in MOE_MODES:
+            d["moe_mode"] = "sequential"
         return d
 
 
@@ -142,10 +162,22 @@ class SeamCell(nn.Module):
         self.cfg = cfg
         graph = normalize_graph(cfg.blocks, cfg.cell_kind)
         self.cfg.blocks = graph
+        if self.cfg.moe_mode not in MOE_MODES:
+            self.cfg.moe_mode = "sequential"
         h = max(2, min(48, cfg.width))
-        d = max(1, min(6, cfg.depth))
-        self.seam_net = ComposedSeamNet(MLP_IN, h, d, cfg.act, cfg.cell_kind, graph)
-        self.cycle_net = ComposedSeamNet(N, max(4, h // 2), max(1, d - 1), cfg.act, cfg.cell_kind, graph)
+        d = max(1, min(MAX_SEARCH_DEPTH, cfg.depth))
+        self.seam_net = ComposedSeamNet(
+            MLP_IN, h, d, cfg.act, cfg.cell_kind, graph, moe_mode=cfg.moe_mode
+        )
+        self.cycle_net = ComposedSeamNet(
+            N,
+            max(4, h // 2),
+            max(1, d - 1),
+            cfg.act,
+            cfg.cell_kind,
+            graph,
+            moe_mode=cfg.moe_mode,
+        )
         self.gate = nn.Parameter(torch.tensor(0.25))
         fir = list(cfg.fir) + [0.1, 0.1]
         self.fir = nn.Parameter(torch.tensor(fir[:5], dtype=torch.float32))
@@ -338,8 +370,18 @@ def apply_ops(frames: torch.Tensor, cell: SeamCell, ops: list[str]) -> torch.Ten
     }
     complex_cell = cell.cfg.cell_kind not in ("mlp",) or len(cell.cfg.blocks) > 1
     if set(ops) & net_ops or cell.cfg.cell_kind == "soft_mix" or complex_cell:
-        if "cycle_net" in ops or any(
-            b in cell.cfg.blocks for b in ("unet", "conv1d", "dilated", "attn", "dual_path", "tf_split", "noise_cond")
+        if "cycle_net" in ops or cell.cfg.moe_mode == "moe_parallel" or any(
+            b in cell.cfg.blocks
+            for b in (
+                "unet",
+                "conv1d",
+                "dilated",
+                "attn",
+                "dual_path",
+                "tf_split",
+                "noise_cond",
+                "moe_mix",
+            )
         ):
             out = cell.forward_cycle(out)
         x = pack_seam(out)
@@ -375,7 +417,7 @@ def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> to
     soft_max = max(cfg.soft_logits) if cfg.soft_logits else 0.0
     block_bits = [1.0 if b in cfg.blocks else 0.0 for b in BLOCKS]
     extras = [
-        cfg.depth / 6.0,
+        cfg.depth / float(MAX_SEARCH_DEPTH),
         cfg.width / 48.0,
         act_id,
         cfg.wet,
@@ -386,9 +428,11 @@ def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> to
         hp.entropy_coef,
         soft_max,
         1.0 if cfg.use_adv_aux else 0.0,
-        len(cfg.blocks) / 4.0,
+        len(cfg.blocks) / float(MAX_GRAPH_LEN),
+        1.0 if cfg.moe_mode == "moe_parallel" else 0.0,
+        float(len(set(cfg.blocks) & {"unet", "attn", "dilated", "dual_path"})) / 4.0,
     ]
-    vec = (op_bits + block_bits[:8] + extras)[:STATE_DIM]
+    vec = (op_bits + block_bits[:10] + extras)[:STATE_DIM]
     while len(vec) < STATE_DIM:
         vec.append(0.0)
     return torch.tensor(vec, dtype=torch.float32, device=device)
@@ -414,8 +458,10 @@ def ensure_trainable_ops(ops: list[str]) -> list[str]:
 def random_arch(rng: random.Random) -> ArchConfig:
     k = rng.randint(2, min(7, len(OPS)))
     cell = rng.choice(CELL_KINDS)
+    # Depth-biased prior: skew toward deeper nets (still capped)
+    depth = int(round(rng.betavariate(2.5, 1.4) * (MAX_SEARCH_DEPTH - 1))) + 1
     return ArchConfig(
-        depth=rng.randint(1, 6),
+        depth=depth,
         width=rng.choice([4, 6, 8, 12, 16, 24, 32, 40, 48]),
         act=rng.choice(ACTS),
         ops=ensure_trainable_ops(rng.sample(OPS, k=k)),
@@ -423,8 +469,9 @@ def random_arch(rng: random.Random) -> ArchConfig:
         fir=[rng.uniform(0.05, 0.55) for _ in range(5)],
         cell_kind=cell,
         soft_logits=[rng.uniform(-1.0, 1.0) for _ in range(len(OPS))],
-        blocks=random_block_graph(rng, cell, max_extra=2),
+        blocks=random_block_graph(rng, cell, max_extra=min(4, MAX_GRAPH_LEN - 1)),
         use_adv_aux=rng.random() < 0.15,
+        moe_mode=random_moe_mode(rng),
     )
 
 
@@ -442,7 +489,8 @@ def random_hp(rng: random.Random) -> HyperParams:
 def mutate_arch(cfg: ArchConfig, action: int, rng: random.Random) -> ArchConfig:
     c = ArchConfig(**cfg.to_dict())
     if action == 0:
-        c.depth = max(1, min(6, c.depth + rng.choice([-1, 1])))
+        # Depth step (asymmetric: slight deepen bias)
+        c.depth = max(1, min(MAX_SEARCH_DEPTH, c.depth + rng.choice([-1, 1, 1])))
     elif action == 1:
         c.width = max(4, min(48, c.width + rng.choice([-4, -2, -1, 1, 2, 4])))
     elif action == 2:
@@ -469,7 +517,8 @@ def mutate_arch(cfg: ArchConfig, action: int, rng: random.Random) -> ArchConfig:
             c.soft_logits.append(rng.uniform(-0.5, 0.5))
         c.soft_logits = c.soft_logits[: len(OPS)]
     elif action == 8:
-        c.depth = rng.randint(2, 6)
+        # Widen + deepen jump
+        c.depth = rng.randint(max(3, c.depth), MAX_SEARCH_DEPTH)
         c.width = rng.choice([8, 12, 16, 24, 32, 48])
     elif action == 9:
         c = random_arch(rng)
@@ -481,11 +530,27 @@ def mutate_arch(cfg: ArchConfig, action: int, rng: random.Random) -> ArchConfig:
         else:
             c.blocks = normalize_graph(list(c.blocks) + [b], c.cell_kind)
     elif action == 11:
-        c.blocks = random_block_graph(rng, c.cell_kind, max_extra=3)
-    else:
+        c.blocks = random_block_graph(rng, c.cell_kind, max_extra=min(5, MAX_GRAPH_LEN - 1))
+    elif action == 12:
         c.use_adv_aux = not c.use_adv_aux
+    elif action == 13:
+        # Explicit deepen bias action
+        c.depth = max(1, min(MAX_SEARCH_DEPTH, c.depth + rng.randint(1, 3)))
+    elif action == 14:
+        c.moe_mode = "moe_parallel" if c.moe_mode != "moe_parallel" else "sequential"
+        if c.moe_mode == "moe_parallel" and len(c.blocks) < 2:
+            c.blocks = random_block_graph(rng, c.cell_kind, max_extra=3)
+    else:
+        # Diversify mixture toward heterogeneous experts
+        prefer = [b for b in ("unet", "attn", "dilated", "dual_path", "dense", "moe_mix") if b != c.cell_kind]
+        extra = rng.sample(prefer, k=min(3, len(prefer)))
+        c.blocks = normalize_graph([c.cell_kind] + extra, c.cell_kind)
+        if rng.random() < 0.5:
+            c.moe_mode = "moe_parallel"
     c.ops = ensure_trainable_ops(c.ops)
     c.blocks = normalize_graph(c.blocks, c.cell_kind)
+    if c.moe_mode not in MOE_MODES:
+        c.moe_mode = "sequential"
     return c
 
 
@@ -535,7 +600,17 @@ def arch_diversity(pop: list[Individual]) -> float:
             cell_diff = 0.0 if a.cell_kind == b.cell_kind else 1.0
             act_diff = 0.0 if a.act == b.act else 1.0
             wdiff = abs(a.width - b.width) / 48.0
-            total += 0.3 * ham + 0.3 * bham + 0.2 * cell_diff + 0.1 * act_diff + 0.1 * wdiff
+            ddiff = abs(a.depth - b.depth) / float(MAX_SEARCH_DEPTH)
+            moe_diff = 0.0 if a.moe_mode == b.moe_mode else 1.0
+            total += (
+                0.22 * ham
+                + 0.22 * bham
+                + 0.16 * cell_diff
+                + 0.08 * act_diff
+                + 0.08 * wdiff
+                + 0.12 * ddiff
+                + 0.12 * moe_diff
+            )
             pairs += 1
     return total / max(pairs, 1)
 
@@ -771,9 +846,9 @@ def ppo_update(
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="PPO + PBT overnight complex-arch search (not claimed SOTA)"
+        description="PPO+GA+PBT overnight depth/mixture arch search (not claimed SOTA)"
     )
-    ap.add_argument("--iters", type=int, default=270_000)
+    ap.add_argument("--iters", type=int, default=1_000_000)
     ap.add_argument("--ckpt-every", type=int, default=500)
     ap.add_argument(
         "--history-every",
@@ -785,16 +860,21 @@ def main() -> int:
     ap.add_argument("--fit-steps", type=int, default=24)
     ap.add_argument("--device", type=str, default="cuda")
     ap.add_argument("--run-id", type=str, default="")
-    ap.add_argument("--max-hours", type=float, default=24.0)
+    ap.add_argument("--max-hours", type=float, default=240.0)
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
     ap.add_argument("--pop-size", type=int, default=12)
     ap.add_argument("--ppo-horizon", type=int, default=32)
     ap.add_argument("--pbt-every", type=int, default=50)
-    ap.add_argument("--algo-tag", type=str, default="PPO+PBT+NAS+complex_arch")
+    ap.add_argument("--ga-every", type=int, default=40)
+    ap.add_argument(
+        "--algo-tag",
+        type=str,
+        default="PPO+GA+PBT+NAS+depth+MoE",
+    )
     ap.add_argument(
         "--target-note",
         type=str,
-        default="prefer_arch_complexity; keep_1M_if_rate_ok_else_retarget_200k_500k",
+        default="prefer_depth_and_mixtures; keep_1M_if_rate_ok_else_retarget_honestly",
     )
     args = ap.parse_args()
     if args.history_every < 1:
@@ -842,10 +922,12 @@ def main() -> int:
         f"dual_cosine_baseline={baseline:.4f} target_iters={args.iters} "
         f"max_hours={args.max_hours} history_every={args.history_every} "
         f"seed={args.seed} pop_size={args.pop_size} ppo_horizon={args.ppo_horizon} "
-        f"pbt_every={args.pbt_every} blocks={BLOCKS} cell_kinds={CELL_KINDS} "
+        f"pbt_every={args.pbt_every} ga_every={args.ga_every} "
+        f"max_depth={MAX_SEARCH_DEPTH} max_graph={MAX_GRAPH_LEN} "
+        f"blocks={BLOCKS} cell_kinds={CELL_KINDS} "
         f"history_path={history_path} "
         f"local_start={now_local.isoformat(timespec='seconds')} "
-        f"note=not_claimed_SOTA complex_arch_graphs",
+        f"note=not_claimed_SOTA PPO+GA+depth+MoE_ERL_inspired",
     )
     (run_dir / "run_meta.json").write_text(
         json.dumps(
@@ -866,15 +948,23 @@ def main() -> int:
                 "pop_size": args.pop_size,
                 "ppo_horizon": args.ppo_horizon,
                 "pbt_every": args.pbt_every,
+                "ga_every": args.ga_every,
+                "max_search_depth": MAX_SEARCH_DEPTH,
+                "max_graph_len": MAX_GRAPH_LEN,
                 "n_ops": len(OPS),
                 "ops": OPS,
                 "cell_kinds": CELL_KINDS,
                 "blocks": BLOCKS,
+                "moe_modes": list(MOE_MODES),
                 "target_note": args.target_note,
-                "literature_artifact": "brand/artifacts/literature_audio_denoise_arch.json",
+                "literature_artifact": "brand/artifacts/literature_rl_ga_nas_hybrid.json",
+                "literature_arch_artifact": "brand/artifacts/literature_audio_denoise_arch.json",
                 "pid": os.getpid(),
                 "started_at": utc_now(),
-                "note": "PPO+PBT+composed lit arch NAS — not claimed SOTA",
+                "note": (
+                    "PPO+GA_crossover+PBT+depth_bias+MoE_softgate — ERL-inspired interleave; "
+                    "not claimed SOTA"
+                ),
             },
             indent=2,
         ),
@@ -888,52 +978,55 @@ def main() -> int:
     pop: list[Individual] = [
         Individual(cfg=random_arch(rng), hp=random_hp(rng), score=-1.0) for _ in range(args.pop_size)
     ]
-    # Seed diverse strong priors across lit families
     seed_specs = [
         ArchConfig(
-            depth=3,
+            depth=6,
             width=24,
             act="gelu",
             ops=["mlp_seam", "dual_cosine", "fir3", "cycle_net"],
             wet=0.45,
             fir=[0.2, 0.5, 0.2, 0.05, 0.05],
             cell_kind="unet",
-            blocks=["unet", "residual"],
+            blocks=["unet", "attn", "dilated", "residual"],
             soft_logits=[0.0] * len(OPS),
+            moe_mode="moe_parallel",
         ),
         ArchConfig(
-            depth=3,
+            depth=5,
             width=20,
             act="silu",
             ops=["mlp_seam", "fir5", "cycle_net", "hann_blend"],
             wet=0.5,
             fir=[0.15, 0.2, 0.3, 0.2, 0.15],
             cell_kind="dilated",
-            blocks=["dilated", "gated"],
+            blocks=["dilated", "gated", "dense"],
             soft_logits=[0.0] * len(OPS),
+            moe_mode="sequential",
         ),
         ArchConfig(
-            depth=2,
+            depth=4,
             width=16,
             act="gelu",
             ops=["mlp_seam", "dual_cosine", "cycle_net"],
             wet=0.4,
             fir=[0.25, 0.5, 0.25, 0.0, 0.0],
             cell_kind="attn",
-            blocks=["attn", "dense"],
+            blocks=["attn", "unet", "dual_path"],
             soft_logits=[0.0] * len(OPS),
+            moe_mode="moe_parallel",
         ),
         ArchConfig(
-            depth=3,
+            depth=7,
             width=18,
             act="relu",
             ops=["mlp_seam", "fir3", "cycle_net", "skip_blend"],
             wet=0.55,
             fir=[0.2, 0.5, 0.2, 0.05, 0.05],
-            cell_kind="dual_path",
-            blocks=["dual_path", "noise_cond"],
+            cell_kind="moe_mix",
+            blocks=["moe_mix", "unet", "attn", "dilated"],
             soft_logits=[rng.uniform(-0.3, 0.3) for _ in range(len(OPS))],
             use_adv_aux=False,
+            moe_mode="moe_parallel",
         ),
     ]
     for i, spec in enumerate(seed_specs):
@@ -947,22 +1040,24 @@ def main() -> int:
     champion_hp = pop[0].hp
     champion_cell: SeamCell | None = None
     iters_since_improve = 0
-    branch_best = {"ppo": 0.0, "nas": 0.0, "pbt": 0.0, "combo": 0.0}
+    branch_best = {"ppo": 0.0, "nas": 0.0, "pbt": 0.0, "ga": 0.0, "combo": 0.0}
     last_ppo_stats = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
+    last_ga_stats = {"ga_crossover": 0.0, "ga_mutate": 0.0, "ga_elites": 0.0}
     recent_residuals: deque[float] = deque(maxlen=100)
 
     t0 = time.time()
     max_sec = args.max_hours * 3600.0
     keepalive = torch.zeros(1, device=device)
-    old_plateau = 0.9809  # prior MLP-era champ for logging context only
+    old_plateau = 0.9809
     rate_note_written = False
+    BRANCHES = ("ppo", "nas", "pbt", "ga", "combo")
 
     for it in range(1, args.iters + 1):
         if time.time() - t0 > max_sec:
             log_line(log_path, f"STOP time budget reached at iter={it}")
             break
 
-        branch = ("ppo", "nas", "pbt", "combo")[it % 4]
+        branch = BRANCHES[it % len(BRANCHES)]
         ind_idx = (it - 1) % len(pop)
         ind = pop[ind_idx]
         cfg = ind.cfg
@@ -979,15 +1074,41 @@ def main() -> int:
         if branch == "nas":
             trial_cfg = random_arch(rng)
             trial_hp = mutate_hp(hp, rng)
+            proposal = "NAS_RANDOM"
         elif branch == "pbt":
             trial_cfg = mutate_arch(cfg, action, rng) if rng.random() < 0.5 else cfg
             trial_hp = hp
+            proposal = "PBT_MUTATE" if trial_cfg is not cfg else "PBT_HOLD"
+        elif branch == "ga":
+            parent = max(pop, key=lambda x: x.score)
+            if rng.random() < 0.6 and parent.score > -0.5:
+                from denoise_meta_evo import crossover_arch, crossover_hp
+
+                trial_cfg = crossover_arch(
+                    cfg,
+                    parent.cfg,
+                    rng,
+                    ArchConfig=ArchConfig,
+                    normalize_graph=normalize_graph,
+                    ensure_trainable_ops=ensure_trainable_ops,
+                    CELL_KINDS=CELL_KINDS,
+                    ACTS=ACTS,
+                )
+                trial_cfg = mutate_arch(trial_cfg, action, rng)
+                trial_hp = crossover_hp(hp, parent.hp, rng, HyperParams=HyperParams)
+                proposal = "GA_CROSSOVER+PPO_MUTATION"
+            else:
+                trial_cfg = mutate_arch(cfg, action, rng)
+                trial_hp = mutate_hp(hp, rng)
+                proposal = "GA_MUTATE+PPO_MUTATION"
         elif branch == "combo":
             trial_cfg = mutate_arch(mutate_arch(cfg, action, rng), rng.randrange(N_ACTIONS), rng)
             trial_hp = mutate_hp(hp, rng)
+            proposal = "COMBO_PPO_DOUBLE_MUT"
         else:
             trial_cfg = mutate_arch(cfg, action, rng)
             trial_hp = hp
+            proposal = "PPO_MUTATION"
 
         if it == 1 or it % args.ckpt_every == 1:
             save_unfitted(run_dir, trial_cfg, f"iter_{it:06d}", trial_hp)
@@ -1005,9 +1126,17 @@ def main() -> int:
             adv_coef=trial_hp.adv_coef if trial_cfg.use_adv_aux else 0.0,
         )
         r_eval = eval_cell(cell, trial_cfg.ops, device, batch=max(64, batch))
-        residual = 0.5 * r_fit + 0.5 * r_eval
-        branch_best[branch] = max(branch_best[branch], residual)
-        recent_residuals.append(residual)
+        residual_raw = 0.5 * r_fit + 0.5 * r_eval
+        dmb = depth_mixture_bonus(
+            residual_raw,
+            baseline,
+            trial_cfg.depth,
+            len(trial_cfg.blocks),
+            trial_cfg.moe_mode,
+        )
+        residual = residual_raw + dmb
+        branch_best[branch] = max(branch_best[branch], residual_raw)
+        recent_residuals.append(residual_raw)
 
         reward = residual - baseline
         buf.states.append(state.squeeze(0).detach())
@@ -1034,6 +1163,27 @@ def main() -> int:
             ind.score = residual
         ind.age += 1
 
+        if it % args.ga_every == 0:
+            last_ga_stats = ga_generation(
+                pop,
+                rng,
+                mutate_arch=mutate_arch,
+                mutate_hp=mutate_hp,
+                ArchConfig=ArchConfig,
+                HyperParams=HyperParams,
+                normalize_graph=normalize_graph,
+                ensure_trainable_ops=ensure_trainable_ops,
+                CELL_KINDS=CELL_KINDS,
+                ACTS=ACTS,
+                n_actions=N_ACTIONS,
+            )
+            log_line(
+                log_path,
+                f"GA_STEP iter={it} crossover={last_ga_stats['ga_crossover']:.0f} "
+                f"mutate={last_ga_stats['ga_mutate']:.0f} elites={last_ga_stats['ga_elites']:.0f} "
+                f"elite_score={max(p.score for p in pop):.4f} note=tournament_crossover_mutate",
+            )
+
         if it % args.pbt_every == 0:
             before_div = arch_diversity(pop)
             pbt_exploit_mutate(pop, rng)
@@ -1045,7 +1195,11 @@ def main() -> int:
             )
 
         pop_div = arch_diversity(pop)
-        champ_now = residual if residual > champion_r else (champion_r if champion_r >= 0 else residual)
+        champ_now = (
+            residual_raw
+            if residual_raw > champion_r
+            else (champion_r if champion_r >= 0 else residual_raw)
+        )
 
         if it == 1 or (it % args.history_every == 0):
             tag = f"iter_{it:06d}"
@@ -1054,13 +1208,17 @@ def main() -> int:
                 {
                     "iter": it,
                     "t_sec": round(time.time() - t0, 6),
-                    "residual": residual,
+                    "residual": residual_raw,
+                    "residual_scored": residual,
+                    "depth_mix_bonus": dmb,
                     "champ": champ_now,
                     "iters_since_improve": iters_since_improve,
                     "branch": branch,
+                    "proposal": proposal,
                     "branch_best_ppo": branch_best["ppo"],
                     "branch_best_nas": branch_best["nas"],
                     "branch_best_pbt": branch_best["pbt"],
+                    "branch_best_ga": branch_best["ga"],
                     "branch_best_combo": branch_best["combo"],
                     "policy_loss": last_ppo_stats["policy_loss"],
                     "value_loss": last_ppo_stats["value_loss"],
@@ -1073,15 +1231,19 @@ def main() -> int:
                     "arch_id": tag,
                     "tag": tag,
                     "converged": converged,
-                    "vs_old_plateau": residual - old_plateau,
+                    "vs_old_plateau": residual_raw - old_plateau,
                     "cell_kind": trial_cfg.cell_kind,
                     "blocks": trial_cfg.blocks,
+                    "depth": trial_cfg.depth,
+                    "moe_mode": trial_cfg.moe_mode,
                     "use_adv_aux": trial_cfg.use_adv_aux,
+                    "ga_crossover": last_ga_stats["ga_crossover"],
+                    "ga_mutate": last_ga_stats["ga_mutate"],
                 },
             )
 
-        if residual > champion_r:
-            champion_r = residual
+        if residual_raw > champion_r:
+            champion_r = residual_raw
             champion_cfg = trial_cfg
             champion_hp = trial_hp
             champion_cell = cell
@@ -1091,17 +1253,19 @@ def main() -> int:
             pop[victim].hp = HyperParams(**trial_hp.to_dict())
             pop[victim].score = residual
             save_fitted(
-                run_dir, trial_cfg, cell, policy, residual, f"champion_iter_{it:06d}", trial_hp
+                run_dir, trial_cfg, cell, policy, residual_raw, f"champion_iter_{it:06d}", trial_hp
             )
             save_fitted(
-                meta_run, trial_cfg, cell, policy, residual, f"champion_iter_{it:06d}", trial_hp
+                meta_run, trial_cfg, cell, policy, residual_raw, f"champion_iter_{it:06d}", trial_hp
             )
             log_line(
                 log_path,
-                f"NEW_CHAMPION iter={it} residual={residual:.4f} "
-                f"delta_vs_dual={residual - baseline:+.4f} "
-                f"vs_old_plateau={residual - old_plateau:+.4f} "
+                f"NEW_CHAMPION iter={it} residual={residual_raw:.4f} "
+                f"scored={residual:.4f} dmb={dmb:.5f} proposal={proposal} "
+                f"delta_vs_dual={residual_raw - baseline:+.4f} "
+                f"vs_old_plateau={residual_raw - old_plateau:+.4f} "
                 f"iters_since_improve=0 algorithms={algorithms} "
+                f"depth={trial_cfg.depth} moe={trial_cfg.moe_mode} "
                 f"arch={trial_cfg.to_dict()} hp={trial_hp.to_dict()}",
             )
         else:
@@ -1110,7 +1274,6 @@ def main() -> int:
         def write_latest(iter_n: int, *, checkpoint: bool) -> None:
             elapsed = time.time() - t0
             rate = iter_n / max(elapsed, 1e-6)
-            # Honest retarget guidance for paper planning
             hours_for_1m = 1_000_000 / max(rate, 1e-9) / 3600.0
             if hours_for_1m <= args.max_hours:
                 target_plan = {"keep_target": 1_000_000, "eta_hours_at_rate": round(hours_for_1m, 2)}
@@ -1145,6 +1308,9 @@ def main() -> int:
                 "seed": args.seed,
                 "history_path": str(history_path),
                 "blocks": BLOCKS,
+                "max_search_depth": MAX_SEARCH_DEPTH,
+                "ga_every": args.ga_every,
+                "algo_tag": args.algo_tag,
             }
             if checkpoint:
                 ckpt_path = ckpt_dir / f"ckpt_iter_{iter_n:06d}.json"
@@ -1192,10 +1358,12 @@ def main() -> int:
                 rate_note_written = True
             log_line(
                 log_path,
-                f"progress {it}/{args.iters} branch={branch} residual={residual:.4f} "
+                f"progress {it}/{args.iters} branch={branch} proposal={proposal} "
+                f"residual={residual_raw:.4f} scored={residual:.4f} dmb={dmb:.5f} "
                 f"champ={champion_r:.4f} baseline={baseline:.4f} "
                 f"iters_since_improve={iters_since_improve} "
                 f"entropy={entropy_now:.4f} pop_div={pop_div:.4f} "
+                f"depth={trial_cfg.depth} moe={trial_cfg.moe_mode} "
                 f"blocks={trial_cfg.blocks} cell={trial_cfg.cell_kind} "
                 f"converged={converged} gpu_mem_mb={mem:.1f} "
                 f"iters_per_sec={rate:.2f} elapsed_h={elapsed/3600:.3f} "

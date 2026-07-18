@@ -7,9 +7,9 @@ param(
     [double]$MaxHours = 240,
     [int]$HistoryEvery = 1,
     [string]$Device = "cuda",
-    [long]$Seed = 2694965884,
+    [long]$Seed = 1902771841,
     [int]$PopSize = 12,
-    [string]$AlgoTag = "PPO+PBT+NAS+complex_arch",
+    [string]$AlgoTag = "PPO+GA+PBT+NAS+depth+MoE",
     [string]$RepoRoot = ""
 )
 

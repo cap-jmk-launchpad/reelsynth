@@ -68,15 +68,15 @@ function Test-OneMillionDone {
 function Ensure-JobIfDead {
   $alive, $jobs = Test-TrainingAlive
   if ($alive) { return }
-  Log "TRAINING_DEAD - restarting via start_overnight_gpu_detached.ps1 (1M max-hours 240)"
+  Log "TRAINING_DEAD - restarting via start_overnight_gpu_detached.ps1 (1M max-hours 240 PPO+GA+depth+MoE)"
   $launcher = Join-Path $Repo "scripts\start_overnight_gpu_detached.ps1"
   if (Test-Path $launcher) {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher -Iters 1000000 -MaxHours 240 -HistoryEvery 1 -Device cuda -Seed 2694965884
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher -Iters 1000000 -MaxHours 240 -HistoryEvery 1 -Device cuda -Seed 1902771841 -AlgoTag "PPO+GA+PBT+NAS+depth+MoE"
   } else {
     if (-not (Test-Path $VenvPy)) { Log "NO_VENV"; return }
     $argList = @(
       (Join-Path $Repo "scripts\overnight_gpu_rl_arch.py"),
-      "--iters", "1000000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "2694965884", "--pop-size", "12", "--algo-tag", "PPO+PBT+NAS+complex_arch"
+      "--iters", "1000000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE"
     )
     Start-Process -FilePath $VenvPy -ArgumentList $argList -WorkingDirectory $Repo -WindowStyle Hidden
   }

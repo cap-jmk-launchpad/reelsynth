@@ -2,7 +2,11 @@
 
 Lit-inspired families scaled for N=256 residual bake (RTX 3090, overnight):
   residual, dense, unet, conv1d, dilated, attn, dual_path, gated, soft_mix,
-  noise_cond, mlp — composed as short graphs, not full Demucs/diffusion/GAN.
+  noise_cond, mlp, moe_mix — composed as graphs (depth-biased), not full Demucs/diffusion/GAN.
+
+Mixture modes:
+  sequential — chain blocks with residual/soft gates (default)
+  moe_parallel — MoE-style soft gates over heterogeneous parallel experts (Shazeer-inspired, tiny)
 """
 from __future__ import annotations
 
@@ -28,10 +32,16 @@ BLOCKS = [
     "tf_split",
     "noise_cond",
     "soft_mix",
+    "moe_mix",
 ]
 
 # Keep CELL_KINDS as primary cell mode; graphs compose additional blocks.
 CELL_KINDS = list(BLOCKS)
+
+# Depth / mixture search caps (aligned with denoise_meta_evo)
+MAX_SEARCH_DEPTH = 12
+MAX_GRAPH_LEN = 6
+MOE_MODES = ("sequential", "moe_parallel")
 
 
 def _act_module(act: str) -> nn.Module:
@@ -245,7 +255,7 @@ class SoftOpGate(nn.Module):
 
 
 def normalize_graph(blocks: Sequence[str] | None, cell_kind: str) -> list[str]:
-    """Build a short composable graph: primary cell + optional extras."""
+    """Build a composable graph: primary cell + optional extras (depth/mixture biased)."""
     raw = list(blocks) if blocks else []
     cleaned: list[str] = []
     for b in raw:
@@ -255,12 +265,57 @@ def normalize_graph(blocks: Sequence[str] | None, cell_kind: str) -> list[str]:
         cleaned.insert(0, cell_kind)
     if not cleaned:
         cleaned = ["residual"]
-    # Cap graph length for overnight tractability
-    return cleaned[:4]
+    return cleaned[:MAX_GRAPH_LEN]
+
+
+def _make_block(name: str, length: int, w: int, d: int, act: str) -> nn.Module:
+    if name in ("mlp", "residual", "bottleneck", "soft_mix", "moe_mix"):
+        return TinyMLP(length, w, d, act)
+    if name == "dense":
+        return DenseBlock(length, w, d, act)
+    if name == "gated":
+        return TinyMLP(length, w, d, act)
+    if name == "unet":
+        return TinyUNet1D(length, w, act)
+    if name == "conv1d":
+        return Conv1dStack(length, w, d, act, dilation=False)
+    if name == "dilated":
+        return Conv1dStack(length, w, d, act, dilation=True)
+    if name == "attn":
+        return TinyAttention(length, w, act)
+    if name == "dual_path":
+        return DualPathLite(length, w, act)
+    if name == "tf_split":
+        return TFSplitLite(length, w, act)
+    if name == "noise_cond":
+        return NoiseCondResidual(length, w, act)
+    return TinyMLP(length, w, d, act)
+
+
+class MoESoftGate(nn.Module):
+    """Tiny MoE soft mixture over parallel expert outputs (Shazeer-inspired, not full MoE)."""
+
+    def __init__(self, n_experts: int, length: int):
+        super().__init__()
+        self.n_experts = max(1, n_experts)
+        # Input-conditioned gate: mean-pool → logits
+        self.gate = nn.Linear(length, self.n_experts)
+        self.temp = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, x: torch.Tensor, expert_outs: list[torch.Tensor]) -> torch.Tensor:
+        logits = self.gate(x) / self.temp.clamp_min(0.1).abs()
+        w = F.softmax(logits, dim=-1)
+        stacked = torch.stack(expert_outs, dim=-1)  # (B, L, E)
+        return (stacked * w.unsqueeze(1)).sum(dim=-1)
 
 
 class ComposedSeamNet(nn.Module):
-    """Compose searchable blocks on seam window vectors (B, L)."""
+    """Compose searchable blocks on seam window vectors (B, L).
+
+    moe_mode:
+      sequential — chain with residual/soft gates
+      moe_parallel — run heterogeneous experts in parallel, soft-gate mix
+    """
 
     def __init__(
         self,
@@ -270,58 +325,52 @@ class ComposedSeamNet(nn.Module):
         act: str,
         cell_kind: str,
         blocks: Sequence[str] | None = None,
+        moe_mode: str = "sequential",
     ):
         super().__init__()
         self.length = length
         self.graph = normalize_graph(blocks, cell_kind)
+        self.moe_mode = moe_mode if moe_mode in MOE_MODES else "sequential"
         self.modules_by_name = nn.ModuleDict()
         self.gates = nn.ModuleDict()
         w = max(2, min(48, width))
-        d = max(1, min(6, depth))
+        d = max(1, min(MAX_SEARCH_DEPTH, depth))
         for name in self.graph:
             self.gates[name] = SoftOpGate(0.3)
-            if name in ("mlp", "residual", "bottleneck", "soft_mix"):
-                self.modules_by_name[name] = TinyMLP(length, w, d, act)
-            elif name == "dense":
-                self.modules_by_name[name] = DenseBlock(length, w, d, act)
-            elif name == "gated":
-                self.modules_by_name[name] = TinyMLP(length, w, d, act)
-            elif name == "unet":
-                self.modules_by_name[name] = TinyUNet1D(length, w, act)
-            elif name == "conv1d":
-                self.modules_by_name[name] = Conv1dStack(length, w, d, act, dilation=False)
-            elif name == "dilated":
-                self.modules_by_name[name] = Conv1dStack(length, w, d, act, dilation=True)
-            elif name == "attn":
-                self.modules_by_name[name] = TinyAttention(length, w, act)
-            elif name == "dual_path":
-                self.modules_by_name[name] = DualPathLite(length, w, act)
-            elif name == "tf_split":
-                self.modules_by_name[name] = TFSplitLite(length, w, act)
-            elif name == "noise_cond":
-                self.modules_by_name[name] = NoiseCondResidual(length, w, act)
-            else:
-                self.modules_by_name[name] = TinyMLP(length, w, d, act)
+            self.modules_by_name[name] = _make_block(name, length, w, d, act)
 
         # dual branch mix for dual_path cell compatibility
         self.alt = TinyMLP(length, w, 2, act) if "dual_path" in self.graph else None
         self.alt_mix = nn.Parameter(torch.tensor(0.5)) if self.alt is not None else None
         self.res_gate = nn.Parameter(torch.tensor(0.25))
+        self.moe: MoESoftGate | None
+        if self.moe_mode == "moe_parallel" and len(self.graph) >= 2:
+            self.moe = MoESoftGate(len(self.graph), length)
+        else:
+            self.moe = None
+            if self.moe_mode == "moe_parallel":
+                self.moe_mode = "sequential"
+
+    def _apply_one(self, name: str, h: torch.Tensor) -> torch.Tensor:
+        mod = self.modules_by_name[name]
+        y = mod(h)
+        if name in ("residual", "bottleneck", "soft_mix", "moe_mix"):
+            return h + torch.tanh(y) * torch.sigmoid(self.res_gate)
+        if name in ("gated", "mlp"):
+            if name == "mlp":
+                return h + torch.tanh(y) * torch.sigmoid(self.res_gate)
+            return self.gates[name](h, y)
+        return self.gates[name](h, y)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = x
-        for name in self.graph:
-            mod = self.modules_by_name[name]
-            y = mod(h)
-            if name in ("residual", "bottleneck", "soft_mix"):
-                y = h + torch.tanh(y) * torch.sigmoid(self.res_gate)
-            elif name == "gated":
-                y = self.gates[name](h, y)
-            elif name == "mlp":
-                y = h + torch.tanh(y) * torch.sigmoid(self.res_gate)
-            else:
-                y = self.gates[name](h, y)
-            h = y
+        if self.moe is not None and self.moe_mode == "moe_parallel":
+            # Parallel heterogeneous experts from identity input, soft-gated mix
+            outs = [self._apply_one(name, x) for name in self.graph]
+            h = self.moe(x, outs)
+        else:
+            h = x
+            for name in self.graph:
+                h = self._apply_one(name, h)
         if self.alt is not None and self.alt_mix is not None:
             m = torch.sigmoid(self.alt_mix)
             h = m * h + (1 - m) * self.alt(x)
@@ -344,8 +393,17 @@ class TinyAdvHead(nn.Module):
         return self.net(x).squeeze(-1)
 
 
-def random_block_graph(rng, cell_kind: str, max_extra: int = 2) -> list[str]:
+def random_block_graph(rng, cell_kind: str, max_extra: int = 3) -> list[str]:
     extras = [b for b in BLOCKS if b != cell_kind]
-    k = rng.randint(0, max_extra)
+    k = rng.randint(0, min(max_extra, MAX_GRAPH_LEN - 1))
     chosen = rng.sample(extras, k=k) if k else []
+    # Bias toward heterogeneous mixtures (unet+attn+dilated style)
+    if k >= 2 and rng.random() < 0.35:
+        prefer = [b for b in ("unet", "attn", "dilated", "dual_path", "dense") if b != cell_kind]
+        if prefer:
+            chosen = list(dict.fromkeys(prefer[: max(2, k)] + chosen))[:max_extra]
     return normalize_graph([cell_kind] + chosen, cell_kind)
+
+
+def random_moe_mode(rng) -> str:
+    return "moe_parallel" if rng.random() < 0.35 else "sequential"

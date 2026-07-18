@@ -21,8 +21,8 @@ $HeartbeatSec = 1800
 $TargetIters = 1000000
 $Deadline = (Get-Date).AddHours(240)
 $script:LastRestart = [datetime]::MinValue
-# complex_arch 1M; seed 2694965884; max-hours 240 (ETA~150-175h needs slack)
-$script:LastArgs = @($Script, "--iters", "1000000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "2694965884", "--pop-size", "12", "--algo-tag", "PPO+PBT+NAS+complex_arch")
+# PPO+GA+PBT+depth+MoE; seed 1902771841; max-hours 240
+$script:LastArgs = @($Script, "--iters", "1000000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE")
 $script:KnownLauncher = 0
 $script:KnownWorker = 0
 
