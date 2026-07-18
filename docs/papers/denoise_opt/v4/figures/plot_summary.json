@@ -1,0 +1,78 @@
+{
+  "run_dir": "C:\\Users\\Julian\\Documents\\Programming\\github\\reeldemo\\reelsynth\\brand\\artifacts\\models\\gpu-rl-arch-20260718T104820Z",
+  "n_points": 4516,
+  "final_iter": 4516,
+  "final_champ": 0.9777166545391083,
+  "baseline_dual_cosine": 0.8203155994415283,
+  "delta_vs_baseline": 0.15740105509757996,
+  "n_champ_updates": 13,
+  "champ_events_tail": [
+    {
+      "iter": 16,
+      "champ": 0.8466667234897614,
+      "branch": "nas",
+      "arch_id": "iter_000016"
+    },
+    {
+      "iter": 29,
+      "champ": 0.9675215184688568,
+      "branch": "combo",
+      "arch_id": "iter_000029"
+    },
+    {
+      "iter": 32,
+      "champ": 0.9688887298107147,
+      "branch": "combo",
+      "arch_id": "iter_000032"
+    },
+    {
+      "iter": 35,
+      "champ": 0.9698496162891388,
+      "branch": "combo",
+      "arch_id": "iter_000035"
+    },
+    {
+      "iter": 36,
+      "champ": 0.9714597761631012,
+      "branch": "rl",
+      "arch_id": "iter_000036"
+    },
+    {
+      "iter": 37,
+      "champ": 0.9746440351009369,
+      "branch": "nas",
+      "arch_id": "iter_000037"
+    },
+    {
+      "iter": 80,
+      "champ": 0.9751165807247162,
+      "branch": "combo",
+      "arch_id": "iter_000080"
+    },
+    {
+      "iter": 146,
+      "champ": 0.9762392938137054,
+      "branch": "combo",
+      "arch_id": "iter_000146"
+    },
+    {
+      "iter": 179,
+      "champ": 0.9769965410232544,
+      "branch": "combo",
+      "arch_id": "iter_000179"
+    },
+    {
+      "iter": 1805,
+      "champ": 0.9777166545391083,
+      "branch": "combo",
+      "arch_id": "iter_001805"
+    }
+  ],
+  "figures": [
+    "champ_residual_vs_iter.png",
+    "branch_bests_vs_iter.png",
+    "residual_by_branch.png",
+    "champion_timeline.png",
+    "overnight_panel.png"
+  ]
+}

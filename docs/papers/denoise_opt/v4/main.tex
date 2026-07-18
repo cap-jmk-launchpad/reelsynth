@@ -1,31 +1,55 @@
-\documentclass[11pt,a4paper]{article}
+%% DenoiseOpt paper v4 — arXiv-style double-column preprint
+%% Template: article[twocolumn] + local arxiv-twocolumn.sty
+%% See README.md for rationale and sources.
+\documentclass[10pt,twocolumn,letterpaper]{article}
+
+\usepackage{arxiv-twocolumn}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage{lmodern}
-\usepackage[margin=2.5cm]{geometry}
 \usepackage{graphicx}
-\usepackage{hyperref}
 \usepackage{booktabs}
-\usepackage{xurl}
+\usepackage{tabularx}
+\usepackage{placeins}
 \usepackage{amsmath,amssymb}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
 
-\title{Hybrid Reinforcement Learning and Genetic Algorithms for Meta-Learning Audio Denoising}
-\author{Julian~M.~Kleber\\ORCID: \href{https://orcid.org/0000-0001-5518-0932}{0000-0001-5518-0932}\\Email: \href{mailto:julian.m.kleber@gmail.com}{julian.m.kleber@gmail.com}}
-\date{18 July 2026 \\ \small Paper version \texttt{v4} (introduction + literature landscape; experiments ongoing)}
+\title{Hybrid Reinforcement Learning and Genetic Algorithms\\
+for Meta-Learning Audio Denoising}
+\author{%
+  Julian~M.~Kleber\\[2pt]
+  \normalsize
+  ORCID:
+  \href{https://orcid.org/0000-0001-5518-0932}{0000-0001-5518-0932}\\[1pt]
+  Email:
+  \href{mailto:julian.m.kleber@gmail.com}{\texttt{julian.m.kleber@gmail.com}}
+}
+\date{18 July 2026\\[2pt]
+  \small Paper version \texttt{v4}
+  (introduction + literature landscape; experiments ongoing)}
+% Short running header (full title is too long for the column header)
+\newcommand{\papershorttitle}{Hybrid RL+GA for Audio Denoising}
 
 \begin{document}
-\maketitle
-\begin{center}\small
-Code: \url{https://github.com/reeldemo/reelsynth}, \url{https://github.com/reeldemo/denoise-opt-meta}
-\end{center}
 
-\begin{abstract}
-Periodic discontinuities in cyclic audio frames inject broadband crackle under wrap-around playback.
-We treat cycle-local seam restoration as an instance of audio signal denoising and search denoising operators with a hybrid meta-learning outer loop that interleaves genetic-algorithm population updates with reinforcement-learning architecture proposals, optionally with population-based exploit--mutate schedules and mixture-of-experts soft gates.
-Candidates are scored by a prolonged residual $R\in[0,1]$ (1~=~best) against an ideal multi-period tiling, without paired clean waveforms for every trial.
-This draft delivers the problem framing and a used-versus-screened literature landscape grounded on OA PDF analyses (Noise2Noise, PBT, Aging Evolution, ERL, ENAS/PPO, Wave-U-Net/Conv-TasNet, MoE, DDSP; Demucs/DiffWave/MAML/DARTS screened).
-A large GPU campaign (\texttt{PPO+GA+PBT+NAS}) is ongoing; final quantitative tables are deferred until the declared budget completes.
-\end{abstract}
+% Full-width title / abstract / code banner, then two-column body
+\twocolumn[{%
+  \maketitle
+  \begin{center}\footnotesize
+    Code:
+    \url{https://github.com/reeldemo/reelsynth},
+    \url{https://github.com/reeldemo/denoise-opt-meta}
+  \end{center}
+  \begin{abstract}
+    Periodic discontinuities in cyclic audio frames inject broadband crackle under wrap-around playback.
+    We treat cycle-local seam restoration as an instance of audio signal denoising and search denoising operators with a hybrid meta-learning outer loop that interleaves genetic-algorithm population updates with reinforcement-learning architecture proposals, optionally with population-based exploit--mutate schedules and mixture-of-experts soft gates.
+    Candidates are scored by a prolonged residual $R\in[0,1]$ (1~=~best) against an ideal multi-period tiling, without paired clean waveforms for every trial.
+    This draft delivers the problem framing and a used-versus-screened literature landscape grounded on OA PDF analyses (Noise2Noise, PBT, Aging Evolution, ERL, ENAS/PPO, Wave-U-Net/Conv-TasNet, MoE, DDSP; Demucs/DiffWave/MAML/DARTS screened).
+    A large GPU campaign (\texttt{PPO+GA+PBT+NAS}) is ongoing; final quantitative tables are deferred until the declared budget completes.
+  \end{abstract}
+  \keywords{audio denoising $\cdot$ neural architecture search $\cdot$ reinforcement learning $\cdot$ genetic algorithms $\cdot$ wavetable synthesis $\cdot$ meta-learning}
+  \vspace{0.6em}
+}]
 
 \input{subsections/introduction}
 \input{subsections/related_work}
@@ -35,6 +59,8 @@ A large GPU campaign (\texttt{PPO+GA+PBT+NAS}) is ongoing; final quantitative ta
 \input{subsections/discussion}
 \input{subsections/limitations}
 \input{subsections/conclusion}
+
+\FloatBarrier
 
 \begin{thebibliography}{99}
 

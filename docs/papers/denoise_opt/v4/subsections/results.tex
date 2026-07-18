@@ -1,4 +1,40 @@
 \section{Results}
 \label{sec:results}
 
-\textit{Deferred.} Final tables and figures will be ingested after the overnight campaign reaches its declared iteration budget. No champion residual, branch win-rates, or ablations from the incomplete run are asserted here as finished science.
+\textit{Deferred for final claims.} Final tables will be ingested after the overnight campaign reaches its declared iteration budget.
+Interim monitoring plots from an early GPU hybrid run are shown below for protocol transparency only; champion residuals and branch win-rates from incomplete runs are \emph{not} asserted as finished science.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/champ_residual_vs_iter.png}
+  \caption{Interim champion residual $R$ versus search iteration (monitoring snapshot). Not a final result.}
+  \label{fig:champ-residual}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/branch_bests_vs_iter.png}
+  \caption{Interim per-branch best residual trajectories (GA / RL / PBT / NAS / combo). Monitoring only.}
+  \label{fig:branch-bests}
+\end{figure}
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/overnight_panel.png}
+  \caption{Full-width interim overnight monitoring panel (residual, branches, champion timeline). Snapshot for transparency while the GPU budget completes.}
+  \label{fig:overnight-panel}
+\end{figure*}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/residual_by_branch.png}
+  \caption{Interim residual distribution by search branch. Monitoring snapshot.}
+  \label{fig:residual-branch}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/champion_timeline.png}
+  \caption{Interim champion update timeline (iteration, residual, branch). Monitoring only.}
+  \label{fig:champ-timeline}
+\end{figure}
