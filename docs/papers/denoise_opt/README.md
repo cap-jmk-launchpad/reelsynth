@@ -1,11 +1,11 @@
-# DenoiseOpt paper (local mirror)
+﻿# DenoiseOpt paper (local mirror)
 
-Canonical versioned paper: **[reeldemo/denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta)** → `paper/v2/`.
+Canonical versioned paper: **[reeldemo/denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta)** → `paper/v3/`.
 
 ## Meta objective (residual)
 
 \[
-\mathrm{score}=\mathrm{clamp}\!\left(1-\frac{\mathrm{rms}(y_{\mathrm{engine}}-y_{\mathrm{ideal}})}{\max(\mathrm{rms}(y_{\mathrm{ideal}}),\varepsilon)},\,0,\,1\right)
+R=\mathrm{clamp}\!\left(1-\frac{\mathrm{rms}(y_{\mathrm{engine}}-y_{\mathrm{ideal}})}{\max(\mathrm{rms}(y_{\mathrm{ideal}}),\varepsilon)},\,0,\,1\right)
 \]
 
 - Ideal: `generate_sound_ideal`, tiled $N{=}16$
@@ -26,5 +26,5 @@ Canonical versioned paper: **[reeldemo/denoise-opt-meta](https://github.com/reel
 cargo run -p reelsynth --release --bin bench_denoise_meta
 python brand/artifacts/render_benchmark_matrix.py
 # Full paper:
-#   cd ../denoise-opt-meta/paper/v2 && pdflatex main.tex
+#   cd ../denoise-opt-meta/paper/v3 && pdflatex main.tex
 ```
