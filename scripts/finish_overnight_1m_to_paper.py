@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-"""When 250k overnight completes: plots â†’ ingest â†’ write remaining sections â†’ revise â†’ export â†’ paper/v4."""
+"""When 500k overnight completes: plots → ingest → write remaining sections → revise → export → paper/v4."""
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +14,7 @@ from pathlib import Path
 REEL = Path(r"C:\Users\Julian\Documents\Programming\github\reeldemo\reelsynth")
 META = Path(r"C:\Users\Julian\Documents\Programming\github\reeldemo\denoise-opt-meta")
 KLAUT = Path(r"C:\Users\Julian\Documents\Programming\github\klaut-pro\klaut-research-gateway")
-TARGET = 250_000  # paper-facing; 1M infeasible at ~0.3 it/s in 240h
+TARGET = 500_000  # paper-facing; matches live --iters (1M infeasible for hybrid+depth/MoE in 240h)
 PAPER_ID_FILE = META / "paper" / "v4" / "KLAUT_PAPER_ID.txt"
 
 
@@ -44,7 +44,7 @@ def main() -> int:
     v4.mkdir(parents=True, exist_ok=True)
     blob = {
         "written_at": datetime.now(timezone.utc).isoformat(),
-        "status": "FINAL_250K",
+        "status": "FINAL_500K",
         "target_iters": TARGET,
         "iters_completed": it,
         "champion_residual": champ,
@@ -73,7 +73,7 @@ def main() -> int:
         "trial_budget": TARGET,
         "baselines": ["DualCosine"],
         "table_rows": [
-            {"algo": "champion_250k", "residual": champ, "prior": "rl_nas_combo"},
+            {"algo": "champion_500k", "residual": champ, "prior": "rl_nas_combo"},
             {"algo": "DualCosine", "residual": baseline, "prior": "baseline"},
         ],
     }
@@ -99,7 +99,7 @@ def main() -> int:
 
         paper_ingest_data(paper_id, data=blob, section_id="results")
         needs = (
-            "FINAL 1M results ingested. Follow PAPER_WRITING_QUALITY.md. "
+            "FINAL 500k results ingested. Follow PAPER_WRITING_QUALITY.md. "
             "Honest numbers only from results_blob. Strong Discussion vs DualCosine and branches. "
             f"Champ R={champ:.6f}, DualCosine={baseline:.6f}, delta={champ-baseline:.6f}."
         )

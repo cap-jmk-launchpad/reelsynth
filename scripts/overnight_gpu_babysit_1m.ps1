@@ -1,7 +1,7 @@
 ﻿# overnight_gpu_babysit_1m.ps1
-# Cursor-independent babysit for dense 1M overnight GPU RL.
+# Cursor-independent babysit for dense 500k overnight GPU RL.
 # NEVER kills python. Treats .venv_gpu launcher + system-python worker as one job.
-# Completes ONLY when iter >= 1_000_000 (or explicit DONE after that). Soft wall = 240h.
+# Completes ONLY when iter >= 500_000 (or explicit DONE after that). Soft wall = 240h.
 # Does NOT write overnight_gpu_DONE.flag on soft deadline (would stop the watchdog mid-run).
 
 $ErrorActionPreference = "Continue"
@@ -18,11 +18,11 @@ $SummaryOut = Join-Path $Artifacts "overnight_gpu_final_summary.json"
 $Py = Join-Path $Repo ".venv_gpu\Scripts\python.exe"
 $Script = Join-Path $Repo "scripts\overnight_gpu_rl_arch.py"
 $HeartbeatSec = 1800
-$TargetIters = 1000000
+$TargetIters = 500000
 $Deadline = (Get-Date).AddHours(240)
 $script:LastRestart = [datetime]::MinValue
-# PPO+GA+PBT+depth+MoE; seed 1902771841; max-hours 240
-$script:LastArgs = @($Script, "--iters", "1000000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE")
+# PPO+GA+PBT+depth+MoE; seed 1902771841; max-hours 240; MUST match live training (not complex_arch / 1M)
+$script:LastArgs = @($Script, "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE")
 $script:KnownLauncher = 0
 $script:KnownWorker = 0
 
@@ -143,7 +143,7 @@ function Write-FinalSummary([string]$reason) {
     fitted_dir = $(if ($j) { $j.fitted_dir } else { $null })
     unfitted_dir = $(if ($j) { $j.unfitted_dir } else { $null })
     wall_deadline = $Deadline.ToUniversalTime().ToString("o")
-    note = "1M babysit; launcher+child one job; never kill venv child as duplicate"
+    note = "500k babysit; launcher+child one job; never kill venv child as duplicate"
   }
   $json = $summary | ConvertTo-Json -Depth 6
   Set-Content -Path $SummaryOut -Value $json -Encoding utf8
@@ -206,18 +206,18 @@ while ($true) {
   $j = Read-Latest
 
   if (Is-OneMillionDone $j) {
-    Write-FinalSummary "iters_1m" | Out-Null
+    Write-FinalSummary "iters_500k" | Out-Null
     if (-not (Test-Path $DoneFlag)) {
       Set-Content -Path $DoneFlag -Value (UtcNow) -Encoding ascii
     }
-    Write-Output 'AGENT_BABYSIT1M_COMPLETE {"reason":"iters_1m"}'
+    Write-Output 'AGENT_BABYSIT1M_COMPLETE {"reason":"iters_500k"}'
     exit 0
   }
 
   if ((Get-Date) -ge $Deadline) {
     # Soft deadline: write summary but DO NOT set DONE flag (watchdog must keep going).
     Write-FinalSummary "soft_deadline_240h_incomplete" | Out-Null
-    Log "SOFT_DEADLINE reached without 1M - exiting babysit only; job/watchdog continue"
+    Log "SOFT_DEADLINE reached without 500k - exiting babysit only; job/watchdog continue"
     Write-Output 'AGENT_BABYSIT1M_COMPLETE {"reason":"soft_deadline_no_done_flag"}'
     exit 0
   }

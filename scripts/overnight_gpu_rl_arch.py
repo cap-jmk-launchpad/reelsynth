@@ -130,6 +130,20 @@ class ArchConfig:
             d["moe_mode"] = "sequential"
         return d
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ArchConfig":
+        known = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        kwargs = {k: v for k, v in d.items() if k in known}
+        cfg = cls(**kwargs)
+        cfg.blocks = normalize_graph(list(cfg.blocks), cfg.cell_kind)
+        if cfg.moe_mode not in MOE_MODES:
+            cfg.moe_mode = "sequential"
+        if len(cfg.soft_logits) < len(OPS):
+            cfg.soft_logits = list(cfg.soft_logits) + [0.0] * (len(OPS) - len(cfg.soft_logits))
+        elif len(cfg.soft_logits) > len(OPS):
+            cfg.soft_logits = list(cfg.soft_logits[: len(OPS)])
+        return cfg
+
 
 @dataclass
 class HyperParams:
@@ -144,6 +158,13 @@ class HyperParams:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any] | None) -> "HyperParams":
+        if not d:
+            return cls()
+        known = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        return cls(**{k: v for k, v in d.items() if k in known})
 
 
 @dataclass
@@ -876,6 +897,13 @@ def main() -> int:
         type=str,
         default="prefer_depth_and_mixtures; keep_1M_if_rate_ok_else_retarget_honestly",
     )
+    ap.add_argument(
+        "--seed-fitted",
+        type=str,
+        default="",
+        help="Optional path to *_fitted.json or *_fitted.pt to warm-start pop[0] arch/hp "
+        "(and cell weights when .pt is available).",
+    )
     args = ap.parse_args()
     if args.history_every < 1:
         print("ERROR: --history-every must be >= 1", file=sys.stderr)
@@ -1032,13 +1060,58 @@ def main() -> int:
     for i, spec in enumerate(seed_specs):
         if i < len(pop):
             pop[i].cfg = spec
+
+    warm_residual = -1.0
+    warm_cell: SeamCell | None = None
+    if args.seed_fitted:
+        fitted_path = Path(args.seed_fitted)
+        if not fitted_path.is_file():
+            print(f"ERROR: --seed-fitted not found: {fitted_path}", file=sys.stderr)
+            return 2
+        meta_blob: dict[str, Any]
+        weights_blob: dict[str, Any] | None = None
+        if fitted_path.suffix == ".pt":
+            weights_blob = torch.load(fitted_path, map_location="cpu", weights_only=False)
+            meta_blob = {
+                "architecture": weights_blob.get("architecture"),
+                "hyperparams": weights_blob.get("hyperparams"),
+                "residual": weights_blob.get("residual"),
+                "tag": weights_blob.get("tag"),
+            }
+        else:
+            meta_blob = json.loads(fitted_path.read_text(encoding="utf-8"))
+            wp = meta_blob.get("weights_path")
+            if wp and Path(wp).is_file():
+                weights_blob = torch.load(wp, map_location="cpu", weights_only=False)
+        arch_d = meta_blob.get("architecture") or {}
+        hp_d = meta_blob.get("hyperparams")
+        warm_cfg = ArchConfig.from_dict(arch_d)
+        warm_hp = HyperParams.from_dict(hp_d)
+        pop[0].cfg = warm_cfg
+        pop[0].hp = warm_hp
+        pop[0].score = float(meta_blob.get("residual") or -1.0)
+        warm_residual = float(meta_blob.get("residual") or -1.0)
+        if weights_blob and weights_blob.get("cell_state_dict") is not None:
+            warm_cell = SeamCell(warm_cfg).to(device)
+            warm_cell.load_state_dict(weights_blob["cell_state_dict"], strict=False)
+            if weights_blob.get("policy_state_dict") is not None:
+                try:
+                    policy.load_state_dict(weights_blob["policy_state_dict"], strict=False)
+                except Exception as exc:  # noqa: BLE001 — warm-start is best-effort
+                    log_line(log_path, f"WARM_START policy load skipped: {exc}")
+        log_line(
+            log_path,
+            f"WARM_START seed_fitted={fitted_path} residual={warm_residual:.6f} "
+            f"tag={meta_blob.get('tag')} cell_loaded={warm_cell is not None}",
+        )
+
     save_unfitted(run_dir, pop[0].cfg, "init", pop[0].hp)
     save_unfitted(meta_run, pop[0].cfg, "init", pop[0].hp)
 
-    champion_r = -1.0
+    champion_r = warm_residual if warm_residual >= 0 else -1.0
     champion_cfg = pop[0].cfg
     champion_hp = pop[0].hp
-    champion_cell: SeamCell | None = None
+    champion_cell: SeamCell | None = warm_cell
     iters_since_improve = 0
     branch_best = {"ppo": 0.0, "nas": 0.0, "pbt": 0.0, "ga": 0.0, "combo": 0.0}
     last_ppo_stats = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}

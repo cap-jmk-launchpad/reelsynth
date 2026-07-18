@@ -3,13 +3,14 @@
 # Uses Start-Process Hidden with file redirects — no pipe to calling shell.
 
 param(
-    [int]$Iters = 250000,
+    [int]$Iters = 500000,
     [double]$MaxHours = 240,
     [int]$HistoryEvery = 1,
     [string]$Device = "cuda",
     [long]$Seed = 1902771841,
     [int]$PopSize = 12,
     [string]$AlgoTag = "PPO+GA+PBT+NAS+depth+MoE",
+    [string]$SeedFitted = "",
     [string]$RepoRoot = ""
 )
 
@@ -58,6 +59,9 @@ $argList = @(
     "--pop-size", "$PopSize",
     "--algo-tag", $AlgoTag
 )
+if ($SeedFitted) {
+    $argList += @("--seed-fitted", $SeedFitted)
+}
 
 $estimate = @(
     "DETACHED_LAUNCH estimate_now=$($now.ToString('yyyy-MM-dd HH:mm:ss')) local",

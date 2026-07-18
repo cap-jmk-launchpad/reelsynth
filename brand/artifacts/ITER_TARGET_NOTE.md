@@ -5,28 +5,28 @@
 
 ## Why not 1M
 
-Live rate from `history.jsonl` / `overnight_gpu_rl_arch_latest.json` is ~**0.33–0.34 it/s** (not the ~13 it/s of lighter configs). At that pace:
+Live rate from `history.jsonl` / `overnight_gpu_rl_arch_latest.json` varies by config. At hybrid + deep/MoE pace (~0.3–1.3 it/s depending on arch):
 
-| Budget | Iters reachable |
-|--------|-----------------|
-| 240 h  | ~**290–296k** |
+| Budget | Iters reachable (approx) |
+|--------|--------------------------|
+| 240 h @ 0.34 it/s | ~**290–296k** |
+| 240 h @ 1.3 it/s | ~**1.1M** |
 | 1M @ 0.34 it/s | ~**817–830 h** (~34 days) |
 
-So **1M does not fit** `--max-hours 240` for this hybrid + deep/MoE search.
+**1M is not the paper target** for this hybrid + deep/MoE search; watchdog/babysit must not relaunch `complex_arch` / `--iters 1000000`.
 
 ## Paper-facing target
 
-**250000** iterations (`--iters 250000 --max-hours 240`).
+**500000** iterations (`--iters 500000 --max-hours 240`).
 
-- Prefer 250k when rate ≥ 0.25 it/s (observed ~0.34).
-- Would use 200k only if rate < 0.25.
-- Slack vs 240 h: ETA ≈ **200–210 h** at 0.34 it/s (~30–40 h headroom).
+- Matches live training worker and detached launcher defaults.
+- Prefer 500k when rate supports finishing inside 240 h; otherwise retarget honestly in-run.
+- Dense history: `--history-every 1`.
 
 ## Finisher wait
 
-`wait_1m_then_finish.ps1` and `overnight_1m_durable_finisher.ps1` complete when `iter >= 250000` from `overnight_gpu_rl_arch_latest.json` / history (or DONE flag), not 1M. Training loop also stops at 250k via `--iters`.
+`wait_1m_then_finish.ps1`, `overnight_1m_durable_finisher.ps1`, babysit, and watchdog JobArgs complete / restart at **500000** (or DONE flag after target), not 250k or 1M.
 
-## ETA (from retarget restart)
+## Warm-start
 
-Wall-clock to 250k ≈ **203 h** (~8.5 days) at measured rate; capped by `--max-hours 240`.
-
+`--seed-fitted path/to/*_fitted.json` (or `.pt`) seeds `pop[0]` arch/hp and loads cell weights when present. Prior champ: `gpu-rl-arch-20260718T175603Z` **R≈0.9905** (`champion_iter_000795_fitted.json`).
