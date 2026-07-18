@@ -1,71 +1,71 @@
 {
-  "run_dir": "C:\\Users\\Julian\\Documents\\Programming\\github\\reeldemo\\reelsynth\\brand\\artifacts\\models\\gpu-rl-arch-20260718T104820Z",
-  "n_points": 4516,
-  "final_iter": 4516,
-  "final_champ": 0.9777166545391083,
-  "baseline_dual_cosine": 0.8203155994415283,
-  "delta_vs_baseline": 0.15740105509757996,
-  "n_champ_updates": 13,
+  "run_dir": "C:\\Users\\Julian\\Documents\\Programming\\github\\reeldemo\\reelsynth\\brand\\artifacts\\models\\gpu-rl-arch-20260718T175603Z",
+  "n_points": 1424,
+  "final_iter": 1424,
+  "final_champ": 0.9904539585113525,
+  "baseline_dual_cosine": 0.8363933563232422,
+  "delta_vs_baseline": 0.15406060218811035,
+  "n_champ_updates": 24,
   "champ_events_tail": [
     {
-      "iter": 16,
-      "champ": 0.8466667234897614,
-      "branch": "nas",
-      "arch_id": "iter_000016"
-    },
-    {
-      "iter": 29,
-      "champ": 0.9675215184688568,
+      "iter": 159,
+      "champ": 0.9857264161109924,
       "branch": "combo",
-      "arch_id": "iter_000029"
+      "arch_id": "iter_000159"
     },
     {
-      "iter": 32,
-      "champ": 0.9688887298107147,
+      "iter": 163,
+      "champ": 0.9870091080665588,
+      "branch": "ga",
+      "arch_id": "iter_000163"
+    },
+    {
+      "iter": 460,
+      "champ": 0.9874227046966553,
+      "branch": "ppo",
+      "arch_id": "iter_000460"
+    },
+    {
+      "iter": 478,
+      "champ": 0.9888235628604889,
+      "branch": "ga",
+      "arch_id": "iter_000478"
+    },
+    {
+      "iter": 492,
+      "champ": 0.9891124069690704,
+      "branch": "pbt",
+      "arch_id": "iter_000492"
+    },
+    {
+      "iter": 493,
+      "champ": 0.9898146986961365,
+      "branch": "ga",
+      "arch_id": "iter_000493"
+    },
+    {
+      "iter": 709,
+      "champ": 0.9898582696914673,
       "branch": "combo",
-      "arch_id": "iter_000032"
+      "arch_id": "iter_000709"
     },
     {
-      "iter": 35,
-      "champ": 0.9698496162891388,
-      "branch": "combo",
-      "arch_id": "iter_000035"
+      "iter": 750,
+      "champ": 0.9900145530700684,
+      "branch": "ppo",
+      "arch_id": "iter_000750"
     },
     {
-      "iter": 36,
-      "champ": 0.9714597761631012,
-      "branch": "rl",
-      "arch_id": "iter_000036"
+      "iter": 762,
+      "champ": 0.9902288317680359,
+      "branch": "pbt",
+      "arch_id": "iter_000762"
     },
     {
-      "iter": 37,
-      "champ": 0.9746440351009369,
-      "branch": "nas",
-      "arch_id": "iter_000037"
-    },
-    {
-      "iter": 80,
-      "champ": 0.9751165807247162,
-      "branch": "combo",
-      "arch_id": "iter_000080"
-    },
-    {
-      "iter": 146,
-      "champ": 0.9762392938137054,
-      "branch": "combo",
-      "arch_id": "iter_000146"
-    },
-    {
-      "iter": 179,
-      "champ": 0.9769965410232544,
-      "branch": "combo",
-      "arch_id": "iter_000179"
-    },
-    {
-      "iter": 1805,
-      "champ": 0.9777166545391083,
-      "branch": "combo",
-      "arch_id": "iter_001805"
+      "iter": 795,
+      "champ": 0.9904539585113525,
+      "branch": "ppo",
+      "arch_id": "iter_000795"
     }
   ],
   "figures": [
