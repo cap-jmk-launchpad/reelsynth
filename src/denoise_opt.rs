@@ -61,6 +61,51 @@ fn rms(frame: &[f32]) -> f32 {
     (frame.iter().map(|x| x * x).sum::<f32>() / n).sqrt()
 }
 
+/// Default periods when scoring prolonged cyclic playback vs an ideal reference.
+pub const RESIDUAL_PROLONG_PERIODS: usize = 16;
+
+/// Tile one baked cycle `periods` times (engine cyclic / wrap playback).
+pub fn tile_cycle(cycle: &[f32], periods: usize) -> Vec<f32> {
+    let periods = periods.max(1);
+    let n = cycle.len();
+    let mut out = Vec::with_capacity(n * periods);
+    for _ in 0..periods {
+        out.extend_from_slice(cycle);
+    }
+    out
+}
+
+/// Residual score ∈ [0, 1] (1 = best): prolonged engine playback vs ideal reference.
+///
+/// `score = clamp(1 − residual_rms / max(ideal_rms, ε), 0, 1)`
+///
+/// Monotone: lower residual energy → higher score. Stable across amplitude families
+/// because residual is normalized by ideal RMS.
+pub fn residual_score(ideal: &[f32], rendered: &[f32]) -> f32 {
+    let n = ideal.len().min(rendered.len());
+    if n == 0 {
+        return 0.0;
+    }
+    let mut e_res = 0.0f32;
+    let mut e_id = 0.0f32;
+    for i in 0..n {
+        let r = rendered[i] - ideal[i];
+        e_res += r * r;
+        e_id += ideal[i] * ideal[i];
+    }
+    let inv_n = 1.0 / n as f32;
+    let residual_rms = (e_res * inv_n).sqrt();
+    let ideal_rms = (e_id * inv_n).sqrt();
+    (1.0 - residual_rms / ideal_rms.max(1e-6)).clamp(0.0, 1.0)
+}
+
+/// Prolonged residual score: tile `out` vs tile `ideal_cycle` over `periods`.
+pub fn residual_score_prolonged(ideal_cycle: &[f32], out_cycle: &[f32], periods: usize) -> f32 {
+    let ideal = tile_cycle(ideal_cycle, periods);
+    let rendered = tile_cycle(out_cycle, periods);
+    residual_score(&ideal, &rendered)
+}
+
 pub fn score_cycle(raw: &[f32], out: &[f32]) -> QualityScores {
     let c_raw = crackle_c(raw);
     let c_out = crackle_c(out);
@@ -486,5 +531,37 @@ mod tests {
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
         eprintln!("200×2048 denoise_opt: {ms:.2} ms");
         assert!(ms < 500.0, "inference too slow: {ms} ms");
+    }
+
+    #[test]
+    fn residual_score_perfect_match_is_one() {
+        let wave: Vec<f32> = (0..128)
+            .map(|i| (i as f32 / 128.0 * std::f32::consts::TAU).sin())
+            .collect();
+        let s = residual_score_prolonged(&wave, &wave, 16);
+        assert!((s - 1.0).abs() < 1e-5, "got {s}");
+    }
+
+    #[test]
+    fn residual_score_wrap_cliff_near_zero() {
+        let ideal: Vec<f32> = (0..128)
+            .map(|i| (i as f32 / 128.0 * std::f32::consts::TAU).sin())
+            .collect();
+        let mut bad = ideal.clone();
+        bad[0] = -3.0;
+        bad[127] = 3.0;
+        let s = residual_score_prolonged(&ideal, &bad, 16);
+        assert!(s < 0.55, "wrap cliff residual score={s}");
+        assert!(s < 0.99, "cliff must score below perfect");
+        assert!((0.0..=1.0).contains(&s));
+    }
+
+    #[test]
+    fn residual_score_clamped_unit_interval() {
+        let ideal = [0.5f32; 32];
+        let huge: Vec<f32> = (0..32).map(|i| if i == 0 { 100.0 } else { -100.0 }).collect();
+        let s = residual_score(&ideal, &huge);
+        assert!((0.0..=1.0).contains(&s), "got {s}");
+        assert_eq!(residual_score(&[], &[1.0]), 0.0);
     }
 }

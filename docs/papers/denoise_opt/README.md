@@ -13,17 +13,41 @@
 
 Sources: `main.tex` (article class, arXiv-friendly). Figures under `figures/`. Compiled PDF: `main.pdf`.
 
+## Meta objective (residual vs ideal)
+
+Primary outer objective for champion ranking is a **prolonged residual score** ∈ [0, 1] (**1 = best**):
+
+\[
+\mathrm{score}=\mathrm{clamp}\!\left(1-\frac{\mathrm{rms}(y_{\mathrm{engine}}-y_{\mathrm{ideal}})}{\max(\mathrm{rms}(y_{\mathrm{ideal}}),\varepsilon)},\,0,\,1\right)
+\]
+
+- \(y_{\mathrm{ideal}}\): same seed / family generator **without** open-wrap cliffs (`generate_sound_ideal`), tiled \(N{=}16\) periods.
+- \(y_{\mathrm{engine}}\): DenoiseOpt on the (possibly open-wrap) baked cycle, then tiled \(N{=}16\) (cyclic playback).
+- Wrap-energy D/S proxies remain **auxiliaries** in reports; soft shape gate \(\mathcal{S}\ge 0.97\) still applies.
+
+`FROZEN_THETA` is **not** auto-updated by residual ranking — re-lock only after an intentional full 1500 run.
+
 ## 1500-trial summary
 
-Literature-informed meta-learning / HPO over six prior families (`bayes_local`, `pbt_exploit`, `mo_shape`, `evo_explore`, `racing_mid`, …). Champion: **`racing_mid_1043`**.
+Literature-informed meta-learning / HPO over six prior families (`bayes_local`, `pbt_exploit`, `mo_shape`, `evo_explore`, `racing_mid`, …). Prior D/S champion: **`racing_mid_1043`** (historical Q≈0.790). Re-run under residual objective to refresh Top-4.
 
-| Algorithm | \(Q\) (matrix, \(N{=}2000\)) |
+| Algorithm | \(Q\) (matrix, \(N{=}2000\), historical D/S) |
 |-----------|------------------------------|
 | Naive DualCosine | ≈ 0.789 |
 | Meta Top 1 (`racing_mid`) | ≈ 0.790 |
 | Meta Top 2–4 | ≈ 0.790 |
 
-Shape stays \(\mathcal{S}\approx 0.997\) on Top 1. Artifacts: `brand/artifacts/denoise_opt_meta_1500.json`. Frozen θ in `src/denoise_opt.rs` matches champion `theta`.
+Shape stays \(\mathcal{S}\approx 0.997\) on Top 1. Artifacts: `brand/artifacts/denoise_opt_meta_1500.json`. Frozen θ in `src/denoise_opt.rs` matches prior champion `theta`.
+
+### Re-run commands
+
+```bash
+# Short sanity (residual ranking smoke test)
+cargo run -p reelsynth --release --bin bench_denoise_meta -- 40
+
+# Full 1500 (writes brand/artifacts/denoise_opt_meta_1500.json)
+cargo run -p reelsynth --release --bin bench_denoise_meta
+```
 
 ## Build
 

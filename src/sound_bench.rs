@@ -128,7 +128,10 @@ fn base_wave(kind: usize, i: usize, n: usize, duty: f32) -> f32 {
 }
 
 /// Additive / FFT-style spectrum: sum of harmonics with amplitudes & phases.
-fn harmonic_overlay(n: usize, rng: &mut Rng, max_h: usize, extreme: bool) -> Vec<f32> {
+///
+/// When `allow_open_wrap` is false, RNG draws for the optional cliff are still
+/// consumed so ideal vs engine share the same underlying partial stack.
+fn harmonic_overlay(n: usize, rng: &mut Rng, max_h: usize, extreme: bool, allow_open_wrap: bool) -> Vec<f32> {
     let mut out = vec![0.0f32; n];
     let h_count = if extreme {
         rng.usize(max_h.saturating_sub(8)).max(8) + 8
@@ -153,9 +156,12 @@ fn harmonic_overlay(n: usize, rng: &mut Rng, max_h: usize, extreme: bool) -> Vec
         }
     }
     normalize_peak(&mut out, rng.range(0.6, 1.35));
-    // Optional open wrap cliff
+    // Optional open wrap cliff (RNG always burned for seed alignment)
     if rng.f01() < 0.55 {
-        force_open_wrap(&mut out, rng.range(0.2, 1.8));
+        let cliff = rng.range(0.2, 1.8);
+        if allow_open_wrap {
+            force_open_wrap(&mut out, cliff);
+        }
     }
     out
 }
@@ -186,8 +192,20 @@ fn combo_mode(rng: &mut Rng) -> ComboMode {
     }
 }
 
-/// Generate one bench cycle from a seed. Deterministic.
+/// Generate one bench cycle from a seed. Deterministic (may include open-wrap cliffs).
 pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
+    generate_sound_ex(seed, n, true)
+}
+
+/// Same seed/family generator as [`generate_sound`], but never applies open-wrap
+/// cliffs — the continuous single-cycle reference for prolonged residual scoring.
+pub fn generate_sound_ideal(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
+    generate_sound_ex(seed, n, false)
+}
+
+/// Generate one bench cycle. When `allow_open_wrap` is false, cliff RNG is still
+/// consumed so mid-cycle content matches the engine path for the same seed.
+fn generate_sound_ex(seed: u64, n: usize, allow_open_wrap: bool) -> (BenchFamily, Vec<f32>) {
     let n = n.max(32);
     let family = BenchFamily::from_seed(seed);
     let mut rng = Rng(seed.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(1));
@@ -199,23 +217,31 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
                 .map(|i| base_wave(kind, i, n, duty) * rng.range(0.5, 1.2))
                 .collect();
             if rng.f01() < 0.4 {
-                force_open_wrap(&mut v, rng.range(0.3, 1.9));
+                let cliff = rng.range(0.3, 1.9);
+                if allow_open_wrap {
+                    force_open_wrap(&mut v, cliff);
+                }
             }
             v
         }
-        BenchFamily::HarmonicFft => harmonic_overlay(n, &mut rng, (n / 2).min(64), false),
+        BenchFamily::HarmonicFft => {
+            harmonic_overlay(n, &mut rng, (n / 2).min(64), false, allow_open_wrap)
+        }
         BenchFamily::ExtremeOverlay => {
             let mut base: Vec<f32> = (0..n)
                 .map(|i| base_wave(rng.usize(6), i, n, rng.range(0.1, 0.9)))
                 .collect();
-            let overlay = harmonic_overlay(n, &mut rng, (n / 2).min(96), true);
+            let overlay = harmonic_overlay(n, &mut rng, (n / 2).min(96), true, allow_open_wrap);
             let w = rng.range(0.4, 1.6);
             for i in 0..n {
                 base[i] = base[i] + w * overlay[i];
             }
             normalize_peak(&mut base, rng.range(0.8, 1.6));
             if rng.f01() < 0.7 {
-                force_open_wrap(&mut base, rng.range(0.5, 2.0));
+                let cliff = rng.range(0.5, 2.0);
+                if allow_open_wrap {
+                    force_open_wrap(&mut base, cliff);
+                }
             }
             base
         }
@@ -225,7 +251,7 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
                 .collect();
             let b = if rng.f01() < 0.5 {
                 let extreme = rng.f01() < 0.4;
-                harmonic_overlay(n, &mut rng, 48, extreme)
+                harmonic_overlay(n, &mut rng, 48, extreme, allow_open_wrap)
             } else {
                 (0..n)
                     .map(|i| base_wave(rng.usize(6), i, n, rng.range(0.05, 0.95)))
@@ -233,7 +259,10 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
             };
             let mut c = combo_mode(&mut rng).combine(&a, &b);
             if rng.f01() < 0.5 {
-                force_open_wrap(&mut c, rng.range(0.2, 1.7));
+                let cliff = rng.range(0.2, 1.7);
+                if allow_open_wrap {
+                    force_open_wrap(&mut c, cliff);
+                }
             }
             normalize_peak(&mut c, rng.range(0.7, 1.4));
             c
@@ -250,7 +279,10 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
                 }
             }
             if rng.f01() < 0.6 {
-                force_open_wrap(&mut v, rng.range(0.4, 1.9));
+                let cliff = rng.range(0.4, 1.9);
+                if allow_open_wrap {
+                    force_open_wrap(&mut v, cliff);
+                }
             }
             v
         }
@@ -273,7 +305,10 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
             }
             normalize_peak(&mut v, 1.0);
             if rng.f01() < 0.45 {
-                force_open_wrap(&mut v, rng.range(0.3, 1.8));
+                let cliff = rng.range(0.3, 1.8);
+                if allow_open_wrap {
+                    force_open_wrap(&mut v, cliff);
+                }
             }
             v
         }
@@ -288,14 +323,17 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
                 v[i] = ((car as f32 * t) + idx * m).sin() * (0.5 + 0.5 * m);
             }
             if rng.f01() < 0.5 {
-                let ov = harmonic_overlay(n, &mut rng, 32, true);
+                let ov = harmonic_overlay(n, &mut rng, 32, true, allow_open_wrap);
                 for i in 0..n {
                     v[i] += 0.35 * ov[i];
                 }
             }
             normalize_peak(&mut v, rng.range(0.7, 1.3));
             if rng.f01() < 0.5 {
-                force_open_wrap(&mut v, rng.range(0.3, 1.6));
+                let cliff = rng.range(0.3, 1.6);
+                if allow_open_wrap {
+                    force_open_wrap(&mut v, cliff);
+                }
             }
             v
         }
@@ -312,7 +350,7 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
                     tone * tone_lvl + noise * noise_lvl
                 })
                 .collect();
-            if (seed % 3) == 0 {
+            if (seed % 3) == 0 && allow_open_wrap {
                 force_open_wrap(&mut v, 0.4 + ((seed >> 5) % 100) as f32 / 100.0 * 1.4);
             }
             v
@@ -322,7 +360,7 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
                 .map(|i| base_wave(rng.usize(6), i, n, rng.range(0.1, 0.9)))
                 .collect();
             let extreme = rng.f01() < 0.5;
-            let b = harmonic_overlay(n, &mut rng, 40, extreme);
+            let b = harmonic_overlay(n, &mut rng, 40, extreme, allow_open_wrap);
             let c: Vec<_> = (0..n)
                 .map(|i| base_wave(rng.usize(6), i, n, rng.range(0.1, 0.9)))
                 .collect();
@@ -332,21 +370,30 @@ pub fn generate_sound(seed: u64, n: usize) -> (BenchFamily, Vec<f32>) {
             let mut out: Vec<f32> = (0..n).map(|i| wa * a[i] + wb * b[i] + wc * c[i]).collect();
             normalize_peak(&mut out, rng.range(0.8, 1.5));
             if rng.f01() < 0.55 {
-                force_open_wrap(&mut out, rng.range(0.4, 2.0));
+                let cliff = rng.range(0.4, 2.0);
+                if allow_open_wrap {
+                    force_open_wrap(&mut out, cliff);
+                }
             }
             out
         }
         BenchFamily::OpenWrapBias => {
             // Always open + optional extreme harmonics
-            let mut v = harmonic_overlay(n, &mut rng, (n / 2).min(80), true);
-            force_open_wrap(&mut v, rng.range(0.8, 2.0));
+            let mut v = harmonic_overlay(n, &mut rng, (n / 2).min(80), true, allow_open_wrap);
+            let cliff1 = rng.range(0.8, 2.0);
+            if allow_open_wrap {
+                force_open_wrap(&mut v, cliff1);
+            }
             // add saw cliff energy
             let saw_w = rng.range(0.2, 1.0);
             for i in 0..n {
                 v[i] += saw_w * (2.0 * phase01(i, n) - 1.0);
             }
             normalize_peak(&mut v, rng.range(0.9, 1.5));
-            force_open_wrap(&mut v, rng.range(1.0, 2.0));
+            let cliff2 = rng.range(1.0, 2.0);
+            if allow_open_wrap {
+                force_open_wrap(&mut v, cliff2);
+            }
             v
         }
     };
