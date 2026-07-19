@@ -228,6 +228,35 @@ class SeamCell(nn.Module):
         return frames * (1 - mask * g) + y * (mask * g)
 
 
+def finite_scalar(x: float, default: float = 0.0) -> float:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return default
+    return v if math.isfinite(v) else default
+
+
+def sanitize_logits(logits: torch.Tensor, clamp: float = 20.0) -> torch.Tensor:
+    """Replace non-finite logits and clamp so Categorical validate_args never trips."""
+    return torch.nan_to_num(logits, nan=0.0, posinf=clamp, neginf=-clamp).clamp(-clamp, clamp)
+
+
+def categorical_from_logits(logits: torch.Tensor) -> torch.distributions.Categorical:
+    return torch.distributions.Categorical(logits=sanitize_logits(logits))
+
+
+def params_finite(module: nn.Module) -> bool:
+    return all(torch.isfinite(p).all().item() for p in module.parameters())
+
+
+def snapshot_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
+    return {k: v.detach().cpu().clone() for k, v in module.state_dict().items()}
+
+
+def restore_state_dict(module: nn.Module, state: dict[str, torch.Tensor], device: torch.device) -> None:
+    module.load_state_dict({k: v.to(device) for k, v in state.items()})
+
+
 class ActorCritic(nn.Module):
     """PPO actor-critic over discrete architecture/hyperparam edit actions."""
 
@@ -243,8 +272,11 @@ class ActorCritic(nn.Module):
         self.critic = nn.Linear(hidden, 1)
 
     def forward(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        state = torch.nan_to_num(state, nan=0.0, posinf=0.0, neginf=0.0)
         h = self.shared(state)
-        return self.actor(h), self.critic(h).squeeze(-1)
+        logits = sanitize_logits(self.actor(h))
+        value = torch.nan_to_num(self.critic(h).squeeze(-1), nan=0.0, posinf=0.0, neginf=0.0)
+        return logits, value
 
 
 def make_batch(batch: int, n: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -421,12 +453,12 @@ def prolong_tile(cycle: torch.Tensor, periods: int = PROLONG) -> torch.Tensor:
 def residual_score(ideal: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
     """R = clamp(1 - residual_rms / max(ideal_rms, eps), 0, 1); mean over batch."""
     idp = prolong_tile(ideal)
-    otp = prolong_tile(out)
+    otp = prolong_tile(torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0))
     resid = otp - idp
     residual_rms = resid.pow(2).mean(dim=1).sqrt()
     ideal_rms = idp.pow(2).mean(dim=1).sqrt().clamp_min(1e-6)
     r = (1.0 - residual_rms / ideal_rms).clamp(0.0, 1.0)
-    return r
+    return torch.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0).clamp(0.0, 1.0)
 
 
 def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> torch.Tensor:
@@ -435,21 +467,23 @@ def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> to
     cell_id = {c: i / max(len(CELL_KINDS) - 1, 1) for i, c in enumerate(CELL_KINDS)}.get(
         cfg.cell_kind, 0.0
     )
-    soft_max = max(cfg.soft_logits) if cfg.soft_logits else 0.0
+    finite_soft = [x for x in (cfg.soft_logits or []) if math.isfinite(float(x))]
+    soft_max = max(finite_soft) if finite_soft else 0.0
     block_bits = [1.0 if b in cfg.blocks else 0.0 for b in BLOCKS]
+    lr_safe = finite_scalar(hp.lr, 1e-3)
     extras = [
-        cfg.depth / float(MAX_SEARCH_DEPTH),
-        cfg.width / 48.0,
-        act_id,
-        cfg.wet,
-        cell_id,
-        abs(cfg.fir[1]) if cfg.fir else 0.5,
-        math.log10(max(hp.lr, 1e-6)) / -2.0,
-        hp.fit_steps / 64.0,
-        hp.entropy_coef,
-        soft_max,
+        finite_scalar(cfg.depth / float(MAX_SEARCH_DEPTH)),
+        finite_scalar(cfg.width / 48.0),
+        finite_scalar(act_id),
+        finite_scalar(cfg.wet),
+        finite_scalar(cell_id),
+        finite_scalar(abs(cfg.fir[1]) if cfg.fir else 0.5, 0.5),
+        finite_scalar(math.log10(max(lr_safe, 1e-6)) / -2.0),
+        finite_scalar(hp.fit_steps / 64.0),
+        finite_scalar(hp.entropy_coef),
+        finite_scalar(soft_max),
         1.0 if cfg.use_adv_aux else 0.0,
-        len(cfg.blocks) / float(MAX_GRAPH_LEN),
+        finite_scalar(len(cfg.blocks) / float(MAX_GRAPH_LEN)),
         1.0 if cfg.moe_mode == "moe_parallel" else 0.0,
         float(len(set(cfg.blocks) & {"unet", "attn", "dilated", "dual_path"})) / 4.0,
     ]
@@ -662,7 +696,10 @@ def fit_cell(
         or cell.cfg.cell_kind == "soft_mix"
         or len(cell.cfg.blocks) >= 1
     )
-    opt = torch.optim.Adam(cell.parameters(), lr=lr) if can_train else None
+    lr_safe = finite_scalar(lr, 3e-3)
+    if lr_safe <= 0:
+        lr_safe = 3e-3
+    opt = torch.optim.Adam(cell.parameters(), lr=lr_safe) if can_train else None
     prev = None
     patience = 0
     last_r = 0.0
@@ -671,7 +708,7 @@ def fit_cell(
         ideal, eng = make_batch(batch, N, device)
         out = apply_ops(eng, cell, ops)
         r = residual_score(ideal, out).mean()
-        last_r = float(r.detach().item())
+        last_r = finite_scalar(float(r.detach().item()), 0.0)
         if can_train and opt is not None:
             loss = 1.0 - r
             # Optional tiny adv aux: push generator outputs toward ideal discriminator score
@@ -687,10 +724,17 @@ def fit_cell(
                     + F.binary_cross_entropy_with_logits(fake_logit.detach(), torch.zeros_like(fake_logit))
                 )
                 loss = loss + adv_coef * (adv_g + 0.5 * adv_d)
-            if loss.requires_grad:
+            if loss.requires_grad and torch.isfinite(loss).item():
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
-                opt.step()
+                nn.utils.clip_grad_norm_(cell.parameters(), 1.0)
+                grads_ok = all(
+                    p.grad is None or torch.isfinite(p.grad).all().item() for p in cell.parameters()
+                )
+                if grads_ok:
+                    opt.step()
+                else:
+                    opt.zero_grad(set_to_none=True)
         if prev is not None:
             rel = abs(prev - last_r) / max(abs(prev), 1e-6)
             if rel < 1e-4:
@@ -711,7 +755,7 @@ def fit_cell(
 def eval_cell(cell: SeamCell, ops: list[str], device: torch.device, batch: int = 64) -> float:
     ideal, eng = make_batch(batch, N, device)
     out = apply_ops(eng, cell, ops)
-    return float(residual_score(ideal, out).mean().item())
+    return finite_scalar(float(residual_score(ideal, out).mean().item()), 0.0)
 
 
 @torch.no_grad()
@@ -811,57 +855,107 @@ def ppo_update(
     epochs: int = 4,
     gamma: float = 0.99,
     lam: float = 0.95,
+    last_good: dict[str, torch.Tensor] | None = None,
 ) -> dict[str, float]:
     if len(buf) == 0:
-        return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
+        return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "nan_skipped": 0.0}
 
-    states = torch.stack(buf.states).to(device)
+    states = torch.nan_to_num(torch.stack(buf.states).to(device), nan=0.0, posinf=0.0, neginf=0.0)
     actions = torch.tensor(buf.actions, dtype=torch.long, device=device)
-    old_logprobs = torch.stack(buf.logprobs).detach().to(device)
-    rewards = torch.tensor(buf.rewards, dtype=torch.float32, device=device)
-    values = torch.stack(buf.values).detach().to(device)
+    old_logprobs = torch.nan_to_num(
+        torch.stack(buf.logprobs).detach().to(device), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    rewards = torch.nan_to_num(
+        torch.tensor(buf.rewards, dtype=torch.float32, device=device),
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+    values = torch.nan_to_num(
+        torch.stack(buf.values).detach().to(device), nan=0.0, posinf=0.0, neginf=0.0
+    )
 
     advantages = torch.zeros_like(rewards)
     last_gae = 0.0
     next_value = 0.0
     for t in reversed(range(len(rewards))):
         mask = 0.0 if buf.dones[t] else 1.0
-        delta = rewards[t] + gamma * next_value * mask - values[t]
+        delta = float(rewards[t].item()) + gamma * next_value * mask - float(values[t].item())
+        if not math.isfinite(delta):
+            delta = 0.0
         last_gae = delta + gamma * lam * mask * last_gae
+        if not math.isfinite(last_gae):
+            last_gae = 0.0
         advantages[t] = last_gae
-        next_value = values[t]
-    returns = advantages + values
-    adv = advantages
-    adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        next_value = float(values[t].item())
+        if not math.isfinite(next_value):
+            next_value = 0.0
+    returns = torch.nan_to_num(advantages + values, nan=0.0, posinf=0.0, neginf=0.0)
+    adv = torch.nan_to_num(advantages, nan=0.0, posinf=0.0, neginf=0.0)
+    adv_std = float(adv.std().item()) if adv.numel() > 1 else 0.0
+    if math.isfinite(adv_std) and adv_std > 1e-8:
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+    else:
+        adv = torch.zeros_like(adv)
+    adv = torch.nan_to_num(adv, nan=0.0, posinf=0.0, neginf=0.0)
 
     total_pi = 0.0
     total_v = 0.0
     total_ent = 0.0
     n_upd = 0
+    nan_skipped = 0.0
     for _ in range(epochs):
+        if not params_finite(policy):
+            if last_good is not None:
+                restore_state_dict(policy, last_good, device)
+            nan_skipped = 1.0
+            break
         logits, vals = policy(states)
-        dist = torch.distributions.Categorical(logits=logits)
+        # Defensive: sanitize even if forward already did (corrupted weights path).
+        logits = sanitize_logits(logits)
+        dist = categorical_from_logits(logits)
         logprobs = dist.log_prob(actions)
         entropy = dist.entropy().mean()
-        ratio = (logprobs - old_logprobs).exp()
+        ratio = (logprobs - old_logprobs).clamp(-20.0, 20.0).exp()
         surr1 = ratio * adv
         surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * adv
         policy_loss = -torch.min(surr1, surr2).mean()
         value_loss = F.mse_loss(vals, returns)
         loss = policy_loss + value_coef * value_loss - entropy_coef * entropy
+        if not torch.isfinite(loss).item():
+            opt.zero_grad(set_to_none=True)
+            nan_skipped = 1.0
+            if last_good is not None:
+                restore_state_dict(policy, last_good, device)
+            break
         opt.zero_grad(set_to_none=True)
         loss.backward()
+        grads_ok = all(
+            p.grad is None or torch.isfinite(p.grad).all().item() for p in policy.parameters()
+        )
+        if not grads_ok:
+            opt.zero_grad(set_to_none=True)
+            nan_skipped = 1.0
+            if last_good is not None:
+                restore_state_dict(policy, last_good, device)
+            break
         nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
         opt.step()
-        total_pi += float(policy_loss.detach().item())
-        total_v += float(value_loss.detach().item())
-        total_ent += float(entropy.detach().item())
+        if not params_finite(policy):
+            nan_skipped = 1.0
+            if last_good is not None:
+                restore_state_dict(policy, last_good, device)
+            break
+        total_pi += finite_scalar(float(policy_loss.detach().item()))
+        total_v += finite_scalar(float(value_loss.detach().item()))
+        total_ent += finite_scalar(float(entropy.detach().item()))
         n_upd += 1
 
     return {
         "policy_loss": total_pi / max(n_upd, 1),
         "value_loss": total_v / max(n_upd, 1),
         "entropy": total_ent / max(n_upd, 1),
+        "nan_skipped": nan_skipped,
     }
 
 
@@ -1001,6 +1095,8 @@ def main() -> int:
 
     policy = ActorCritic().to(device)
     policy_opt = torch.optim.Adam(policy.parameters(), lr=3e-4)
+    # No AMP / GradScaler in this loop (FP32); kept explicit so NaN paths stay deterministic.
+    last_good_policy = snapshot_state_dict(policy)
     buf = RolloutBuffer()
 
     pop: list[Individual] = [
@@ -1111,7 +1207,7 @@ def main() -> int:
     champion_cell: SeamCell | None = warm_cell
     iters_since_improve = 0
     branch_best = {"ppo": 0.0, "nas": 0.0, "pbt": 0.0, "ga": 0.0, "combo": 0.0}
-    last_ppo_stats = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
+    last_ppo_stats = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "nan_skipped": 0.0}
     last_ga_stats = {"ga_crossover": 0.0, "ga_mutate": 0.0, "ga_elites": 0.0}
     recent_residuals: deque[float] = deque(maxlen=100)
 
@@ -1134,12 +1230,33 @@ def main() -> int:
         hp = ind.hp
 
         state = arch_state_vec(cfg, hp, device).unsqueeze(0)
-        logits, value = policy(state)
-        dist = torch.distributions.Categorical(logits=logits)
-        action_t = dist.sample()
-        action = int(action_t.item())
-        logprob = dist.log_prob(action_t)
-        entropy_now = float(dist.entropy().item())
+        if not params_finite(policy):
+            log_line(
+                log_path,
+                f"NAN_POLICY_RELOAD iter={it} reason=params_nonfinite before_sample",
+            )
+            restore_state_dict(policy, last_good_policy, device)
+            buf.clear()
+        try:
+            logits, value = policy(state)
+            dist = categorical_from_logits(logits)
+            action_t = dist.sample()
+            action = int(action_t.item())
+            logprob = dist.log_prob(action_t)
+            entropy_now = finite_scalar(float(dist.entropy().item()), 0.0)
+        except (ValueError, RuntimeError) as exc:
+            log_line(
+                log_path,
+                f"NAN_POLICY_RELOAD iter={it} reason=sample_failed err={exc!r}",
+            )
+            restore_state_dict(policy, last_good_policy, device)
+            buf.clear()
+            logits, value = policy(state)
+            dist = categorical_from_logits(logits)
+            action_t = dist.sample()
+            action = int(action_t.item())
+            logprob = dist.log_prob(action_t)
+            entropy_now = finite_scalar(float(dist.entropy().item()), 0.0)
 
         if branch == "nas":
             trial_cfg = random_arch(rng)
@@ -1196,7 +1313,13 @@ def main() -> int:
             adv_coef=trial_hp.adv_coef if trial_cfg.use_adv_aux else 0.0,
         )
         r_eval = eval_cell(cell, trial_cfg.ops, device, batch=max(64, batch))
-        residual_raw = 0.5 * r_fit + 0.5 * r_eval
+        raw_sum = 0.5 * r_fit + 0.5 * r_eval
+        residual_raw = finite_scalar(raw_sum, 0.0)
+        if not math.isfinite(raw_sum):
+            log_line(
+                log_path,
+                f"NAN_RESIDUAL iter={it} r_fit={r_fit!r} r_eval={r_eval!r} -> 0.0",
+            )
         dmb = depth_mixture_bonus(
             residual_raw,
             baseline,
@@ -1204,11 +1327,12 @@ def main() -> int:
             len(trial_cfg.blocks),
             trial_cfg.moe_mode,
         )
+        dmb = finite_scalar(dmb, 0.0)
         residual = residual_raw + dmb
         branch_best[branch] = max(branch_best[branch], residual_raw)
         recent_residuals.append(residual_raw)
 
-        reward = residual - baseline
+        reward = finite_scalar(residual - baseline, 0.0)
         buf.states.append(state.squeeze(0).detach())
         buf.actions.append(action)
         buf.logprobs.append(logprob.detach())
@@ -1224,8 +1348,16 @@ def main() -> int:
                 device,
                 clip_eps=trial_hp.ppo_clip,
                 entropy_coef=trial_hp.entropy_coef,
+                last_good=last_good_policy,
             )
             buf.clear()
+            if last_ppo_stats.get("nan_skipped", 0.0) >= 1.0:
+                log_line(
+                    log_path,
+                    f"NAN_PPO_SKIP iter={it} restored_last_good_policy=1",
+                )
+            elif params_finite(policy):
+                last_good_policy = snapshot_state_dict(policy)
 
         if residual >= ind.score:
             ind.cfg = trial_cfg
@@ -1328,6 +1460,8 @@ def main() -> int:
             save_fitted(
                 meta_run, trial_cfg, cell, policy, residual_raw, f"champion_iter_{it:06d}", trial_hp
             )
+            if params_finite(policy):
+                last_good_policy = snapshot_state_dict(policy)
             log_line(
                 log_path,
                 f"NEW_CHAMPION iter={it} residual={residual_raw:.4f} "
