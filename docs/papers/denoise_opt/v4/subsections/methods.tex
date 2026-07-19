@@ -1,8 +1,14 @@
 \section{Methods}
 \label{sec:methods}
 
+\paragraph{Notation.}
+Throughout, $x\in\mathbb{R}^{L}$ is the stored single-period wavetable (raw engine input).
+$y=\Theta(x;\theta)$ is the engine-baked cycle after seam ops and optional residual cells with parameters $\theta$.
+$r^{\star}$ is a procedural multi-period ideal from the same seed with open-wrap cliffs withheld (not a studio-clean recording).
+$R\in[0,1]$ is the prolonged residual score defined below ($1$~=~best).
+These symbols are fixed for the residual objective. They do not follow the Noise2Noise clean/noisy pair convention.
+
 \paragraph{Residual score.}
-Let $y$ be the engine-baked cycle and $r^{\star}$ an ideal multi-period reference from the same seed with open-wrap cliffs withheld.
 With tiling length $N$ (typically $N{=}16$),
 \begin{equation}
 R=\mathrm{clamp}\!\left(1-\frac{\mathrm{rms}(y_{\mathrm{tiled}}-r^{\star}_{\mathrm{tiled}})}{\max(\mathrm{rms}(r^{\star}_{\mathrm{tiled}}),\varepsilon)},\,0,\,1\right).
