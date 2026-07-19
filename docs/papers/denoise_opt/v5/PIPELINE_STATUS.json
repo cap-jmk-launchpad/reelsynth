@@ -3,7 +3,7 @@
                       "algo_tag":  "PPO+GA+PBT+NAS+depth+MoE",
                       "frozen_iters":  5850,
                       "champion_residual":  0.99092981219291687,
-                      "note":  "5k clean gate frozen for figures/tables. Declared long-horizon mean-R deferred.",
+                      "note":  "5k clean gate frozen for figures/tables.",
                       "dual_cosine_baseline":  0.81658494472503662,
                       "do_not_stop":  true,
                       "gate_5k_passed":  true

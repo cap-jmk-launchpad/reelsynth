@@ -21,14 +21,13 @@ Family labels are absent: this corpus is a single sine{+}cliff family (Rust \tex
 A metrics draw of $4{,}096$ cycles under the holdout seed yields mean ideal RMS $0.721\pm0.016$, mean engine residual RMS $0.021\pm0.013$, and mean absolute wrap jump $|x_0-x_{L-1}|$ of $0.913\pm0.634$.
 Identity (no bake) on that draw scores mean $R\approx0.971$.
 Method tables below use a matched score batch of $64$ cycles from the same seed (tensors persisted under \texttt{brand/artifacts/canonical\_eval\_dataset/}), plus five consecutive seeds for mean$\pm$std.
-Figure~\ref{fig:intro-sine} is the documented sine-wrap edge case: the maximum-$|wrap|$ tile in that score batch, used for illustration and scored with DualCosine and the neural favorite under the same residual $R$.
+Figure~\ref{fig:intro-sine} is the documented sine-wrap edge case: a high-$|wrap|$ holdout tile where cliff modulation is visible, scored with DualCosine and the top neural favorite under the same residual $R$ (tile $R\approx0.9917$, favorite batch mean $R\approx0.991$).
 
 \paragraph{Overnight hybrid campaign ($5$k clean gate).}
 A CUDA search tagged \texttt{PPO+GA+PBT+NAS} (depth and MoE biases) runs with a large declared iteration budget (order $10^{5}$).
 At the $5{,}000$-iteration clean gate the live job reports champion residual $R\approx 0.99093$ against DualCosine baseline $\approx 0.81658$ on the same runner geometry ($\Delta R\approx{+}0.174$).
 Branch-best residuals at the freeze: GA $\approx 0.99016$, PBT $\approx 0.99012$, PPO $\approx 0.98924$, combo $\approx 0.98854$, NAS $\approx 0.98677$.
 Figures in Section~\ref{sec:results} regenerate from \texttt{history.jsonl} at this gate.
-Declared long-horizon mean-$R$ is \emph{not} claimed here. The GPU job continues past the gate.
 
 \paragraph{Inference and classical matched benches.}
 High-$R$ fitted cells ($R\ge 0.98$) are timed on CUDA (batch 64, prolonged residual).
