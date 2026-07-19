@@ -10,6 +10,27 @@ Hard sounds recur; they are not a random one-off.
 Final mean-$R$ tables will be ingested after the overnight campaign reaches its declared iteration budget.
 Monitoring plots below are for protocol transparency only; incomplete-run champions are \emph{not} asserted as finished science.
 
+\paragraph{Inference time at matched score.}
+Across diverse high-$R$ fitted cells ($R\ge 0.98$), we timed CUDA forward passes (batch 64, prolonged residual).
+Within a tight band of the best residual ($R \ge R_{\max}-5\cdot10^{-4}$), the \textbf{favorite} is the lowest-latency model:
+\texttt{champion\_iter\_000235} with $R\approx 0.9910$, $\approx 3.15$\,ms/batch, $\approx 37$k parameters
+(versus the absolute max-$R$ cell at $R\approx 0.9914$ but $\approx 7.2$\,ms/batch / $\approx 104$k params).
+Selection rule: maximize $R$, then minimize latency inside the band.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_inference_vs_residual.png}
+  \caption{High-$R$ architectures: residual versus CUDA inference latency (ms/batch). Star: favorite (fastest in the near-max-$R$ band).}
+  \label{fig:inference-pareto}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_inference_latency_bars.png}
+  \caption{Inference latency bars for diverse high-$R$ fitted models.}
+  \label{fig:inference-bars}
+\end{figure}
+
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/champ_residual_vs_iter.png}
