@@ -74,6 +74,12 @@ Cite integrity check (19 Jul 2026): **0** cited-but-missing keys, **0** bib-but-
 
 ---
 
+## Related: Citation Accuracy Audit
+
+For the later score-100 **Citation Accuracy Audit** (Pixel 1 / 78 ms MnasNet; Elsken lower-resolution performance proxies), see `CITATION_ACCURACY_AUDIT_TRIAGE.md`. Those high-priority wording fixes also target lit-corpus excerpts; Pixel/78 ms claims are absent from DenoiseOpt. One optional Elsken lower-res sentence was added in Related Work.
+
+---
+
 ## Rebuild / mirror
 
 - Rebuild: `paper/v4/main.pdf`
