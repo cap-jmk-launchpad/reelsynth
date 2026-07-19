@@ -38,10 +38,57 @@ BLOCKS = [
 # Keep CELL_KINDS as primary cell mode; graphs compose additional blocks.
 CELL_KINDS = list(BLOCKS)
 
-# Depth / mixture search caps (aligned with denoise_meta_evo)
+# Depth / mixture search caps (aligned with denoise_meta_evo).
+# Mutable at runtime via raise_search_caps (plateau adapt); hard caps keep RTX 3090 trainable.
 MAX_SEARCH_DEPTH = 12
 MAX_GRAPH_LEN = 6
+MAX_WIDTH = 48
+HARD_MAX_DEPTH = 20
+HARD_MAX_GRAPH = 8
+HARD_MAX_WIDTH = 56
 MOE_MODES = ("sequential", "moe_parallel")
+
+
+def get_search_caps() -> dict[str, int]:
+    return {
+        "max_search_depth": MAX_SEARCH_DEPTH,
+        "max_graph_len": MAX_GRAPH_LEN,
+        "max_width": MAX_WIDTH,
+        "hard_max_depth": HARD_MAX_DEPTH,
+        "hard_max_graph": HARD_MAX_GRAPH,
+        "hard_max_width": HARD_MAX_WIDTH,
+    }
+
+
+def set_search_caps(
+    *,
+    depth: int | None = None,
+    graph: int | None = None,
+    width: int | None = None,
+) -> dict[str, int]:
+    """Set live search ceilings (clamped to hard 3090-safe caps)."""
+    global MAX_SEARCH_DEPTH, MAX_GRAPH_LEN, MAX_WIDTH
+    if depth is not None:
+        MAX_SEARCH_DEPTH = max(1, min(HARD_MAX_DEPTH, int(depth)))
+    if graph is not None:
+        MAX_GRAPH_LEN = max(1, min(HARD_MAX_GRAPH, int(graph)))
+    if width is not None:
+        MAX_WIDTH = max(4, min(HARD_MAX_WIDTH, int(width)))
+    return get_search_caps()
+
+
+def raise_search_caps(
+    *,
+    depth_delta: int = 2,
+    graph_delta: int = 1,
+    width_delta: int = 4,
+) -> dict[str, int]:
+    """Escalate ceilings — depth first, width only moderately."""
+    return set_search_caps(
+        depth=MAX_SEARCH_DEPTH + max(0, depth_delta),
+        graph=MAX_GRAPH_LEN + max(0, graph_delta),
+        width=MAX_WIDTH + max(0, width_delta),
+    )
 
 
 def _act_module(act: str) -> nn.Module:
@@ -98,32 +145,87 @@ class DenseBlock(nn.Module):
 
 
 class TinyUNet1D(nn.Module):
-    """Tiny 1D U-Net on length-L vectors (channel=1). Wave-U-Net inspired, tiny."""
+    """Tiny 1D U-Net on length-L vectors (channel=1). Wave-U-Net inspired; depth → more stages.
 
-    def __init__(self, length: int, width: int, act: str):
+    depth <= 12 keeps the legacy 2-level encoder (warm-start compatible).
+    depth > 12 unlocks a 3rd stage (plateau deepen).
+    """
+
+    def __init__(self, length: int, width: int, act: str, depth: int = 3):
         super().__init__()
-        c = max(4, min(16, width // 2))
-        self.enc1 = nn.Conv1d(1, c, 3, padding=1)
-        self.enc2 = nn.Conv1d(c, c * 2, 3, stride=2, padding=1)
-        self.bot = nn.Conv1d(c * 2, c * 2, 3, padding=1)
-        self.up = nn.ConvTranspose1d(c * 2, c, 4, stride=2, padding=1)
-        self.dec = nn.Conv1d(c * 2, 1, 3, padding=1)
         self.act = _act_module(act)
         self.length = length
+        c = max(4, min(16, width // 2))
+        # Legacy path (matches pre-plateau checkpoints at depth<=12)
+        if depth <= 12:
+            self.n_stages = 2
+            self.legacy = True
+            self.enc1 = nn.Conv1d(1, c, 3, padding=1)
+            self.enc2 = nn.Conv1d(c, c * 2, 3, stride=2, padding=1)
+            self.bot = nn.Conv1d(c * 2, c * 2, 3, padding=1)
+            self.up = nn.ConvTranspose1d(c * 2, c, 4, stride=2, padding=1)
+            self.dec = nn.Conv1d(c * 2, 1, 3, padding=1)
+            return
+        # Plateau deepen: 3-stage U-Net
+        self.legacy = False
+        self.n_stages = 3
+        self.encoders = nn.ModuleList()
+        self.downs = nn.ModuleList()
+        in_c = 1
+        ch = c
+        for i in range(self.n_stages):
+            self.encoders.append(nn.Conv1d(in_c, ch, 3, padding=1))
+            if i < self.n_stages - 1:
+                self.downs.append(nn.Conv1d(ch, ch * 2, 3, stride=2, padding=1))
+                in_c = ch * 2
+                ch = ch * 2
+            else:
+                in_c = ch
+        self.bot = nn.Conv1d(ch, ch, 3, padding=1)
+        self.ups = nn.ModuleList()
+        self.decs = nn.ModuleList()
+        for i in range(self.n_stages - 1):
+            out_c = max(c, ch // 2)
+            self.ups.append(nn.ConvTranspose1d(ch, out_c, 4, stride=2, padding=1))
+            self.decs.append(nn.Conv1d(out_c * 2, out_c, 3, padding=1))
+            ch = out_c
+        self.out = nn.Conv1d(ch, 1, 3, padding=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, L)
+        if getattr(self, "legacy", False):
+            h = x.unsqueeze(1)
+            e1 = self.act(self.enc1(h))
+            e2 = self.act(self.enc2(e1))
+            b = self.act(self.bot(e2))
+            u = self.up(b)
+            if u.shape[-1] != e1.shape[-1]:
+                u = F.interpolate(u, size=e1.shape[-1], mode="linear", align_corners=False)
+            d = torch.cat([u, e1], dim=1)
+            y = self.dec(d).squeeze(1)
+            if y.shape[-1] != x.shape[-1]:
+                y = F.interpolate(
+                    y.unsqueeze(1), size=x.shape[-1], mode="linear", align_corners=False
+                ).squeeze(1)
+            return y
         h = x.unsqueeze(1)
-        e1 = self.act(self.enc1(h))
-        e2 = self.act(self.enc2(e1))
-        b = self.act(self.bot(e2))
-        u = self.up(b)
-        if u.shape[-1] != e1.shape[-1]:
-            u = F.interpolate(u, size=e1.shape[-1], mode="linear", align_corners=False)
-        d = torch.cat([u, e1], dim=1)
-        y = self.dec(d).squeeze(1)
+        skips: list[torch.Tensor] = []
+        for i, enc in enumerate(self.encoders):
+            h = self.act(enc(h))
+            skips.append(h)
+            if i < len(self.downs):
+                h = self.act(self.downs[i](h))
+        h = self.act(self.bot(h))
+        for i, up in enumerate(self.ups):
+            h = up(h)
+            skip = skips[-(i + 2)]
+            if h.shape[-1] != skip.shape[-1]:
+                h = F.interpolate(h, size=skip.shape[-1], mode="linear", align_corners=False)
+            h = self.act(self.decs[i](torch.cat([h, skip], dim=1)))
+        y = self.out(h).squeeze(1)
         if y.shape[-1] != x.shape[-1]:
-            y = F.interpolate(y.unsqueeze(1), size=x.shape[-1], mode="linear", align_corners=False).squeeze(1)
+            y = F.interpolate(
+                y.unsqueeze(1), size=x.shape[-1], mode="linear", align_corners=False
+            ).squeeze(1)
         return y
 
 
@@ -133,7 +235,9 @@ class Conv1dStack(nn.Module):
         c = max(4, min(24, width))
         layers: list[nn.Module] = []
         in_c = 1
-        for i in range(max(1, min(4, depth))):
+        # Legacy cap 4 at depth<=12; allow up to 8 after plateau deepen
+        n_layers = max(1, min(8 if depth > 12 else 4, depth))
+        for i in range(n_layers):
             dil = (2**i) if dilation else 1
             pad = dil
             layers.append(nn.Conv1d(in_c, c, 3, padding=pad, dilation=dil))
@@ -153,15 +257,21 @@ class Conv1dStack(nn.Module):
 
 
 class TinyAttention(nn.Module):
-    """Lightweight self-attention over L tokens with tiny dim."""
+    """Lightweight self-attention over L tokens with tiny dim; depth>12 deepens FF stack."""
 
-    def __init__(self, length: int, width: int, act: str):
+    def __init__(self, length: int, width: int, act: str, depth: int = 2):
         super().__init__()
         d = max(4, min(32, width))
         n_heads = 2 if d % 2 == 0 else 1
         self.proj_in = nn.Linear(1, d)
         self.attn = nn.MultiheadAttention(d, n_heads, batch_first=True)
-        self.ff = nn.Sequential(nn.Linear(d, d), _act_module(act), nn.Linear(d, 1))
+        ff_depth = 1 if depth <= 12 else max(1, min(4, depth // 2))
+        ff_layers: list[nn.Module] = []
+        for i in range(ff_depth):
+            ff_layers.append(nn.Linear(d, d))
+            ff_layers.append(_act_module(act))
+        ff_layers.append(nn.Linear(d, 1))
+        self.ff = nn.Sequential(*ff_layers)
         self.length = length
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -173,14 +283,17 @@ class TinyAttention(nn.Module):
 
 
 class DualPathLite(nn.Module):
-    """DPRNN-inspired: split length into chunks, local MLP + global MLP."""
+    """DPRNN-inspired: split length into chunks, local MLP + global MLP (depth>12 → deeper MLPs)."""
 
-    def __init__(self, length: int, width: int, act: str):
+    def __init__(self, length: int, width: int, act: str, depth: int = 2):
         super().__init__()
         self.chunk = max(2, min(8, length // 2))
         h = max(4, min(32, width))
-        self.local = TinyMLP(self.chunk, h, 2, act)
-        self.global_mix = TinyMLP(max(1, length // self.chunk), h, 2, act, out_d=max(1, length // self.chunk))
+        mlp_d = 2 if depth <= 12 else max(2, min(6, depth))
+        self.local = TinyMLP(self.chunk, h, mlp_d, act)
+        self.global_mix = TinyMLP(
+            max(1, length // self.chunk), h, mlp_d, act, out_d=max(1, length // self.chunk)
+        )
         self.length = length
         self.gate = nn.Parameter(torch.tensor(0.3))
 
@@ -203,13 +316,14 @@ class DualPathLite(nn.Module):
 
 
 class TFSplitLite(nn.Module):
-    """Cheap time/freq style split via even/odd + low/high average branches."""
+    """Cheap time/freq style split; depth>12 deepens branch MLPs."""
 
-    def __init__(self, length: int, width: int, act: str):
+    def __init__(self, length: int, width: int, act: str, depth: int = 2):
         super().__init__()
         h = max(4, min(24, width))
-        self.time_mlp = TinyMLP(length, h, 2, act)
-        self.freq_mlp = TinyMLP(length, h, 2, act)
+        mlp_d = 2 if depth <= 12 else max(2, min(6, depth))
+        self.time_mlp = TinyMLP(length, h, mlp_d, act)
+        self.freq_mlp = TinyMLP(length, h, mlp_d, act)
         self.mix = nn.Parameter(torch.tensor(0.5))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -226,12 +340,13 @@ class TFSplitLite(nn.Module):
 
 
 class NoiseCondResidual(nn.Module):
-    """Single noise-conditioned residual step (tiny diffusion/score proxy — not full sampling)."""
+    """Noise-conditioned residual; depth>12 deepens the conditioned MLP stack."""
 
-    def __init__(self, length: int, width: int, act: str):
+    def __init__(self, length: int, width: int, act: str, depth: int = 2):
         super().__init__()
         h = max(4, min(32, width))
-        self.mlp = TinyMLP(length + 1, h, 2, act, out_d=length)
+        mlp_d = 2 if depth <= 12 else max(2, min(6, depth))
+        self.mlp = TinyMLP(length + 1, h, mlp_d, act, out_d=length)
         self.noise_log = nn.Parameter(torch.tensor(-2.0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -240,7 +355,6 @@ class NoiseCondResidual(nn.Module):
         sigma = torch.sigmoid(self.noise_log).expand(b, 1)
         inp = torch.cat([x, sigma], dim=-1)
         return x + torch.tanh(self.mlp(inp)) * sigma
-
 
 class SoftOpGate(nn.Module):
     """Learnable gate scalar for blending block output with identity."""
@@ -276,19 +390,19 @@ def _make_block(name: str, length: int, w: int, d: int, act: str) -> nn.Module:
     if name == "gated":
         return TinyMLP(length, w, d, act)
     if name == "unet":
-        return TinyUNet1D(length, w, act)
+        return TinyUNet1D(length, w, act, depth=d)
     if name == "conv1d":
         return Conv1dStack(length, w, d, act, dilation=False)
     if name == "dilated":
         return Conv1dStack(length, w, d, act, dilation=True)
     if name == "attn":
-        return TinyAttention(length, w, act)
+        return TinyAttention(length, w, act, depth=d)
     if name == "dual_path":
-        return DualPathLite(length, w, act)
+        return DualPathLite(length, w, act, depth=d)
     if name == "tf_split":
-        return TFSplitLite(length, w, act)
+        return TFSplitLite(length, w, act, depth=d)
     if name == "noise_cond":
-        return NoiseCondResidual(length, w, act)
+        return NoiseCondResidual(length, w, act, depth=d)
     return TinyMLP(length, w, d, act)
 
 
@@ -333,7 +447,7 @@ class ComposedSeamNet(nn.Module):
         self.moe_mode = moe_mode if moe_mode in MOE_MODES else "sequential"
         self.modules_by_name = nn.ModuleDict()
         self.gates = nn.ModuleDict()
-        w = max(2, min(48, width))
+        w = max(2, min(MAX_WIDTH, width))
         d = max(1, min(MAX_SEARCH_DEPTH, depth))
         for name in self.graph:
             self.gates[name] = SoftOpGate(0.3)
@@ -393,17 +507,27 @@ class TinyAdvHead(nn.Module):
         return self.net(x).squeeze(-1)
 
 
-def random_block_graph(rng, cell_kind: str, max_extra: int = 3) -> list[str]:
+def random_block_graph(
+    rng,
+    cell_kind: str,
+    max_extra: int = 3,
+    *,
+    crazy_mix_p: float = 0.35,
+) -> list[str]:
     extras = [b for b in BLOCKS if b != cell_kind]
     k = rng.randint(0, min(max_extra, MAX_GRAPH_LEN - 1))
     chosen = rng.sample(extras, k=k) if k else []
-    # Bias toward heterogeneous mixtures (unet+attn+dilated style)
-    if k >= 2 and rng.random() < 0.35:
-        prefer = [b for b in ("unet", "attn", "dilated", "dual_path", "dense") if b != cell_kind]
+    # Bias toward heterogeneous mixtures (unet+attn+dilated+noise_cond style)
+    if k >= 2 and rng.random() < crazy_mix_p:
+        prefer = [
+            b
+            for b in ("unet", "attn", "dilated", "dual_path", "dense", "moe_mix", "noise_cond", "soft_mix")
+            if b != cell_kind
+        ]
         if prefer:
             chosen = list(dict.fromkeys(prefer[: max(2, k)] + chosen))[:max_extra]
     return normalize_graph([cell_kind] + chosen, cell_kind)
 
 
-def random_moe_mode(rng) -> str:
-    return "moe_parallel" if rng.random() < 0.35 else "sequential"
+def random_moe_mode(rng, *, moe_p: float = 0.35) -> str:
+    return "moe_parallel" if rng.random() < moe_p else "sequential"

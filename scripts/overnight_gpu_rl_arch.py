@@ -43,13 +43,17 @@ from denoise_arch_blocks import (  # noqa: E402
     CELL_KINDS,
     MAX_GRAPH_LEN,
     MAX_SEARCH_DEPTH,
+    MAX_WIDTH,
     MOE_MODES,
     ComposedSeamNet,
     TinyAdvHead,
+    get_search_caps,
     normalize_graph,
+    raise_search_caps,
     random_block_graph,
     random_moe_mode,
 )
+import denoise_arch_blocks as arch_blocks  # noqa: E402  # live mutable caps
 from denoise_meta_evo import (  # noqa: E402
     depth_mixture_bonus,
     ga_generation,
@@ -99,7 +103,33 @@ ALGORITHMS = [
     "MoE_softgate_parallel",
     "composed_arch_graph",
     "lit_blocks_unet_dilated_attn_dualpath",
+    "plateau_adapt_deepen",
 ]
+
+
+@dataclass
+class PlateauAdaptState:
+    """Escalating boredom response when champ residual stalls.
+
+    Depth is first-class: raise MAX_SEARCH_DEPTH, deepen pop genomes, deepen U-Net/MLP stacks.
+    Soft boredom resets on each fire; champ + iters_since_improve keep accumulating so adapt
+    re-fires every N flat iters with rising aggression (capped for RTX 3090).
+    """
+
+    level: int = 0
+    soft_boredom: int = 0
+    last_adapt_iter: int = 0
+    crazy_mix_p: float = 0.35
+    moe_p: float = 0.35
+    hold_p: float = 0.50  # PBT/PPO hold probability (lower = crazier explore)
+    nas_boost: float = 0.0
+    deepen_bump: int = 2
+
+    def mix_tag(self) -> str:
+        return (
+            f"crazy={self.crazy_mix_p:.2f}/moe={self.moe_p:.2f}/"
+            f"hold={self.hold_p:.2f}/nas+={self.nas_boost:.2f}"
+        )
 
 
 def utc_now() -> str:
@@ -185,8 +215,8 @@ class SeamCell(nn.Module):
         self.cfg.blocks = graph
         if self.cfg.moe_mode not in MOE_MODES:
             self.cfg.moe_mode = "sequential"
-        h = max(2, min(48, cfg.width))
-        d = max(1, min(MAX_SEARCH_DEPTH, cfg.depth))
+        h = max(2, min(arch_blocks.MAX_WIDTH, cfg.width))
+        d = max(1, min(arch_blocks.MAX_SEARCH_DEPTH, cfg.depth))
         self.seam_net = ComposedSeamNet(
             MLP_IN, h, d, cfg.act, cfg.cell_kind, graph, moe_mode=cfg.moe_mode
         )
@@ -251,6 +281,20 @@ def params_finite(module: nn.Module) -> bool:
 
 def snapshot_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
     return {k: v.detach().cpu().clone() for k, v in module.state_dict().items()}
+
+
+def load_state_dict_compatible(module: nn.Module, state: dict[str, Any]) -> tuple[int, int]:
+    """Load matching shapes only (architecture may deepen after plateau / code updates)."""
+    model_sd = module.state_dict()
+    filtered: dict[str, Any] = {}
+    skipped = 0
+    for k, v in state.items():
+        if k in model_sd and hasattr(v, "shape") and model_sd[k].shape == v.shape:
+            filtered[k] = v
+        else:
+            skipped += 1
+    module.load_state_dict(filtered, strict=False)
+    return len(filtered), skipped
 
 
 def restore_state_dict(module: nn.Module, state: dict[str, torch.Tensor], device: torch.device) -> None:
@@ -472,8 +516,8 @@ def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> to
     block_bits = [1.0 if b in cfg.blocks else 0.0 for b in BLOCKS]
     lr_safe = finite_scalar(hp.lr, 1e-3)
     extras = [
-        finite_scalar(cfg.depth / float(MAX_SEARCH_DEPTH)),
-        finite_scalar(cfg.width / 48.0),
+        finite_scalar(cfg.depth / float(arch_blocks.MAX_SEARCH_DEPTH)),
+        finite_scalar(cfg.width / float(arch_blocks.MAX_WIDTH)),
         finite_scalar(act_id),
         finite_scalar(cfg.wet),
         finite_scalar(cell_id),
@@ -483,7 +527,7 @@ def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> to
         finite_scalar(hp.entropy_coef),
         finite_scalar(soft_max),
         1.0 if cfg.use_adv_aux else 0.0,
-        finite_scalar(len(cfg.blocks) / float(MAX_GRAPH_LEN)),
+        finite_scalar(len(cfg.blocks) / float(arch_blocks.MAX_GRAPH_LEN)),
         1.0 if cfg.moe_mode == "moe_parallel" else 0.0,
         float(len(set(cfg.blocks) & {"unet", "attn", "dilated", "dual_path"})) / 4.0,
     ]
@@ -510,23 +554,40 @@ def ensure_trainable_ops(ops: list[str]) -> list[str]:
     return ops
 
 
-def random_arch(rng: random.Random) -> ArchConfig:
+def random_arch(rng: random.Random, adapt: PlateauAdaptState | None = None) -> ArchConfig:
     k = rng.randint(2, min(7, len(OPS)))
     cell = rng.choice(CELL_KINDS)
-    # Depth-biased prior: skew toward deeper nets (still capped)
-    depth = int(round(rng.betavariate(2.5, 1.4) * (MAX_SEARCH_DEPTH - 1))) + 1
+    # Depth-biased prior: skew toward deeper nets (still capped); plateau adapt raises ceiling
+    max_d = arch_blocks.MAX_SEARCH_DEPTH
+    depth = int(round(rng.betavariate(2.5, 1.4) * (max_d - 1))) + 1
+    if adapt is not None and adapt.level > 0:
+        # Prefer deeper half of the searchable range after plateau fires
+        depth = max(depth, rng.randint(max(3, max_d // 2), max_d))
+    crazy_p = adapt.crazy_mix_p if adapt is not None else 0.35
+    moe_p = adapt.moe_p if adapt is not None else 0.35
+    width_choices = [4, 6, 8, 12, 16, 24, 32, 40]
+    mw = arch_blocks.MAX_WIDTH
+    if mw >= 48:
+        width_choices.append(48)
+    if mw > 48:
+        width_choices.append(mw)
     return ArchConfig(
         depth=depth,
-        width=rng.choice([4, 6, 8, 12, 16, 24, 32, 40, 48]),
+        width=rng.choice(width_choices),
         act=rng.choice(ACTS),
         ops=ensure_trainable_ops(rng.sample(OPS, k=k)),
         wet=rng.uniform(0.1, 0.95),
         fir=[rng.uniform(0.05, 0.55) for _ in range(5)],
         cell_kind=cell,
         soft_logits=[rng.uniform(-1.0, 1.0) for _ in range(len(OPS))],
-        blocks=random_block_graph(rng, cell, max_extra=min(4, MAX_GRAPH_LEN - 1)),
+        blocks=random_block_graph(
+            rng,
+            cell,
+            max_extra=min(4 + (adapt.level if adapt else 0), arch_blocks.MAX_GRAPH_LEN - 1),
+            crazy_mix_p=crazy_p,
+        ),
         use_adv_aux=rng.random() < 0.15,
-        moe_mode=random_moe_mode(rng),
+        moe_mode=random_moe_mode(rng, moe_p=moe_p),
     )
 
 
@@ -541,13 +602,23 @@ def random_hp(rng: random.Random) -> HyperParams:
     )
 
 
-def mutate_arch(cfg: ArchConfig, action: int, rng: random.Random) -> ArchConfig:
+def mutate_arch(
+    cfg: ArchConfig,
+    action: int,
+    rng: random.Random,
+    adapt: PlateauAdaptState | None = None,
+) -> ArchConfig:
     c = ArchConfig(**cfg.to_dict())
+    max_d = arch_blocks.MAX_SEARCH_DEPTH
+    max_w = arch_blocks.MAX_WIDTH
+    max_g = arch_blocks.MAX_GRAPH_LEN
+    deepen_extra = adapt.deepen_bump if adapt is not None and adapt.level > 0 else 0
     if action == 0:
-        # Depth step (asymmetric: slight deepen bias)
-        c.depth = max(1, min(MAX_SEARCH_DEPTH, c.depth + rng.choice([-1, 1, 1])))
+        # Depth step (asymmetric: slight deepen bias; stronger after plateau)
+        steps = [-1, 1, 1] + ([1, 2] if deepen_extra else [])
+        c.depth = max(1, min(max_d, c.depth + rng.choice(steps)))
     elif action == 1:
-        c.width = max(4, min(48, c.width + rng.choice([-4, -2, -1, 1, 2, 4])))
+        c.width = max(4, min(max_w, c.width + rng.choice([-4, -2, -1, 1, 2, 4])))
     elif action == 2:
         c.act = rng.choice(ACTS)
     elif action == 3:
@@ -572,11 +643,16 @@ def mutate_arch(cfg: ArchConfig, action: int, rng: random.Random) -> ArchConfig:
             c.soft_logits.append(rng.uniform(-0.5, 0.5))
         c.soft_logits = c.soft_logits[: len(OPS)]
     elif action == 8:
-        # Widen + deepen jump
-        c.depth = rng.randint(max(3, c.depth), MAX_SEARCH_DEPTH)
-        c.width = rng.choice([8, 12, 16, 24, 32, 48])
+        # Widen + deepen jump (depth prioritized)
+        c.depth = rng.randint(max(3, c.depth), max_d)
+        width_opts = [8, 12, 16, 24, 32]
+        if max_w >= 48:
+            width_opts.append(48)
+        if max_w > 48:
+            width_opts.append(max_w)
+        c.width = rng.choice(width_opts)
     elif action == 9:
-        c = random_arch(rng)
+        c = random_arch(rng, adapt)
     elif action == 10:
         # Add/remove a lit block
         b = rng.choice(BLOCKS)
@@ -585,29 +661,154 @@ def mutate_arch(cfg: ArchConfig, action: int, rng: random.Random) -> ArchConfig:
         else:
             c.blocks = normalize_graph(list(c.blocks) + [b], c.cell_kind)
     elif action == 11:
-        c.blocks = random_block_graph(rng, c.cell_kind, max_extra=min(5, MAX_GRAPH_LEN - 1))
+        crazy_p = adapt.crazy_mix_p if adapt is not None else 0.35
+        c.blocks = random_block_graph(
+            rng,
+            c.cell_kind,
+            max_extra=min(5 + (adapt.level if adapt else 0), max_g - 1),
+            crazy_mix_p=crazy_p,
+        )
     elif action == 12:
         c.use_adv_aux = not c.use_adv_aux
     elif action == 13:
-        # Explicit deepen bias action
-        c.depth = max(1, min(MAX_SEARCH_DEPTH, c.depth + rng.randint(1, 3)))
+        # Explicit deepen bias action — primary deepen knob
+        bump = rng.randint(1, 3 + deepen_extra)
+        c.depth = max(1, min(max_d, c.depth + bump))
     elif action == 14:
         c.moe_mode = "moe_parallel" if c.moe_mode != "moe_parallel" else "sequential"
         if c.moe_mode == "moe_parallel" and len(c.blocks) < 2:
-            c.blocks = random_block_graph(rng, c.cell_kind, max_extra=3)
+            crazy_p = adapt.crazy_mix_p if adapt is not None else 0.35
+            c.blocks = random_block_graph(rng, c.cell_kind, max_extra=3, crazy_mix_p=crazy_p)
     else:
         # Diversify mixture toward heterogeneous experts
-        prefer = [b for b in ("unet", "attn", "dilated", "dual_path", "dense", "moe_mix") if b != c.cell_kind]
-        extra = rng.sample(prefer, k=min(3, len(prefer)))
+        prefer = [
+            b
+            for b in ("unet", "attn", "dilated", "dual_path", "dense", "moe_mix", "noise_cond", "soft_mix")
+            if b != c.cell_kind
+        ]
+        n_extra = min(3 + (adapt.level if adapt else 0), len(prefer), max_g - 1)
+        extra = rng.sample(prefer, k=max(1, n_extra)) if prefer else []
         c.blocks = normalize_graph([c.cell_kind] + extra, c.cell_kind)
-        if rng.random() < 0.5:
+        moe_p = adapt.moe_p if adapt is not None else 0.5
+        if rng.random() < moe_p:
             c.moe_mode = "moe_parallel"
+        # Depth-first: also deepen when diversifying after plateau
+        if deepen_extra:
+            c.depth = max(1, min(max_d, c.depth + rng.randint(1, deepen_extra + 1)))
     c.ops = ensure_trainable_ops(c.ops)
     c.blocks = normalize_graph(c.blocks, c.cell_kind)
     if c.moe_mode not in MOE_MODES:
         c.moe_mode = "sequential"
+    c.depth = max(1, min(max_d, c.depth))
+    c.width = max(4, min(max_w, c.width))
     return c
 
+
+def deepen_arch_inplace(cfg: ArchConfig, bump: int) -> ArchConfig:
+    """First-class deepen: raise residual/U-Net/MLP depth + lengthen graph moderately."""
+    c = ArchConfig(**cfg.to_dict())
+    max_d = arch_blocks.MAX_SEARCH_DEPTH
+    max_g = arch_blocks.MAX_GRAPH_LEN
+    c.depth = max(1, min(max_d, c.depth + max(1, bump)))
+    # Prefer longer heterogeneous graphs without exploding width
+    if len(c.blocks) < max_g:
+        prefer = [
+            b
+            for b in ("unet", "attn", "dilated", "noise_cond", "moe_mix", "dense", "soft_mix")
+            if b not in c.blocks
+        ]
+        if prefer:
+            c.blocks = normalize_graph(list(c.blocks) + [prefer[0]], c.cell_kind)
+    return c
+
+
+def apply_plateau_adapt(
+    adapt: PlateauAdaptState,
+    pop: list[Individual],
+    rng: random.Random,
+    *,
+    it: int,
+    max_level: int,
+) -> dict[str, Any]:
+    """Escalate search when champ stalls: deepen nets first, then crazier mixes + search shift."""
+    adapt.level = min(max_level, adapt.level + 1)
+    # Depth-first ceiling bump; width only moderate
+    depth_delta = 2 + (1 if adapt.level >= 3 else 0)
+    graph_delta = 1 if adapt.level <= 3 else 0
+    width_delta = 4 if adapt.level % 2 == 0 else 0  # widen only every other escalate
+    caps = raise_search_caps(
+        depth_delta=depth_delta,
+        graph_delta=graph_delta,
+        width_delta=width_delta,
+    )
+    adapt.deepen_bump = 2 + adapt.level
+    adapt.crazy_mix_p = min(0.85, 0.35 + 0.12 * adapt.level)
+    adapt.moe_p = min(0.80, 0.35 + 0.10 * adapt.level)
+    adapt.hold_p = max(0.08, 0.50 - 0.10 * adapt.level)
+    adapt.nas_boost = min(0.35, 0.08 * adapt.level)
+    adapt.last_adapt_iter = it
+    adapt.soft_boredom = 0
+
+    # Deepen every individual (champ genome preserved in champion_* outside pop)
+    deepen_depths: list[int] = []
+    for ind in pop:
+        ind.cfg = deepen_arch_inplace(ind.cfg, adapt.deepen_bump)
+        # Crazier mixtures on a subset
+        if rng.random() < adapt.crazy_mix_p:
+            prefer = [
+                b
+                for b in ("unet", "attn", "dilated", "dual_path", "moe_mix", "noise_cond", "soft_mix")
+                if b != ind.cfg.cell_kind
+            ]
+            extra = rng.sample(prefer, k=min(3, len(prefer))) if prefer else []
+            ind.cfg.blocks = normalize_graph([ind.cfg.cell_kind] + list(ind.cfg.blocks) + extra, ind.cfg.cell_kind)
+            if rng.random() < adapt.moe_p:
+                ind.cfg.moe_mode = "moe_parallel"
+        deepen_depths.append(ind.cfg.depth)
+
+    event = {
+        "plateau_adapt": True,
+        "deeper": True,
+        "level": adapt.level,
+        "iter": it,
+        "depth_cap": caps["max_search_depth"],
+        "graph_cap": caps["max_graph_len"],
+        "width_cap": caps["max_width"],
+        "pop_depth_min": min(deepen_depths) if deepen_depths else 0,
+        "pop_depth_max": max(deepen_depths) if deepen_depths else 0,
+        "mix": adapt.mix_tag(),
+        "deepen_bump": adapt.deepen_bump,
+    }
+    return event
+
+
+def pick_branch(
+    it: int,
+    adapt: PlateauAdaptState,
+    rng: random.Random,
+    branches: tuple[str, ...],
+) -> str:
+    """Round-robin by default; after plateau, weight GA/PBT/NAS/combo over conservative PPO."""
+    if adapt.level <= 0:
+        return branches[it % len(branches)]
+    # Elevated explore mix
+    weights = {
+        "ppo": max(0.05, 0.20 - 0.04 * adapt.level),
+        "nas": min(0.35, 0.20 + adapt.nas_boost),
+        "pbt": min(0.30, 0.20 + 0.03 * adapt.level),
+        "ga": min(0.32, 0.20 + 0.04 * adapt.level),
+        "combo": min(0.28, 0.20 + 0.03 * adapt.level),
+    }
+    names = list(branches)
+    ws = [weights.get(b, 0.1) for b in names]
+    total = sum(ws)
+    r = rng.random() * total
+    acc = 0.0
+    for b, w in zip(names, ws):
+        acc += w
+        if r <= acc:
+            return b
+    return names[-1]
 
 def mutate_hp(hp: HyperParams, rng: random.Random) -> HyperParams:
     h = HyperParams(**hp.to_dict())
@@ -620,19 +821,26 @@ def mutate_hp(hp: HyperParams, rng: random.Random) -> HyperParams:
     return h
 
 
-def pbt_exploit_mutate(pop: list[Individual], rng: random.Random, elite_frac: float = 0.25) -> None:
+def pbt_exploit_mutate(
+    pop: list[Individual],
+    rng: random.Random,
+    elite_frac: float = 0.25,
+    adapt: PlateauAdaptState | None = None,
+) -> None:
     """In-place PBT: bottom half copies elite arch+hp then mutates (multi-step)."""
     ranked = sorted(pop, key=lambda ind: ind.score, reverse=True)
     n_elite = max(1, int(len(pop) * elite_frac))
     elites = ranked[:n_elite]
+    n_mut_hi = 5 + (adapt.level if adapt else 0)
     for i, ind in enumerate(ranked[n_elite:]):
         parent = elites[i % n_elite]
         cfg = ArchConfig(**parent.cfg.to_dict())
-        n_mut = rng.randint(2, 5)
+        n_mut = rng.randint(2, n_mut_hi)
         for _ in range(n_mut):
-            cfg = mutate_arch(cfg, rng.randrange(N_ACTIONS), rng)
-        if rng.random() < 0.2:
-            cfg = random_arch(rng)
+            cfg = mutate_arch(cfg, rng.randrange(N_ACTIONS), rng, adapt)
+        rand_p = 0.2 + (0.05 * adapt.level if adapt else 0.0)
+        if rng.random() < min(0.5, rand_p):
+            cfg = random_arch(rng, adapt)
         ind.cfg = cfg
         ind.hp = mutate_hp(HyperParams(**parent.hp.to_dict()), rng)
         ind.hp = mutate_hp(ind.hp, rng)
@@ -654,8 +862,8 @@ def arch_diversity(pop: list[Individual]) -> float:
             bham = len(blocks_a.symmetric_difference(blocks_b)) / max(len(BLOCKS), 1)
             cell_diff = 0.0 if a.cell_kind == b.cell_kind else 1.0
             act_diff = 0.0 if a.act == b.act else 1.0
-            wdiff = abs(a.width - b.width) / 48.0
-            ddiff = abs(a.depth - b.depth) / float(MAX_SEARCH_DEPTH)
+            wdiff = abs(a.width - b.width) / float(arch_blocks.MAX_WIDTH)
+            ddiff = abs(a.depth - b.depth) / float(arch_blocks.MAX_SEARCH_DEPTH)
             moe_diff = 0.0 if a.moe_mode == b.moe_mode else 1.0
             total += (
                 0.22 * ham
@@ -998,6 +1206,19 @@ def main() -> int:
         help="Optional path to *_fitted.json or *_fitted.pt to warm-start pop[0] arch/hp "
         "(and cell weights when .pt is available).",
     )
+    ap.add_argument(
+        "--plateau-adapt-every",
+        type=int,
+        default=1000,
+        help="Fire plateau deepen/crazy-mix adapt every N iters without champ improve "
+        "(0 disables). Escalates each fire; soft boredom resets, champ kept.",
+    )
+    ap.add_argument(
+        "--plateau-adapt-max-level",
+        type=int,
+        default=4,
+        help="Cap escalate aggression (depth/graph/mix) for RTX 3090 trainability.",
+    )
     args = ap.parse_args()
     if args.history_every < 1:
         print("ERROR: --history-every must be >= 1", file=sys.stderr)
@@ -1005,6 +1226,15 @@ def main() -> int:
     if args.pop_size < 2:
         print("ERROR: --pop-size must be >= 2", file=sys.stderr)
         return 2
+    if args.plateau_adapt_every < 0:
+        print("ERROR: --plateau-adapt-every must be >= 0", file=sys.stderr)
+        return 2
+    if args.plateau_adapt_max_level < 1:
+        print("ERROR: --plateau-adapt-max-level must be >= 1", file=sys.stderr)
+        return 2
+
+    # Fresh process defaults (module may have been mutated in prior imports/tests)
+    arch_blocks.set_search_caps(depth=12, graph=6, width=48)
 
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         print("ERROR: CUDA requested but torch.cuda.is_available() is False", file=sys.stderr)
@@ -1045,7 +1275,10 @@ def main() -> int:
         f"max_hours={args.max_hours} history_every={args.history_every} "
         f"seed={args.seed} pop_size={args.pop_size} ppo_horizon={args.ppo_horizon} "
         f"pbt_every={args.pbt_every} ga_every={args.ga_every} "
-        f"max_depth={MAX_SEARCH_DEPTH} max_graph={MAX_GRAPH_LEN} "
+        f"max_depth={arch_blocks.MAX_SEARCH_DEPTH} max_graph={arch_blocks.MAX_GRAPH_LEN} "
+        f"max_width={arch_blocks.MAX_WIDTH} "
+        f"plateau_adapt_every={args.plateau_adapt_every} "
+        f"plateau_adapt_max_level={args.plateau_adapt_max_level} "
         f"blocks={BLOCKS} cell_kinds={CELL_KINDS} "
         f"history_path={history_path} "
         f"local_start={now_local.isoformat(timespec='seconds')} "
@@ -1071,8 +1304,11 @@ def main() -> int:
                 "ppo_horizon": args.ppo_horizon,
                 "pbt_every": args.pbt_every,
                 "ga_every": args.ga_every,
-                "max_search_depth": MAX_SEARCH_DEPTH,
-                "max_graph_len": MAX_GRAPH_LEN,
+                "max_search_depth": arch_blocks.MAX_SEARCH_DEPTH,
+                "max_graph_len": arch_blocks.MAX_GRAPH_LEN,
+                "max_width": arch_blocks.MAX_WIDTH,
+                "plateau_adapt_every": args.plateau_adapt_every,
+                "plateau_adapt_max_level": args.plateau_adapt_max_level,
                 "n_ops": len(OPS),
                 "ops": OPS,
                 "cell_kinds": CELL_KINDS,
@@ -1189,9 +1425,16 @@ def main() -> int:
         warm_residual = float(meta_blob.get("residual") or -1.0)
         if weights_blob and weights_blob.get("cell_state_dict") is not None:
             warm_cell = SeamCell(warm_cfg).to(device)
-            warm_cell.load_state_dict(weights_blob["cell_state_dict"], strict=False)
+            loaded_n, skipped_n = load_state_dict_compatible(
+                warm_cell, weights_blob["cell_state_dict"]
+            )
             # Do NOT load policy_state_dict: prior fitted policies can inject NaNs into
             # Categorical logits and crash the run. Arch/hp/cell warm-start is enough.
+            log_line(
+                log_path,
+                f"WARM_START_WEIGHTS loaded={loaded_n} skipped={skipped_n} "
+                f"(shape-compatible filter)",
+            )
         log_line(
             log_path,
             f"WARM_START seed_fitted={fitted_path} residual={warm_residual:.6f} "
@@ -1206,6 +1449,8 @@ def main() -> int:
     champion_hp = pop[0].hp
     champion_cell: SeamCell | None = warm_cell
     iters_since_improve = 0
+    plateau = PlateauAdaptState()
+    last_plateau_event: dict[str, Any] | None = None
     branch_best = {"ppo": 0.0, "nas": 0.0, "pbt": 0.0, "ga": 0.0, "combo": 0.0}
     last_ppo_stats = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "nan_skipped": 0.0}
     last_ga_stats = {"ga_crossover": 0.0, "ga_mutate": 0.0, "ga_elites": 0.0}
@@ -1223,7 +1468,7 @@ def main() -> int:
             log_line(log_path, f"STOP time budget reached at iter={it}")
             break
 
-        branch = BRANCHES[it % len(BRANCHES)]
+        branch = pick_branch(it, plateau, rng, BRANCHES)
         ind_idx = (it - 1) % len(pop)
         ind = pop[ind_idx]
         cfg = ind.cfg
@@ -1258,17 +1503,28 @@ def main() -> int:
             logprob = dist.log_prob(action_t)
             entropy_now = finite_scalar(float(dist.entropy().item()), 0.0)
 
+        # After plateau: bias deepen actions into the PPO sample occasionally
+        if plateau.level > 0 and rng.random() < min(0.35, 0.08 * plateau.level):
+            action = 13  # deepen bias
+
         if branch == "nas":
-            trial_cfg = random_arch(rng)
+            trial_cfg = random_arch(rng, plateau)
             trial_hp = mutate_hp(hp, rng)
             proposal = "NAS_RANDOM"
         elif branch == "pbt":
-            trial_cfg = mutate_arch(cfg, action, rng) if rng.random() < 0.5 else cfg
+            # Suppress PBT_HOLD after plateau (explore harder)
+            mut_p = 1.0 - plateau.hold_p
+            if rng.random() < mut_p:
+                trial_cfg = mutate_arch(cfg, action, rng, plateau)
+                proposal = "PBT_MUTATE"
+            else:
+                trial_cfg = cfg
+                proposal = "PBT_HOLD"
             trial_hp = hp
-            proposal = "PBT_MUTATE" if trial_cfg is not cfg else "PBT_HOLD"
         elif branch == "ga":
             parent = max(pop, key=lambda x: x.score)
-            if rng.random() < 0.6 and parent.score > -0.5:
+            ga_cross_p = min(0.85, 0.6 + 0.05 * plateau.level)
+            if rng.random() < ga_cross_p and parent.score > -0.5:
                 from denoise_meta_evo import crossover_arch, crossover_hp
 
                 trial_cfg = crossover_arch(
@@ -1281,21 +1537,28 @@ def main() -> int:
                     CELL_KINDS=CELL_KINDS,
                     ACTS=ACTS,
                 )
-                trial_cfg = mutate_arch(trial_cfg, action, rng)
+                trial_cfg = mutate_arch(trial_cfg, action, rng, plateau)
                 trial_hp = crossover_hp(hp, parent.hp, rng, HyperParams=HyperParams)
                 proposal = "GA_CROSSOVER+PPO_MUTATION"
             else:
-                trial_cfg = mutate_arch(cfg, action, rng)
+                trial_cfg = mutate_arch(cfg, action, rng, plateau)
                 trial_hp = mutate_hp(hp, rng)
                 proposal = "GA_MUTATE+PPO_MUTATION"
         elif branch == "combo":
-            trial_cfg = mutate_arch(mutate_arch(cfg, action, rng), rng.randrange(N_ACTIONS), rng)
+            trial_cfg = mutate_arch(
+                mutate_arch(cfg, action, rng, plateau), rng.randrange(N_ACTIONS), rng, plateau
+            )
             trial_hp = mutate_hp(hp, rng)
             proposal = "COMBO_PPO_DOUBLE_MUT"
         else:
-            trial_cfg = mutate_arch(cfg, action, rng)
-            trial_hp = hp
-            proposal = "PPO_MUTATION"
+            # PPO branch: after plateau, never "hold" — always mutate (optionally deepen)
+            if plateau.level > 0 and rng.random() < plateau.hold_p:
+                # Rare conservative hold only at low residual hold_p; else mutate
+                trial_cfg = mutate_arch(cfg, action, rng, plateau)
+                proposal = "PPO_MUTATION"
+            else:
+                trial_cfg = mutate_arch(cfg, action, rng, plateau)
+                proposal = "PPO_MUTATION"
 
         if it == 1 or it % args.ckpt_every == 1:
             save_unfitted(run_dir, trial_cfg, f"iter_{it:06d}", trial_hp)
@@ -1366,10 +1629,13 @@ def main() -> int:
         ind.age += 1
 
         if it % args.ga_every == 0:
+            def _ga_mutate(cfg: ArchConfig, action: int, rng_: random.Random) -> ArchConfig:
+                return mutate_arch(cfg, action, rng_, plateau)
+
             last_ga_stats = ga_generation(
                 pop,
                 rng,
-                mutate_arch=mutate_arch,
+                mutate_arch=_ga_mutate,
                 mutate_hp=mutate_hp,
                 ArchConfig=ArchConfig,
                 HyperParams=HyperParams,
@@ -1388,7 +1654,7 @@ def main() -> int:
 
         if it % args.pbt_every == 0:
             before_div = arch_diversity(pop)
-            pbt_exploit_mutate(pop, rng)
+            pbt_exploit_mutate(pop, rng, adapt=plateau)
             after_div = arch_diversity(pop)
             log_line(
                 log_path,
@@ -1405,44 +1671,49 @@ def main() -> int:
 
         if it == 1 or (it % args.history_every == 0):
             tag = f"iter_{it:06d}"
-            append_history(
-                history_path,
-                {
-                    "iter": it,
-                    "t_sec": round(time.time() - t0, 6),
-                    "residual": residual_raw,
-                    "residual_scored": residual,
-                    "depth_mix_bonus": dmb,
-                    "champ": champ_now,
-                    "iters_since_improve": iters_since_improve,
-                    "branch": branch,
-                    "proposal": proposal,
-                    "branch_best_ppo": branch_best["ppo"],
-                    "branch_best_nas": branch_best["nas"],
-                    "branch_best_pbt": branch_best["pbt"],
-                    "branch_best_ga": branch_best["ga"],
-                    "branch_best_combo": branch_best["combo"],
-                    "policy_loss": last_ppo_stats["policy_loss"],
-                    "value_loss": last_ppo_stats["value_loss"],
-                    "entropy": last_ppo_stats["entropy"] if last_ppo_stats["entropy"] else entropy_now,
-                    "action_entropy": entropy_now,
-                    "pop_diversity": pop_div,
-                    "pop_size": len(pop),
-                    "ind_idx": ind_idx,
-                    "algorithms": algorithms,
-                    "arch_id": tag,
-                    "tag": tag,
-                    "converged": converged,
-                    "vs_old_plateau": residual_raw - old_plateau,
-                    "cell_kind": trial_cfg.cell_kind,
-                    "blocks": trial_cfg.blocks,
-                    "depth": trial_cfg.depth,
-                    "moe_mode": trial_cfg.moe_mode,
-                    "use_adv_aux": trial_cfg.use_adv_aux,
-                    "ga_crossover": last_ga_stats["ga_crossover"],
-                    "ga_mutate": last_ga_stats["ga_mutate"],
-                },
-            )
+            hist_row: dict[str, Any] = {
+                "iter": it,
+                "t_sec": round(time.time() - t0, 6),
+                "residual": residual_raw,
+                "residual_scored": residual,
+                "depth_mix_bonus": dmb,
+                "champ": champ_now,
+                "iters_since_improve": iters_since_improve,
+                "branch": branch,
+                "proposal": proposal,
+                "branch_best_ppo": branch_best["ppo"],
+                "branch_best_nas": branch_best["nas"],
+                "branch_best_pbt": branch_best["pbt"],
+                "branch_best_ga": branch_best["ga"],
+                "branch_best_combo": branch_best["combo"],
+                "policy_loss": last_ppo_stats["policy_loss"],
+                "value_loss": last_ppo_stats["value_loss"],
+                "entropy": last_ppo_stats["entropy"] if last_ppo_stats["entropy"] else entropy_now,
+                "action_entropy": entropy_now,
+                "pop_diversity": pop_div,
+                "pop_size": len(pop),
+                "ind_idx": ind_idx,
+                "algorithms": algorithms,
+                "arch_id": tag,
+                "tag": tag,
+                "converged": converged,
+                "vs_old_plateau": residual_raw - old_plateau,
+                "cell_kind": trial_cfg.cell_kind,
+                "blocks": trial_cfg.blocks,
+                "depth": trial_cfg.depth,
+                "moe_mode": trial_cfg.moe_mode,
+                "use_adv_aux": trial_cfg.use_adv_aux,
+                "ga_crossover": last_ga_stats["ga_crossover"],
+                "ga_mutate": last_ga_stats["ga_mutate"],
+                "plateau_level": plateau.level,
+                "plateau_soft_boredom": plateau.soft_boredom,
+                "max_search_depth": arch_blocks.MAX_SEARCH_DEPTH,
+                "max_graph_len": arch_blocks.MAX_GRAPH_LEN,
+            }
+            if last_plateau_event is not None and last_plateau_event.get("iter") == it:
+                hist_row["plateau_adapt"] = True
+                hist_row["plateau_adapt_event"] = last_plateau_event
+            append_history(history_path, hist_row)
 
         if residual_raw > champion_r:
             champion_r = residual_raw
@@ -1450,6 +1721,7 @@ def main() -> int:
             champion_hp = trial_hp
             champion_cell = cell
             iters_since_improve = 0
+            plateau.soft_boredom = 0
             victim = rng.randrange(len(pop))
             pop[victim].cfg = ArchConfig(**trial_cfg.to_dict())
             pop[victim].hp = HyperParams(**trial_hp.to_dict())
@@ -1474,6 +1746,94 @@ def main() -> int:
             )
         else:
             iters_since_improve += 1
+            plateau.soft_boredom += 1
+            # Fire every plateau_adapt_every flat iters (soft boredom); escalate; keep champ
+            if (
+                args.plateau_adapt_every > 0
+                and plateau.soft_boredom >= args.plateau_adapt_every
+            ):
+                if plateau.level < args.plateau_adapt_max_level:
+                    last_plateau_event = apply_plateau_adapt(
+                        plateau,
+                        pop,
+                        rng,
+                        it=it,
+                        max_level=args.plateau_adapt_max_level,
+                    )
+                else:
+                    # Cap reached: re-inject deepen/crazy mixes without raising ceilings further
+                    plateau.soft_boredom = 0
+                    plateau.last_adapt_iter = it
+                    for ind in pop:
+                        ind.cfg = deepen_arch_inplace(ind.cfg, 1)
+                        if rng.random() < plateau.crazy_mix_p:
+                            prefer = [
+                                b
+                                for b in (
+                                    "unet",
+                                    "attn",
+                                    "dilated",
+                                    "moe_mix",
+                                    "noise_cond",
+                                    "soft_mix",
+                                )
+                                if b != ind.cfg.cell_kind
+                            ]
+                            extra = rng.sample(prefer, k=min(2, len(prefer))) if prefer else []
+                            ind.cfg.blocks = normalize_graph(
+                                list(ind.cfg.blocks) + extra, ind.cfg.cell_kind
+                            )
+                    caps = get_search_caps()
+                    last_plateau_event = {
+                        "plateau_adapt": True,
+                        "deeper": True,
+                        "level": plateau.level,
+                        "iter": it,
+                        "depth_cap": caps["max_search_depth"],
+                        "graph_cap": caps["max_graph_len"],
+                        "width_cap": caps["max_width"],
+                        "pop_depth_min": min(p.cfg.depth for p in pop),
+                        "pop_depth_max": max(p.cfg.depth for p in pop),
+                        "mix": plateau.mix_tag(),
+                        "deepen_bump": 1,
+                        "capped": True,
+                    }
+                log_line(
+                    log_path,
+                    f"PLATEAU_ADAPT deeper=true depth={last_plateau_event['depth_cap']} "
+                    f"graph={last_plateau_event['graph_cap']} "
+                    f"width={last_plateau_event['width_cap']} "
+                    f"level={last_plateau_event['level']} "
+                    f"mix={last_plateau_event['mix']} "
+                    f"deepen_bump={last_plateau_event['deepen_bump']} "
+                    f"pop_depth={last_plateau_event['pop_depth_min']}-"
+                    f"{last_plateau_event['pop_depth_max']} "
+                    f"iters_since_improve={iters_since_improve} "
+                    f"soft_boredom_reset=0 champ={champion_r:.4f}"
+                    + (" capped=true" if last_plateau_event.get("capped") else ""),
+                )
+                append_history(
+                    history_path,
+                    {
+                        "iter": it,
+                        "t_sec": round(time.time() - t0, 6),
+                        "residual": residual_raw,
+                        "champ": champion_r if champion_r >= 0 else residual_raw,
+                        "iters_since_improve": iters_since_improve,
+                        "plateau_adapt": True,
+                        "deeper": True,
+                        "plateau_level": plateau.level,
+                        "depth": last_plateau_event["depth_cap"],
+                        "max_search_depth": last_plateau_event["depth_cap"],
+                        "max_graph_len": last_plateau_event["graph_cap"],
+                        "max_width": last_plateau_event["width_cap"],
+                        "mix": last_plateau_event["mix"],
+                        "plateau_adapt_event": last_plateau_event,
+                        "branch": branch,
+                        "proposal": proposal,
+                        "tag": f"plateau_adapt_{it:06d}",
+                    },
+                )
 
         def write_latest(iter_n: int, *, checkpoint: bool) -> None:
             elapsed = time.time() - t0
@@ -1512,7 +1872,11 @@ def main() -> int:
                 "seed": args.seed,
                 "history_path": str(history_path),
                 "blocks": BLOCKS,
-                "max_search_depth": MAX_SEARCH_DEPTH,
+                "max_search_depth": arch_blocks.MAX_SEARCH_DEPTH,
+                "max_graph_len": arch_blocks.MAX_GRAPH_LEN,
+                "max_width": arch_blocks.MAX_WIDTH,
+                "plateau_level": plateau.level,
+                "plateau_adapt_every": args.plateau_adapt_every,
                 "ga_every": args.ga_every,
                 "algo_tag": args.algo_tag,
             }

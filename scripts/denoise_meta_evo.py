@@ -11,12 +11,22 @@ from __future__ import annotations
 import random
 from typing import Any, Callable, Sequence, TypeVar
 
+import denoise_arch_blocks as _blocks  # live mutable caps (plateau adapt)
+
 T = TypeVar("T")
 
-# Searchable depth / mixture caps (shared with overnight + blocks)
-MAX_SEARCH_DEPTH = 12
-MAX_GRAPH_LEN = 6
 MIN_DEPTH_BIAS = 3  # prefer at least this depth when residual holds
+
+
+def __getattr__(name: str):
+    """Expose live caps so `from denoise_meta_evo import MAX_SEARCH_DEPTH` stays correct."""
+    if name == "MAX_SEARCH_DEPTH":
+        return _blocks.MAX_SEARCH_DEPTH
+    if name == "MAX_GRAPH_LEN":
+        return _blocks.MAX_GRAPH_LEN
+    if name == "MAX_WIDTH":
+        return _blocks.MAX_WIDTH
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def tournament_select(
@@ -44,7 +54,7 @@ def crossover_lists(a: list[Any], b: list[Any], rng: random.Random) -> list[Any]
     if rng.random() < 0.5:
         # uniform mix
         pool = list(dict.fromkeys(list(a) + list(b)))
-        k = rng.randint(1, max(1, min(len(pool), MAX_GRAPH_LEN if len(pool) > 3 else len(pool))))
+        k = rng.randint(1, max(1, min(len(pool), _blocks.MAX_GRAPH_LEN if len(pool) > 3 else len(pool))))
         return rng.sample(pool, k=k) if len(pool) >= k else pool
     # one-point on longer parent
     cut = rng.randint(0, min(len(a), len(b)))
@@ -54,7 +64,7 @@ def crossover_lists(a: list[Any], b: list[Any], rng: random.Random) -> list[Any]
     for x in child:
         if x not in out:
             out.append(x)
-    return out[:MAX_GRAPH_LEN] if out else list(a[:1] or b[:1])
+    return out[: _blocks.MAX_GRAPH_LEN] if out else list(a[:1] or b[:1])
 
 
 def crossover_arch(
@@ -73,9 +83,9 @@ def crossover_arch(
     depth = int(round(0.5 * (da["depth"] + db["depth"])))
     if rng.random() < 0.35:
         depth = max(da["depth"], db["depth"])  # depth-preferring bias
-    depth = max(1, min(MAX_SEARCH_DEPTH, depth + rng.choice([0, 0, 1])))
+    depth = max(1, min(_blocks.MAX_SEARCH_DEPTH, depth + rng.choice([0, 0, 1])))
     width = rng.choice([da["width"], db["width"], int(round(0.5 * (da["width"] + db["width"])))])
-    width = max(4, min(48, width))
+    width = max(4, min(_blocks.MAX_WIDTH, width))
     act = rng.choice([da["act"], db["act"]])
     if act not in ACTS:
         act = rng.choice(list(ACTS))
@@ -218,7 +228,7 @@ def depth_mixture_bonus(
     """
     if residual < baseline + hold_margin:
         return 0.0
-    depth_term = 0.002 * max(0, depth - (MIN_DEPTH_BIAS - 1)) / max(MAX_SEARCH_DEPTH, 1)
-    mix_term = 0.0015 * max(0, n_blocks - 1) / max(MAX_GRAPH_LEN, 1)
+    depth_term = 0.002 * max(0, depth - (MIN_DEPTH_BIAS - 1)) / max(_blocks.MAX_SEARCH_DEPTH, 1)
+    mix_term = 0.0015 * max(0, n_blocks - 1) / max(_blocks.MAX_GRAPH_LEN, 1)
     moe_term = 0.001 if moe_mode == "moe_parallel" and n_blocks >= 2 else 0.0
     return depth_term + mix_term + moe_term

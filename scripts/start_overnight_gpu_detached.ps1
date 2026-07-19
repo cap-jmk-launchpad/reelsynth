@@ -57,7 +57,8 @@ $argList = @(
     "--history-every", "$HistoryEvery",
     "--seed", "$Seed",
     "--pop-size", "$PopSize",
-    "--algo-tag", $AlgoTag
+    "--algo-tag", $AlgoTag,
+    "--plateau-adapt-every", "1000"
 )
 if ($SeedFitted) {
     $argList += @("--seed-fitted", $SeedFitted)

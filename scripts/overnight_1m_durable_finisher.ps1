@@ -70,14 +70,14 @@ function Ensure-JobIfDead {
   if ($alive) { return }
   Log "TRAINING_DEAD - restarting via start_overnight_gpu_detached.ps1 (500k max-hours 240 PPO+GA+depth+MoE)"
   $launcher = Join-Path $Repo "scripts\start_overnight_gpu_detached.ps1"
-  $seedFitted = Join-Path $Art "models\gpu-rl-arch-20260718T175603Z\fitted\champion_iter_000795_fitted.json"
+  $seedFitted = Join-Path $Art "models\gpu-rl-arch-20260719T065704Z\fitted\champion_iter_001964_fitted.json"
   if (Test-Path $launcher) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher -Iters 500000 -MaxHours 240 -HistoryEvery 1 -Device cuda -Seed 1902771841 -AlgoTag "PPO+GA+PBT+NAS+depth+MoE" -SeedFitted $seedFitted
   } else {
     if (-not (Test-Path $VenvPy)) { Log "NO_VENV"; return }
     $argList = @(
       (Join-Path $Repo "scripts\overnight_gpu_rl_arch.py"),
-      "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE", "--seed-fitted", $seedFitted
+      "--iters", "500000", "--device", "cuda", "--max-hours", "240", "--history-every", "1", "--seed", "1902771841", "--pop-size", "12", "--algo-tag", "PPO+GA+PBT+NAS+depth+MoE", "--plateau-adapt-every", "1000", "--seed-fitted", $seedFitted
     )
     Start-Process -FilePath $VenvPy -ArgumentList $argList -WorkingDirectory $Repo -WindowStyle Hidden
   }
