@@ -9,7 +9,7 @@ Paraphrases prefer attached abstracts and OA PDF snippets over title-only citati
 
 \subsection{Discontinuity control and modular audio DSP}
 Alias-free digital synthesis of classic analog waveforms (BLIT/BLEP lineage) states the wrap discontinuity problem for trivial oscillators~\cite{stilson1996}.
-PolyBLEP-style fractional-delay corrections and differentiated polynomial waveforms give practical antialiasing oscillators for subtractive synthesis~\cite{nam2009polyblep,valimaki2010dpw}.
+PolyBLEP-style fractional-delay corrections give practical antialiasing oscillators for subtractive synthesis~\cite{nam2009polyblep}.
 BLAMP corner rounding treats discontinuities in the first derivative (triangular edges, clipping, rectification) without heavy oversampling~\cite{esqueda2016blamp}.
 DDSP reframes DSP modules as composable blocks inside learning pipelines~\cite{engel2020}.
 We use that framing for small bake/FIR/MLP seam cells.
@@ -63,7 +63,7 @@ We \textbf{use} MoE as motivation for soft gates over heterogeneous seam blocks 
 
 \paragraph{Used (methodological or comparative anchors).}
 \begin{itemize}
-  \item Discontinuity / VA lineage:~\cite{stilson1996,esqueda2016blamp,valimaki2010dpw,nam2009polyblep}.
+  \item Discontinuity / VA lineage:~\cite{stilson1996,esqueda2016blamp,nam2009polyblep}.
   \item Unsupervised restoration philosophy:~\cite{lehtinen2018,kashyap2021n2n,wisdom2020}.
   \item Modular / differentiable audio DSP context:~\cite{engel2020}.
   \item Audio DL and compact waveform cells:~\cite{purwins2019,stoller2018,macartney2018,jansson2017,luo2019,luo2020dprnn,subakan2021,gong2021ast,ronneberger2015,he2016resnet,vaswani2017}.

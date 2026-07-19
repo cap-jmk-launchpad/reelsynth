@@ -9,7 +9,6 @@ Policy: **OA-only**. Do not invent citations. Do not cite paywalled-only works.
 |----------|-------|-----------|
 | stilson1996 | Alias-free classic analog waveforms | Wrap / BLIT discontinuity |
 | esqueda2016blamp | BLAMP | Corner / derivative discontinuity |
-| valimaki2010dpw | DPW oscillators | Alias-suppressed VA oscillators (author PDF) |
 | nam2009polyblep | PolyBLEP / frac delay | Practical antialiasing oscillators |
 | lehtinen2018 | Noise2Noise | Label-free restoration philosophy |
 | kashyap2021n2n | Speech Noise2Noise | Audio unsupervised denoise |
@@ -36,9 +35,7 @@ Policy: **OA-only**. Do not invent citations. Do not cite paywalled-only works.
 | pascual2017 | SEGAN: full GAN loops screened for cost |
 
 ## Dropped non-OA (replaced)
-- `valimaki2006va` (CMJ paywall) → stilson1996, valimaki2010dpw, nam2009polyblep
-- `esqueda2016aliasing` (IEEE TSP paywall) → esqueda2016blamp, valimaki2010dpw
+- `valimaki2006va` (CMJ paywall) → stilson1996, nam2009polyblep, esqueda2016blamp
+- `esqueda2016aliasing` (IEEE TSP paywall) → esqueda2016blamp, nam2009polyblep, stilson1996
+- `valimaki2010dpw` (IEEE TASLP author-hosted; not strict OA) → stilson1996, nam2009polyblep, esqueda2016blamp
 - `zhang2007` (IEEE TEC paywall) → hansen2016cmaes, snoek2012
-
-## Borderline
-- `valimaki2010dpw`: author-hosted PDF of an IEEE TASLP article (kept, flagged).
