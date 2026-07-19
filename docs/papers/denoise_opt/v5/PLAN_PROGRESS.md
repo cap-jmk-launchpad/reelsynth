@@ -2,7 +2,7 @@
 
 **Plan:** `MANUSCRIPT_CHECKLIST_IMPLEMENTATION_PLAN.md`  
 **Review fix plan:** `MANUSCRIPT_REVIEW_FIX_PLAN.md`  
-**Updated:** 19 July 2026 (comprehensive manuscript review fix cycle)
+**Updated:** 19 July 2026 (P4 B&W shape markers on overnight line plots; MUSHRA ignored)
 
 | Phase | Status | Notes |
 |-------|--------|-------|
@@ -14,6 +14,7 @@
 | **5 Ethics** | **DONE** | Broader impact, reproducibility, CoI none. PESQ/STOI omit + MUSHRA not run. |
 | **6 Release gate** | **DONE** | PDF rebuild, mirror, deferred closeout. |
 | **7 Manuscript review fix** | **DONE** | Triage REAL/PARTIAL/OCR_FALSE; P1–P4 applied; `REVIEW_FIX_COMPLETE.flag`. |
+| **P4 shape markers** | **DONE** | Overnight/results line plots: Okabe-Ito colors + distinct markers (circle/square/triangle/diamond/inverted triangle). MUSHRA ignored (not run; not in scope). |
 
 ## Review fix triage (19 July 2026)
 
@@ -41,7 +42,8 @@ Key REAL fixes: §6-style abstract (no em dash); semicolon keywords; seed `\text
 
 | Item | Resolution |
 |------|------------|
-| PESQ/STOI/MUSHRA | Explicit deferral in Limitations + ethics. Domain mismatch on non-speech. MUSHRA not run. No invented PESQ. |
+| PESQ/STOI/MUSHRA | Explicit deferral in Limitations + ethics. Domain mismatch on non-speech. **MUSHRA ignored** (not run; no listening study). No invented PESQ. |
+| P4 B&W shape markers | Regenerated overnight line plots via `scripts/plot_overnight_history.py` (`--max-iter 5000`, x-axis cap). Okabe-Ito + markers. Captions updated. MUSHRA ignored. |
 | Isolated GA/PPO/GA+PPO/full | Measured 150-it re-runs (`isolated_ablations.json`). Dual-column `tab:ablation`. |
 | Overnight peak VRAM | `nvidia-smi` during champion replay + 30-it search probe. Filled `tab:compute`. |
 | Rust sound_bench ≥20 tiles | `export_sound_bench_tiles` + `tab:rust-bench`. Residual: Python generative matrix remains primary. |

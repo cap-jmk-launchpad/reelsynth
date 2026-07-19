@@ -229,34 +229,34 @@ Honest transfer note: the favorite was searched on Python \texttt{make\_batch} s
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/champ_residual_vs_iter.png}
-  \caption{Overnight $5$k-gate freeze: champion residual $R$ versus clean search iteration, with DualCosine baseline on the runner geometry (RTX~3090). Accessibility: line plot of champion $R$ over iterations.}
+  \caption{Overnight $5$k-gate freeze: champion residual $R$ versus clean search iteration (x-axis capped at $5{,}000$), with DualCosine baseline on the runner geometry (RTX~3090). Accessibility: black line with circle markers; DualCosine as a dashed gray baseline.}
   \label{fig:champ-residual}
 \end{figure}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/branch_bests_vs_iter.png}
-  \caption{Overnight $5$k-gate freeze: per-branch best residual trajectories (PPO/RL, GA, PBT, NAS, combo) versus iteration. Accessibility: multi-series line plot; branches distinguished by color (shape markers deferred).}
+  \caption{Overnight $5$k-gate freeze: per-branch best residual trajectories (PPO/RL, GA, PBT, NAS, combo) versus iteration (x-axis capped at $5{,}000$). Accessibility: colorblind-safe colors plus distinct markers (circle, square, triangle, diamond, inverted triangle) for grayscale print.}
   \label{fig:branch-bests}
 \end{figure}
 
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/overnight_panel.png}
-  \caption{Full-width overnight monitoring panel at the $5$k-gate freeze: champion $R$ (top) and branch-best trajectories (bottom). Source: \texttt{history.jsonl} regenerated figures.}
+  \caption{Full-width overnight monitoring panel at the $5$k-gate freeze (first $5{,}000$ iterations): champion $R$ (top) and branch-best trajectories (bottom). Markers and Okabe-Ito colors match Figure~\ref{fig:branch-bests}. Source: \texttt{history.jsonl}.}
   \label{fig:overnight-panel}
 \end{figure*}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/residual_by_branch.png}
-  \caption{Per-trial residual scatter by search branch at the $5$k-gate freeze, with champion overlay.}
+  \caption{Per-trial residual scatter by search branch for the first $5{,}000$ iterations at the $5$k-gate freeze, with champion overlay. Branch markers match Figure~\ref{fig:branch-bests}.}
   \label{fig:residual-branch}
 \end{figure}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/champion_timeline.png}
-  \caption{Champion update timeline at the $5$k-gate freeze. Sparse $R$ labels mark first, mid-peak, and latest improvements for twocolumn legibility.}
+  \caption{Champion update timeline for the first $5{,}000$ iterations at the $5$k-gate freeze. Sparse $R$ labels mark first, mid-peak, and latest improvements for twocolumn legibility.}
   \label{fig:champ-timeline}
 \end{figure}

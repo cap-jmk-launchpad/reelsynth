@@ -57,7 +57,7 @@
 | P4 | ≈ vs `~` | Mostly `\approx` already; normalize remaining |
 | P5 | Section cross-refs “Results report…” | Add `\ref{sec:results}` |
 | P6 | Algorithm Require/return style | Cosmetic; unify only if broken |
-| P7 | B&W shape markers on line plots | Optional if regenerating figures |
+| P7 | B&W shape markers on line plots | **DONE** (Okabe-Ito + markers; regen `--max-iter 5000`) |
 | P8 | Competing interests trailing `_` | OCR; ensure period |
 | P9 | Wilcoxon exponent $10^{-5}$ vs review $10^{-6}$ | Keep measured $8.9{\times}10^{-5}$ |
 
@@ -106,7 +106,7 @@
 ### P4 Low
 - [x] Tighten conclusion
 - [x] Short caption accessibility notes
-- [x] Shape markers only if regenerating plots (optional)
+- [x] Shape markers on overnight line plots (regenerated; MUSHRA ignored)
 
 ### Loop closeout
 - [x] Grep: `NoiseZNoise`, `aXiv`, `€`, `et a.`, broken URLs, `20{,}260`

@@ -3,7 +3,10 @@
 
 Sized for arXiv twocolumn: ~3.3in column width at 220 dpi, large labels,
 minimal in-plot annotation. DualCosine baseline when available.
-Copies to denoise-opt-meta/paper/v4/figures/ and docs/papers/denoise_opt/v4/figures/.
+Copies to denoise-opt-meta/paper/v5/figures/ and docs/papers/denoise_opt/v5/figures/.
+
+Line series use distinct markers + Okabe-Ito colorblind-safe colors so branches
+remain distinguishable in grayscale print (markevery keeps markers sparse).
 """
 from __future__ import annotations
 
@@ -14,9 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 META_FIG = Path(
-    r"C:\Users\Julian\Documents\Programming\github\reeldemo\denoise-opt-meta\paper\v4\figures"
+    r"C:\Users\Julian\Documents\Programming\github\reeldemo\denoise-opt-meta\paper\v5\figures"
 )
-DOCS_FIG = ROOT / "docs" / "papers" / "denoise_opt" / "v4" / "figures"
+DOCS_FIG = ROOT / "docs" / "papers" / "denoise_opt" / "v5" / "figures"
 
 # Physical inches: readable when shrunk to \\columnwidth (~3.3in)
 COL_W, COL_H = 5.6, 3.5
@@ -30,14 +33,28 @@ FONT = {
     "figure.titlesize": 11,
 }
 
-BRANCH_COLORS = {
-    "rl": "#2a9d8f",
-    "ppo": "#2a9d8f",
-    "nas": "#c9a227",
-    "combo": "#e76f51",
-    "ga": "#457b9d",
-    "pbt": "#6a4c93",
+# Okabe-Ito palette (colorblind-safe) + distinct markers for B&W print
+CHAMP_STYLE = {
+    "color": "#000000",
+    "marker": "o",
+    "linestyle": "-",
+    "linewidth": 1.8,
 }
+BASELINE_STYLE = {
+    "color": "#999999",
+    "linestyle": "--",
+    "linewidth": 1.4,
+}
+BRANCH_STYLE = {
+    "rl": {"color": "#0072B2", "marker": "o", "linestyle": "-"},
+    "ppo": {"color": "#0072B2", "marker": "o", "linestyle": "-"},
+    "ga": {"color": "#009E73", "marker": "s", "linestyle": "-"},
+    "pbt": {"color": "#E69F00", "marker": "^", "linestyle": "-"},
+    "nas": {"color": "#CC79A7", "marker": "D", "linestyle": "-"},
+    "combo": {"color": "#D55E00", "marker": "v", "linestyle": "-"},
+}
+# Legacy alias used by scatter fig
+BRANCH_COLORS = {k: v["color"] for k, v in BRANCH_STYLE.items()}
 
 
 def load_rows(path: Path) -> list[dict]:
@@ -106,11 +123,42 @@ def series(rows: list[dict], *keys: str) -> list[float | None]:
     return out
 
 
-def style_axes(ax) -> None:
+def style_axes(ax, *, xmax: int | None = None) -> None:
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(True, alpha=0.25, linewidth=0.55)
     ax.tick_params(labelsize=10)
+    if xmax is not None:
+        lo, _ = ax.get_xlim()
+        ax.set_xlim(lo, float(xmax))
+
+
+def markevery_for(n: int, target_marks: int = 14) -> int | slice:
+    """Sparse markers so dense overnight traces stay readable in print."""
+    if n <= 1:
+        return 1
+    if n <= target_marks:
+        return 1
+    return max(1, n // target_marks)
+
+
+def plot_marked(ax, xs, ys, *, color, marker, linestyle="-", linewidth=1.5, label=None, zorder=2):
+    n = len(xs)
+    ax.plot(
+        xs,
+        ys,
+        color=color,
+        marker=marker,
+        linestyle=linestyle,
+        linewidth=linewidth,
+        markersize=5.5,
+        markevery=markevery_for(n),
+        markerfacecolor=color,
+        markeredgecolor="white",
+        markeredgewidth=0.55,
+        label=label,
+        zorder=zorder,
+    )
 
 
 def pick_annotate(events: list[dict], max_n: int = 3) -> list[dict]:
@@ -138,9 +186,15 @@ def main() -> int:
     ap.add_argument("history", type=Path, help="Path to history.jsonl")
     ap.add_argument("--out-dir", type=Path, default=None)
     ap.add_argument("--baseline", type=float, default=None)
+    ap.add_argument(
+        "--max-iter",
+        type=int,
+        default=None,
+        help="Truncate history to iter <= N (paper freeze)",
+    )
     ap.add_argument("--dpi", type=int, default=220)
-    ap.add_argument("--also-meta-v4", action="store_true", default=True)
-    ap.add_argument("--also-docs-v4", action="store_true", default=True)
+    ap.add_argument("--also-meta-v5", action="store_true", default=True)
+    ap.add_argument("--also-docs-v5", action="store_true", default=True)
     args = ap.parse_args()
 
     try:
@@ -158,6 +212,12 @@ def main() -> int:
     if not rows:
         print("ERROR: no history rows", flush=True)
         return 1
+
+    if args.max_iter is not None:
+        rows = [r for r in rows if int(r["iter"]) <= args.max_iter]
+        if not rows:
+            print(f"ERROR: no rows with iter <= {args.max_iter}", flush=True)
+            return 1
 
     run_dir = args.history.parent
     baseline = args.baseline if args.baseline is not None else load_baseline(run_dir, rows)
@@ -183,28 +243,42 @@ def main() -> int:
 
     # --- Fig 1: champion + baseline ---
     fig, ax = plt.subplots(figsize=(COL_W, COL_H))
-    ax.plot(iters, champ, color="#1a5f7a", linewidth=1.8, label="Champion $R$")
+    plot_marked(
+        ax,
+        iters,
+        champ,
+        color=CHAMP_STYLE["color"],
+        marker=CHAMP_STYLE["marker"],
+        linestyle=CHAMP_STYLE["linestyle"],
+        linewidth=CHAMP_STYLE["linewidth"],
+        label="Champion $R$",
+        zorder=3,
+    )
     if baseline is not None:
         ax.axhline(
             baseline,
-            color="#c45c26",
-            linestyle="--",
-            linewidth=1.4,
+            color=BASELINE_STYLE["color"],
+            linestyle=BASELINE_STYLE["linestyle"],
+            linewidth=BASELINE_STYLE["linewidth"],
             label=f"DualCosine ({baseline:.3f})",
+            zorder=1,
         )
     if events:
         ax.scatter(
             [e["iter"] for e in events],
             [e["champ"] for e in events],
-            s=28,
-            c="#0b3d4a",
+            s=36,
+            c=CHAMP_STYLE["color"],
+            marker="*",
             zorder=5,
             label="Updates",
+            edgecolors="white",
+            linewidths=0.4,
         )
     ax.set_xlabel("Iteration")
     ax.set_ylabel(r"Residual $R$ (1 = best)")
     ax.set_title("Champion residual vs DualCosine")
-    style_axes(ax)
+    style_axes(ax, xmax=args.max_iter)
     ax.legend(loc="lower right", frameon=False, fontsize=9)
     fig.tight_layout()
     p1 = out_dir / "champ_residual_vs_iter.png"
@@ -213,22 +287,38 @@ def main() -> int:
 
     # --- Fig 2: branch bests ---
     fig, ax = plt.subplots(figsize=(COL_W, COL_H))
-    if any(v is not None for v in bb_rl):
-        ax.plot(iters, bb_rl, color=BRANCH_COLORS["ppo"], linewidth=1.5, label="PPO/RL best")
-    if any(v is not None for v in bb_nas):
-        ax.plot(iters, bb_nas, color=BRANCH_COLORS["nas"], linewidth=1.5, label="NAS best")
-    if any(v is not None for v in bb_ga):
-        ax.plot(iters, bb_ga, color=BRANCH_COLORS["ga"], linewidth=1.5, label="GA best")
-    if any(v is not None for v in bb_pbt):
-        ax.plot(iters, bb_pbt, color=BRANCH_COLORS["pbt"], linewidth=1.5, label="PBT best")
-    if any(v is not None for v in bb_combo):
-        ax.plot(iters, bb_combo, color=BRANCH_COLORS["combo"], linewidth=1.5, label="Combo best")
+    branch_series = [
+        ("ppo", bb_rl, "PPO/RL best"),
+        ("ga", bb_ga, "GA best"),
+        ("pbt", bb_pbt, "PBT best"),
+        ("nas", bb_nas, "NAS best"),
+        ("combo", bb_combo, "Combo best"),
+    ]
+    for key, ys, lab in branch_series:
+        if any(v is not None for v in ys):
+            st = BRANCH_STYLE[key]
+            plot_marked(
+                ax,
+                iters,
+                ys,
+                color=st["color"],
+                marker=st["marker"],
+                linestyle=st["linestyle"],
+                linewidth=1.5,
+                label=lab,
+            )
     if baseline is not None:
-        ax.axhline(baseline, color="#6c757d", linestyle="--", linewidth=1.2, label="DualCosine")
+        ax.axhline(
+            baseline,
+            color=BASELINE_STYLE["color"],
+            linestyle=BASELINE_STYLE["linestyle"],
+            linewidth=1.2,
+            label="DualCosine",
+        )
     ax.set_xlabel("Iteration")
     ax.set_ylabel(r"Branch-best $R$")
     ax.set_title("Branch competition")
-    style_axes(ax)
+    style_axes(ax, xmax=args.max_iter)
     ax.legend(loc="lower right", frameon=False, fontsize=8, ncol=2)
     fig.tight_layout()
     p2 = out_dir / "branch_bests_vs_iter.png"
@@ -239,20 +329,53 @@ def main() -> int:
     fig, ax = plt.subplots(figsize=(COL_W, COL_H))
     step = max(1, n // 12000)
     present = sorted({b for b in branches if b})
+    scatter_markers = {
+        "rl": "o",
+        "ppo": "o",
+        "ga": "s",
+        "pbt": "^",
+        "nas": "D",
+        "combo": "v",
+    }
     for bname in present:
         col = BRANCH_COLORS.get(bname, "#888888")
+        mk = scatter_markers.get(bname, "o")
         xs = [iters[i] for i in range(0, n, step) if branches[i] == bname]
         ys = [resid[i] for i in range(0, n, step) if branches[i] == bname]
         if xs:
-            ax.scatter(xs, ys, s=6, alpha=0.28, c=col, linewidths=0, label=bname.upper())
-    ax.plot(iters, champ, color="#1a5f7a", linewidth=1.5, label="Champ")
+            ax.scatter(
+                xs,
+                ys,
+                s=10,
+                alpha=0.35,
+                c=col,
+                marker=mk,
+                linewidths=0,
+                label=bname.upper(),
+            )
+    plot_marked(
+        ax,
+        iters,
+        champ,
+        color=CHAMP_STYLE["color"],
+        marker=CHAMP_STYLE["marker"],
+        linestyle=CHAMP_STYLE["linestyle"],
+        linewidth=1.5,
+        label="Champ",
+        zorder=4,
+    )
     if baseline is not None:
-        ax.axhline(baseline, color="#6c757d", linestyle="--", linewidth=1.1)
+        ax.axhline(
+            baseline,
+            color=BASELINE_STYLE["color"],
+            linestyle=BASELINE_STYLE["linestyle"],
+            linewidth=1.1,
+        )
     ax.set_xlabel("Iteration")
     ax.set_ylabel(r"Per-trial $R$")
     ax.set_title("Trial residuals by branch")
-    style_axes(ax)
-    ax.legend(loc="lower right", frameon=False, fontsize=8, markerscale=2.2, ncol=2)
+    style_axes(ax, xmax=args.max_iter)
+    ax.legend(loc="lower right", frameon=False, fontsize=8, markerscale=1.4, ncol=2)
     fig.tight_layout()
     p3 = out_dir / "residual_by_branch.png"
     fig.savefig(p3, dpi=args.dpi, bbox_inches="tight")
@@ -263,7 +386,17 @@ def main() -> int:
     if events:
         xs = [e["iter"] for e in events] + [iters[-1]]
         ys = [e["champ"] for e in events] + [events[-1]["champ"]]
-        ax.step(xs, ys, where="post", color="#1a5f7a", linewidth=1.8)
+        ax.step(xs, ys, where="post", color=CHAMP_STYLE["color"], linewidth=1.8)
+        ax.scatter(
+            [e["iter"] for e in events],
+            [e["champ"] for e in events],
+            s=40,
+            c=CHAMP_STYLE["color"],
+            marker="o",
+            zorder=5,
+            edgecolors="white",
+            linewidths=0.5,
+        )
         labels = pick_annotate(events, max_n=3)
         for e in labels:
             ax.axvline(e["iter"], color="#adb5bd", linewidth=0.7, alpha=0.75)
@@ -286,13 +419,26 @@ def main() -> int:
         pad = max(0.02, 0.08 * (ymax - ymin + 1e-6))
         ax.set_ylim(ymin - pad, min(1.002, ymax + pad))
     else:
-        ax.plot(iters, champ, color="#1a5f7a", linewidth=1.6)
+        plot_marked(
+            ax,
+            iters,
+            champ,
+            color=CHAMP_STYLE["color"],
+            marker=CHAMP_STYLE["marker"],
+            linestyle=CHAMP_STYLE["linestyle"],
+            linewidth=1.6,
+        )
     if baseline is not None:
-        ax.axhline(baseline, color="#c45c26", linestyle="--", linewidth=1.2)
+        ax.axhline(
+            baseline,
+            color=BASELINE_STYLE["color"],
+            linestyle=BASELINE_STYLE["linestyle"],
+            linewidth=1.2,
+        )
     ax.set_xlabel("Iteration")
     ax.set_ylabel(r"Champion $R$")
     ax.set_title(f"Champion updates ($n$={len(events)})")
-    style_axes(ax)
+    style_axes(ax, xmax=args.max_iter)
     fig.tight_layout()
     p4 = out_dir / "champion_timeline.png"
     fig.savefig(p4, dpi=args.dpi, bbox_inches="tight", pad_inches=0.2)
@@ -300,35 +446,60 @@ def main() -> int:
 
     # --- Fig 5: full-width panel ---
     fig, axes = plt.subplots(2, 1, figsize=(COL_W * 1.55, PANEL_H), sharex=True)
-    axes[0].plot(iters, champ, color="#1a5f7a", linewidth=1.7, label="Champion $R$")
+    plot_marked(
+        axes[0],
+        iters,
+        champ,
+        color=CHAMP_STYLE["color"],
+        marker=CHAMP_STYLE["marker"],
+        linestyle=CHAMP_STYLE["linestyle"],
+        linewidth=1.7,
+        label="Champion $R$",
+        zorder=3,
+    )
     if baseline is not None:
         axes[0].axhline(
             baseline,
-            color="#c45c26",
-            linestyle="--",
+            color=BASELINE_STYLE["color"],
+            linestyle=BASELINE_STYLE["linestyle"],
             linewidth=1.3,
             label=f"DualCosine ({baseline:.3f})",
         )
     axes[0].set_ylabel(r"Champion $R$")
     axes[0].set_title(f"Overnight monitoring ({n:,} steps, champ $R$={final_champ:.3f})")
-    style_axes(axes[0])
+    style_axes(axes[0], xmax=args.max_iter)
     axes[0].legend(loc="lower right", frameon=False, fontsize=9)
 
-    if any(v is not None for v in bb_rl):
-        axes[1].plot(iters, bb_rl, color=BRANCH_COLORS["ppo"], linewidth=1.4, label="PPO/RL")
-    if any(v is not None for v in bb_nas):
-        axes[1].plot(iters, bb_nas, color=BRANCH_COLORS["nas"], linewidth=1.4, label="NAS")
-    if any(v is not None for v in bb_ga):
-        axes[1].plot(iters, bb_ga, color=BRANCH_COLORS["ga"], linewidth=1.4, label="GA")
-    if any(v is not None for v in bb_pbt):
-        axes[1].plot(iters, bb_pbt, color=BRANCH_COLORS["pbt"], linewidth=1.4, label="PBT")
-    if any(v is not None for v in bb_combo):
-        axes[1].plot(iters, bb_combo, color=BRANCH_COLORS["combo"], linewidth=1.4, label="Combo")
+    panel_branch = [
+        ("ppo", bb_rl, "PPO/RL"),
+        ("ga", bb_ga, "GA"),
+        ("pbt", bb_pbt, "PBT"),
+        ("nas", bb_nas, "NAS"),
+        ("combo", bb_combo, "Combo"),
+    ]
+    for key, ys, lab in panel_branch:
+        if any(v is not None for v in ys):
+            st = BRANCH_STYLE[key]
+            plot_marked(
+                axes[1],
+                iters,
+                ys,
+                color=st["color"],
+                marker=st["marker"],
+                linestyle=st["linestyle"],
+                linewidth=1.4,
+                label=lab,
+            )
     if baseline is not None:
-        axes[1].axhline(baseline, color="#6c757d", linestyle="--", linewidth=1.1)
+        axes[1].axhline(
+            baseline,
+            color=BASELINE_STYLE["color"],
+            linestyle=BASELINE_STYLE["linestyle"],
+            linewidth=1.1,
+        )
     axes[1].set_xlabel("Iteration")
     axes[1].set_ylabel(r"Branch-best $R$")
-    style_axes(axes[1])
+    style_axes(axes[1], xmax=args.max_iter)
     axes[1].legend(loc="lower right", frameon=False, fontsize=8, ncol=3)
     fig.tight_layout()
     p5 = out_dir / "overnight_panel.png"
@@ -339,28 +510,35 @@ def main() -> int:
         "run_dir": str(run_dir),
         "n_points": n,
         "final_iter": iters[-1],
+        "max_iter_arg": args.max_iter,
         "final_champ": final_champ,
         "baseline_dual_cosine": baseline,
         "delta_vs_baseline": (final_champ - baseline) if baseline is not None else None,
         "n_champ_updates": len(events),
         "champ_events_tail": events[-10:],
         "figures": [p.name for p in (p1, p2, p3, p4, p5)],
+        "bw_markers": True,
+        "palette": "okabe_ito",
     }
     (out_dir / "plot_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     written = [p1, p2, p3, p4, p5, out_dir / "plot_summary.json"]
-    if args.also_meta_v4:
+    if args.also_meta_v5:
         META_FIG.mkdir(parents=True, exist_ok=True)
         for p in written:
             shutil.copy2(p, META_FIG / p.name)
         print(f"also copied to {META_FIG}", flush=True)
-    if args.also_docs_v4:
+    if args.also_docs_v5:
         DOCS_FIG.mkdir(parents=True, exist_ok=True)
         for p in written:
             shutil.copy2(p, DOCS_FIG / p.name)
         print(f"also copied to {DOCS_FIG}", flush=True)
 
-    print(f"wrote {out_dir} ({n} points, champ={final_champ:.6f}, baseline={baseline})", flush=True)
+    print(
+        f"wrote {out_dir} ({n} points, champ={final_champ:.6f}, baseline={baseline}"
+        f", max_iter={args.max_iter})",
+        flush=True,
+    )
     return 0
 
 
