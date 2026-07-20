@@ -121,23 +121,19 @@ pub(super) fn draw_header(
                     });
                     record_used(ui.ctx(), AuditId::HeaderWtMenu, wt_menu.response.rect);
 
-                    let overtone_menu = ui.menu_button(header_menu_label("Overtone"), |ui| {
-                        styled_menu_body(ui, |ui| {
-                            let result = crate::overtone_rack::draw_overtone_chain_menu(
-                                ui,
-                                &mut state.overtone_slots,
-                            );
-                            if result.changed {
-                                actions.params_changed = true;
-                            }
-                        });
-                    });
-                    let _ = overtone_menu;
-
                     if let Some(settings) = app_settings.as_deref_mut() {
                         let settings_menu = ui.menu_button(header_menu_label("Settings"), |ui| {
                             styled_menu_body(ui, |ui| {
                                 ui.set_min_width(220.0);
+                                menu_section_label(ui, "Overtone");
+                                let result = crate::overtone_rack::draw_overtone_chain_menu(
+                                    ui,
+                                    &mut state.overtone_slots,
+                                );
+                                if result.changed {
+                                    actions.params_changed = true;
+                                }
+                                menu_divider(ui);
                                 menu_section_label(ui, "Graphics");
                                 let backend_label = settings.backend_label();
                                 reel_combo(
@@ -240,9 +236,27 @@ pub(super) fn draw_header(
                             AuditId::HeaderSettingsMenu,
                             settings_menu.response.rect,
                         );
+                    } else {
+                        let overtone_menu = ui.menu_button(header_menu_label("Overtone"), |ui| {
+                            styled_menu_body(ui, |ui| {
+                                let result = crate::overtone_rack::draw_overtone_chain_menu(
+                                    ui,
+                                    &mut state.overtone_slots,
+                                );
+                                if result.changed {
+                                    actions.params_changed = true;
+                                }
+                            });
+                        });
+                        let _ = overtone_menu;
                     }
 
-                    let left_cluster = ui.min_rect();
+                    let left_cluster = {
+                        let r = ui.min_rect();
+                        // Cursor is past the last left control; prefer that over min_rect.max.x
+                        // so popups / wide child allocations don't inflate the cluster.
+                        Rect::from_min_max(r.min, egui::pos2(ui.cursor().min.x, r.max.y))
+                    };
                     ui.ctx().data_mut(|d| {
                         d.insert_temp(header_left_cluster_rect_id(), left_cluster);
                     });
@@ -254,7 +268,9 @@ pub(super) fn draw_header(
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.set_width(ui.available_width());
+                        // Cap to remaining space but size the audit cluster to content,
+                        // not the full leftover strip (which falsely overlaps the left).
+                        ui.set_max_width(ui.available_width().max(0.0));
 
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
@@ -268,7 +284,7 @@ pub(super) fn draw_header(
                                 Color32::from_rgb(0x4a, 0xde, 0x80),
                             );
                             let _status = ui.label(
-                                egui::RichText::new(truncate_status(&state.status, 48))
+                                egui::RichText::new(truncate_status(&state.status, 32))
                                     .font(FontId::monospace(11.0))
                                     .color(tokens.text_muted),
                             );
@@ -285,19 +301,24 @@ pub(super) fn draw_header(
                             .get(midi.selected)
                             .map(String::as_str)
                             .unwrap_or("MIDI");
-                        let midi_before = ui.min_rect();
-                        reel_combo(ui, "s1_midi_device", select_value_text(midi_label), 148.0, |ui| {
-                            for (idx, name) in midi.names.iter().enumerate() {
-                                if menu_selectable(ui, midi.selected == idx, name).clicked() {
-                                    actions.midi_device_selected = Some(idx);
+                        let midi_resp = reel_combo(
+                            ui,
+                            "s1_midi_device",
+                            select_value_text(midi_label),
+                            120.0,
+                            |ui| {
+                                for (idx, name) in midi.names.iter().enumerate() {
+                                    if menu_selectable(ui, midi.selected == idx, name).clicked() {
+                                        actions.midi_device_selected = Some(idx);
+                                    }
                                 }
-                            }
-                        });
+                            },
+                        );
                         record_region(
                             ui.ctx(),
                             AuditId::HeaderMidiCombo,
-                            midi_before,
-                            ui.min_rect(),
+                            midi_resp.response.rect,
+                            midi_resp.response.rect,
                         );
 
                         let audio_label = audio
@@ -305,12 +326,11 @@ pub(super) fn draw_header(
                             .get(audio.selected)
                             .map(String::as_str)
                             .unwrap_or("Audio");
-                        let audio_before = ui.min_rect();
-                        reel_combo(
+                        let audio_resp = reel_combo(
                             ui,
                             "s1_audio_device",
                             select_value_text(audio_label),
-                            148.0,
+                            120.0,
                             |ui| {
                                 if audio.names.is_empty() {
                                     let _ = menu_selectable(ui, true, "No output devices");
@@ -328,8 +348,8 @@ pub(super) fn draw_header(
                         record_region(
                             ui.ctx(),
                             AuditId::HeaderAudioCombo,
-                            audio_before,
-                            ui.min_rect(),
+                            audio_resp.response.rect,
+                            audio_resp.response.rect,
                         );
 
                         let right_cluster = ui.min_rect();
