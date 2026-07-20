@@ -186,6 +186,9 @@ class HyperParams:
     entropy_coef: float = 0.02
     ppo_clip: float = 0.2
     adv_coef: float = 0.05  # weight for optional adv aux
+    # Reward shaping for outer RL credit (objective remains maximize absolute R).
+    # abs_r | vs_dualcosine | vs_nobake | neglog_gap
+    reward_mode: str = "vs_dualcosine"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -196,6 +199,32 @@ class HyperParams:
             return cls()
         known = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         return cls(**{k: v for k, v in d.items() if k in known})
+
+
+REWARD_MODES = ("abs_r", "vs_dualcosine", "vs_nobake", "neglog_gap")
+
+
+def shaped_reward(
+    r: float,
+    *,
+    mode: str,
+    r_dualcosine: float,
+    r_nobake: float,
+) -> float:
+    """Outer-loop credit signal. Larger when closer to best R (ideal sibling).
+
+    Near-ceiling no-bake (~0.97) makes raw gaps tiny; modes re-scale credit for PPO/REINFORCE.
+    Selection / reporting still use absolute R.
+    """
+    m = (mode or "vs_dualcosine").strip().lower()
+    if m == "abs_r":
+        return float(r)
+    if m == "vs_nobake":
+        return float(r - r_nobake)
+    if m == "neglog_gap":
+        return float(-math.log(max(1e-6, 1.0 - float(r))))
+    # default: vs_dualcosine
+    return float(r - r_dualcosine)
 
 
 @dataclass
@@ -602,6 +631,7 @@ def random_hp(rng: random.Random) -> HyperParams:
         entropy_coef=rng.uniform(0.005, 0.06),
         ppo_clip=rng.choice([0.1, 0.2, 0.25, 0.3]),
         adv_coef=rng.choice([0.02, 0.05, 0.1]),
+        reward_mode=rng.choice(list(REWARD_MODES)),
     )
 
 
@@ -821,6 +851,8 @@ def mutate_hp(hp: HyperParams, rng: random.Random) -> HyperParams:
     h.ppo_clip = float(max(0.05, min(0.4, h.ppo_clip + rng.choice([-0.05, 0.0, 0.05]))))
     h.batch = int(rng.choice([32, 48, 64]))
     h.adv_coef = float(max(0.0, min(0.2, h.adv_coef + rng.uniform(-0.02, 0.02))))
+    if rng.random() < 0.25:
+        h.reward_mode = rng.choice(list(REWARD_MODES))
     return h
 
 
@@ -974,6 +1006,13 @@ def dual_cosine_baseline(device: torch.device, batch: int = 128) -> float:
     ideal, eng = make_batch(batch, N, device)
     out = dual_cosine_blend(eng)
     return float(residual_score(ideal, out).mean().item())
+
+
+@torch.no_grad()
+def nobake_baseline(device: torch.device, batch: int = 128) -> float:
+    """Unrepaired engine vs ideal sibling (near-ceiling reference ~0.97)."""
+    ideal, eng = make_batch(batch, N, device)
+    return float(residual_score(ideal, eng).mean().item())
 
 
 def save_unfitted(run_dir: Path, cfg: ArchConfig, tag: str, hp: HyperParams | None = None) -> Path:
@@ -1285,6 +1324,7 @@ def main() -> int:
         history_path.write_text("", encoding="utf-8")
 
     baseline = dual_cosine_baseline(device)
+    nobake_ref = nobake_baseline(device)
     now_local = datetime.now().astimezone()
     algorithms = list(ALGORITHMS)
     log_line(
@@ -1619,7 +1659,15 @@ def main() -> int:
         branch_best[branch] = max(branch_best[branch], residual_raw)
         recent_residuals.append(residual_raw)
 
-        reward = finite_scalar(residual - baseline, 0.0)
+        reward = finite_scalar(
+            shaped_reward(
+                residual,
+                mode=getattr(trial_hp, "reward_mode", "vs_dualcosine"),
+                r_dualcosine=baseline,
+                r_nobake=nobake_ref,
+            ),
+            0.0,
+        )
         buf.states.append(state.squeeze(0).detach())
         buf.actions.append(action)
         buf.logprobs.append(logprob.detach())

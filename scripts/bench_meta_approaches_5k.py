@@ -7,7 +7,10 @@ Approaches (OA-citable; LSTM + xLSTM in searchable bake vocabulary):
   reinforce    — vanilla policy gradient over discrete edit actions
   aging_evo    — regularized / aging evolution (Real et al.)
   tpe          — lightweight TPE-style Bayesian opt over discrete arch
-  hybrid_lstm  — existing hybrid PPO+GA+PBT+NAS+combo with LSTM+xLSTM in BLOCKS
+  hybrid_lstm  — hybrid PPO+GA+PBT+NAS+combo with LSTM+xLSTM; co-tunes fit/PPO HPs
+                 and reward shaping modes (abs_r / vs_dualcosine / vs_nobake / neglog_gap)
+                 via PBT + plateau adapt. This matched compare is the sole GPU
+                 experimentation vehicle (no concurrent overnight hybrid).
 
 Each approach runs `--iters` evaluations (default 5000), search seed 1902771841,
 batch/fit defaults matching overnight_gpu_rl_arch. Checkpoint/resume per approach.
@@ -570,6 +573,7 @@ def run_approach(
         torch.cuda.manual_seed_all(seed)
 
     baseline = og.dual_cosine_baseline(device, batch=128)
+    nobake_ref = og.nobake_baseline(device, batch=128)
     start_it = 1
     champ_r = -1.0
     champ_raw = -1.0
@@ -577,6 +581,8 @@ def run_approach(
     champ_hp: og.HyperParams | None = None
     champ_lstm = False
     champ_xlstm = False
+    iters_since_improve = 0
+    plateau_every = 500
     t0 = time.time()
     elapsed_prev = 0.0
 
@@ -683,8 +689,9 @@ def run_approach(
 
     log(
         f"START approach={name} iters={iters} seed={seed} device={device} "
-        f"baseline_dual_cosine={baseline:.6f} "
-        f"blocks_has_lstm={'lstm' in BLOCKS} blocks_has_xlstm={'xlstm' in BLOCKS}"
+        f"baseline_dual_cosine={baseline:.6f} nobake={nobake_ref:.6f} "
+        f"blocks_has_lstm={'lstm' in BLOCKS} blocks_has_xlstm={'xlstm' in BLOCKS} "
+        f"hp_reward_sweep=on plateau_every={plateau_every}"
     )
 
     # Hybrid: reuse overnight branch rotation with LSTM vocabulary already live
@@ -770,7 +777,15 @@ def run_approach(
                 fit_steps_default=fit_steps,
                 batch_default=batch,
             )
-            reward = og.finite_scalar(r - baseline, 0.0)
+            reward = og.finite_scalar(
+                og.shaped_reward(
+                    r,
+                    mode=getattr(trial_hp, "reward_mode", "vs_dualcosine"),
+                    r_dualcosine=baseline,
+                    r_nobake=nobake_ref,
+                ),
+                0.0,
+            )
             re_base = reinforce_update(policy, policy_opt, logprob, reward, re_base)
             if r >= cur_score:
                 cur_cfg, cur_hp, cur_score = trial_cfg, trial_hp, r
@@ -791,9 +806,13 @@ def run_approach(
                 trial_hp = og.mutate_hp(hp, rng)
                 proposal = "NAS_RANDOM"
             elif branch == "pbt":
+                # Exploit/mutate HPs + reward_mode (near-ceiling sweep lives here)
+                og.pbt_exploit_mutate(pop, rng)
+                ind = pop[(it - 1) % len(pop)]
+                cfg, hp = ind.cfg, ind.hp
                 trial_cfg = og.mutate_arch(cfg, action, rng, plateau)
-                trial_hp = hp
-                proposal = "PBT_MUTATE"
+                trial_hp = og.mutate_hp(hp, rng)
+                proposal = "PBT_MUTATE_HP"
             elif branch == "ga":
                 parent = max(pop, key=lambda x: x.score)
                 from denoise_meta_evo import crossover_arch, crossover_hp
@@ -839,7 +858,15 @@ def run_approach(
                 batch_default=batch,
             )
             branch_best[branch] = max(branch_best[branch], r_raw)
-            reward = og.finite_scalar(r - baseline, 0.0)
+            reward = og.finite_scalar(
+                og.shaped_reward(
+                    r,
+                    mode=getattr(trial_hp, "reward_mode", "vs_dualcosine"),
+                    r_dualcosine=baseline,
+                    r_nobake=nobake_ref,
+                ),
+                0.0,
+            )
             buf.states.append(state.squeeze(0).detach())
             buf.actions.append(action)
             buf.logprobs.append(logprob.detach())
@@ -861,6 +888,11 @@ def run_approach(
                     last_good_policy = og.snapshot_state_dict(policy)
             if r >= ind.score:
                 ind.cfg, ind.hp, ind.score = trial_cfg, trial_hp, r
+            # Plateau adapt: deepen + crazier mixes when champ stalls
+            if iters_since_improve >= plateau_every and plateau.level < 8:
+                ev = og.apply_plateau_adapt(plateau, pop, rng, it=it, max_level=8)
+                iters_since_improve = 0
+                log(f"PLATEAU_ADAPT approach={name} iter={it} level={ev.get('level')}")
         else:
             raise ValueError(name)
 
@@ -872,10 +904,14 @@ def run_approach(
             flags = arch_recurrent_flags(trial_cfg)
             champ_lstm = flags["lstm"]
             champ_xlstm = flags["xlstm"]
+            iters_since_improve = 0
             log(
                 f"CHAMP approach={name} iter={it} R={champ_r:.6f} raw={champ_raw:.6f} "
-                f"lstm={champ_lstm} xlstm={champ_xlstm}"
+                f"lstm={champ_lstm} xlstm={champ_xlstm} "
+                f"reward_mode={getattr(trial_hp, 'reward_mode', None)}"
             )
+        else:
+            iters_since_improve += 1
 
         trial_flags = arch_recurrent_flags(trial_cfg)
         row = {
@@ -891,6 +927,8 @@ def run_approach(
             "lstm_in_champ": champ_lstm,
             "xlstm_in_champ": champ_xlstm,
             "baseline_dual_cosine": baseline,
+            "baseline_nobake": nobake_ref,
+            "reward_mode": getattr(trial_hp, "reward_mode", None),
             "wall_s": elapsed_prev + (time.time() - t0),
             "arch": trial_cfg.to_dict(),
             "hp": trial_hp.to_dict(),
