@@ -1177,14 +1177,19 @@ def main() -> int:
 
     baseline = summaries[0]["baseline_dual_cosine"] if summaries else None
     aggregate = {
+        "schema": "denoiseopt.meta_approach_compare.v1",
+        "publishable": True,
         "seed": args.seed,
         "iters": args.iters,
         "batch": args.batch,
         "fit_steps": args.fit_steps,
+        "pop_size": args.pop_size,
         "device": str(device),
         "baseline_dual_cosine": baseline,
         "lstm_in_search_vocab": True,
         "xlstm_in_search_vocab": True,
+        "reward_modes": list(getattr(og, "REWARD_MODES", ())),
+        "blocks": list(BLOCKS),
         "approaches": {s["approach"]: s for s in summaries},
         "table": [
             {
