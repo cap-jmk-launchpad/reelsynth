@@ -475,6 +475,8 @@ def apply_ops(frames: torch.Tensor, cell: SeamCell, ops: list[str]) -> torch.Ten
                 "dilated",
                 "attn",
                 "dual_path",
+                "lstm",
+                "xlstm",
                 "tf_split",
                 "noise_cond",
                 "moe_mix",
@@ -529,7 +531,7 @@ def arch_state_vec(cfg: ArchConfig, hp: HyperParams, device: torch.device) -> to
         1.0 if cfg.use_adv_aux else 0.0,
         finite_scalar(len(cfg.blocks) / float(arch_blocks.MAX_GRAPH_LEN)),
         1.0 if cfg.moe_mode == "moe_parallel" else 0.0,
-        float(len(set(cfg.blocks) & {"unet", "attn", "dilated", "dual_path"})) / 4.0,
+        float(len(set(cfg.blocks) & {"unet", "attn", "lstm", "xlstm", "dilated", "dual_path"})) / 6.0,
     ]
     vec = (op_bits + block_bits[:10] + extras)[:STATE_DIM]
     while len(vec) < STATE_DIM:

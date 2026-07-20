@@ -1,7 +1,7 @@
 """Composable seam/cycle architecture blocks for DenoiseOpt NAS.
 
-Lit-inspired families scaled for N=256 residual bake (RTX 3090, overnight):
-  residual, dense, unet, conv1d, dilated, attn, dual_path, gated, soft_mix,
+Lit-inspired families scaled for N=256 residual bake (RTX 3090-safe):
+  residual, dense, unet, conv1d, dilated, attn, dual_path, lstm, gated, soft_mix,
   noise_cond, mlp, moe_mix — composed as graphs (depth-biased), not full Demucs/diffusion/GAN.
 
 Mixture modes:
@@ -29,6 +29,8 @@ BLOCKS = [
     "dilated",
     "attn",
     "dual_path",
+    "lstm",
+    "xlstm",
     "tf_split",
     "noise_cond",
     "soft_mix",
@@ -315,6 +317,84 @@ class DualPathLite(nn.Module):
         return g * y + (1 - g) * x
 
 
+class TinyLSTMLite(nn.Module):
+    """Lightweight 1–2 layer LSTM over length-L tokens; width-capped for N=256 bake safety.
+
+    Distinct from the fixed supervised seq-LSTM SOTA baseline: this is a searchable
+    bake-cell block inside ComposedSeamNet graphs (seam window or full cycle).
+    """
+
+    def __init__(self, length: int, width: int, act: str, depth: int = 2):
+        super().__init__()
+        self.length = length
+        h = max(4, min(24, width))
+        n_layers = 1 if depth <= 6 else 2
+        self.lstm = nn.LSTM(
+            input_size=1,
+            hidden_size=h,
+            num_layers=n_layers,
+            batch_first=True,
+            bidirectional=False,
+        )
+        self.proj = nn.Sequential(nn.Linear(h, h), _act_module(act), nn.Linear(h, 1))
+        self.gate = nn.Parameter(torch.tensor(0.3))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # (B, L) -> (B, L, 1)
+        h, _ = self.lstm(x.unsqueeze(-1))
+        y = self.proj(h).squeeze(-1)
+        g = torch.sigmoid(self.gate)
+        return g * y + (1.0 - g) * x
+
+
+class TinyXLSTMLite(nn.Module):
+    """Lightweight xLSTM-inspired recurrent block (Beck et al. spirit, not full stack).
+
+    Exponential input/forget gating + stabilized scalar cell state over length L.
+    Searchable bake-cell proxy; width-capped for N=256 / RTX-safe graphs.
+    """
+
+    def __init__(self, length: int, width: int, act: str, depth: int = 2):
+        super().__init__()
+        self.length = length
+        h = max(4, min(20, width))
+        self.h = h
+        # Per-step projections from scalar token -> gates / candidate
+        self.in_proj = nn.Linear(1, 4 * h)
+        self.out_proj = nn.Sequential(nn.Linear(h, h), _act_module(act), nn.Linear(h, 1))
+        self.mix = nn.Parameter(torch.tensor(0.3))
+        # Depth>8: second residual MLP polish
+        self.deep = TinyMLP(length, h, 2, act) if depth > 8 else None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, L)
+        b, l = x.shape
+        h = self.h
+        device, dtype = x.device, x.dtype
+        c = torch.zeros(b, h, device=device, dtype=dtype)
+        n = torch.zeros(b, h, device=device, dtype=dtype)  # normalizer (mLSTM-lite)
+        outs = []
+        seq = x.unsqueeze(-1)  # (B, L, 1)
+        for t in range(l):
+            gates = self.in_proj(seq[:, t, :])  # (B, 4h)
+            i, f, o, z = gates.chunk(4, dim=-1)
+            # Exponential gates (stabilized)
+            i = torch.exp(torch.clamp(i, -8.0, 8.0))
+            f = torch.sigmoid(f)  # keep forget in (0,1) for bake stability
+            o = torch.sigmoid(o)
+            z = torch.tanh(z)
+            c = f * c + i * z
+            n = f * n + i
+            h_t = o * (c / n.clamp_min(1e-3))
+            outs.append(h_t)
+        h_seq = torch.stack(outs, dim=1)  # (B, L, h)
+        y = self.out_proj(h_seq).squeeze(-1)
+        if self.deep is not None:
+            y = 0.5 * y + 0.5 * self.deep(y)
+        g = torch.sigmoid(self.mix)
+        return g * y + (1.0 - g) * x
+
+
 class TFSplitLite(nn.Module):
     """Cheap time/freq style split; depth>12 deepens branch MLPs."""
 
@@ -399,6 +479,10 @@ def _make_block(name: str, length: int, w: int, d: int, act: str) -> nn.Module:
         return TinyAttention(length, w, act, depth=d)
     if name == "dual_path":
         return DualPathLite(length, w, act, depth=d)
+    if name == "lstm":
+        return TinyLSTMLite(length, w, act, depth=d)
+    if name == "xlstm":
+        return TinyXLSTMLite(length, w, act, depth=d)
     if name == "tf_split":
         return TFSplitLite(length, w, act, depth=d)
     if name == "noise_cond":
@@ -521,7 +605,18 @@ def random_block_graph(
     if k >= 2 and rng.random() < crazy_mix_p:
         prefer = [
             b
-            for b in ("unet", "attn", "dilated", "dual_path", "dense", "moe_mix", "noise_cond", "soft_mix")
+            for b in (
+                "unet",
+                "attn",
+                "lstm",
+                "xlstm",
+                "dilated",
+                "dual_path",
+                "dense",
+                "moe_mix",
+                "noise_cond",
+                "soft_mix",
+            )
             if b != cell_kind
         ]
         if prefer:
