@@ -99,7 +99,7 @@ def hann_blend(frames: torch.Tensor) -> torch.Tensor:
 
 
 CLASSICAL = [
-    ("identity", lambda x: x, "non_ai"),
+    ("no_bake", lambda x: x, "non_ai"),
     ("classic_quadratic", classic_quadratic, "non_ai"),
     ("cosine_fade", cosine_fade, "non_ai"),
     ("dual_cosine", og.dual_cosine_blend, "non_ai"),
@@ -240,28 +240,34 @@ def main():
     plt.close(fig)
 
     classical = [r for r in rows if r["kind"] == "non_ai"]
-    # identity is a no-op baseline, not a denoiser — report separately
-    best_classical_incl_identity = max(classical, key=lambda x: x["residual"])
+    # no_bake is a passthrough control (unrepaired engine), not a denoiser — report separately
+    from baseline_names import is_no_bake, NO_BAKE_DISPLAY
+
+    best_classical_incl_no_bake = max(classical, key=lambda x: x["residual"])
     best_classical = max(
-        (r for r in classical if r["name"] != "identity"),
+        (r for r in classical if not is_no_bake(r["name"])),
         key=lambda x: x["residual"],
     )
     dual = next(r for r in classical if r["name"] == "dual_cosine")
-    identity = next(r for r in classical if r["name"] == "identity")
+    no_bake = next(r for r in classical if is_no_bake(r["name"]))
     ai = next(r for r in rows if r["kind"] == "ai")
     summary = {
         "best_classical": best_classical,
-        "best_classical_incl_identity": best_classical_incl_identity,
-        "identity_noop": identity,
+        "best_classical_incl_no_bake": best_classical_incl_no_bake,
+        "best_classical_incl_identity": best_classical_incl_no_bake,  # legacy alias
+        "no_bake_passthrough": no_bake,
+        "identity_noop": no_bake,  # legacy alias
         "dual_cosine": dual,
         "ai_favorite": ai,
         "delta_R_ai_minus_best_classical": ai["residual"] - best_classical["residual"],
         "delta_R_ai_minus_dual_cosine": ai["residual"] - dual["residual"],
-        "delta_R_ai_minus_identity": ai["residual"] - identity["residual"],
+        "delta_R_ai_minus_no_bake": ai["residual"] - no_bake["residual"],
+        "delta_R_ai_minus_identity": ai["residual"] - no_bake["residual"],  # legacy alias
         "latency_ratio_ai_over_best_classical_score": ai["ms_per_batch"]
         / max(best_classical["ms_per_batch"], 1e-9),
         "latency_ratio_ai_over_dual_cosine": ai["ms_per_batch"]
         / max(dual["ms_per_batch"], 1e-9),
+        "no_bake_display": NO_BAKE_DISPLAY,
     }
     payload["summary"] = summary
     (out / "classical_vs_ai.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

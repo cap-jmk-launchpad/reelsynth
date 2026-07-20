@@ -40,6 +40,7 @@ def main() -> int:
         "classic_quadratic",
         "hann_blend",
         "identity",
+        "no_bake",
     ]
     name_map = {
         "neural_favorite": "favorite",
@@ -49,7 +50,8 @@ def main() -> int:
         "dual_cosine": "DualCosine",
         "classic_quadratic": "quadratic",
         "hann_blend": "hann",
-        "identity": "identity",
+        "identity": "no-bake",
+        "no_bake": "no-bake",
     }
     # Aggregate R per (method, family) across seeds
     mat = np.zeros((len(keep), len(families)))
