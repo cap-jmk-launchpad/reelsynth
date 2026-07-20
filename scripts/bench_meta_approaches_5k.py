@@ -170,6 +170,25 @@ def load_ckpt(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def last_hist_row(path: Path) -> dict[str, Any] | None:
+    """O(1)-ish tail read of the latest history.jsonl record."""
+    if not path.is_file():
+        return None
+    try:
+        size = path.stat().st_size
+        if size <= 0:
+            return None
+        with path.open("rb") as f:
+            f.seek(max(0, size - 65536))
+            chunk = f.read().decode("utf-8", errors="ignore")
+        lines = [ln for ln in chunk.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        return json.loads(lines[-1])
+    except Exception:
+        return None
+
+
 STATUS_NAME = "STATUS.json"
 STATUS_LATEST = ROOT / "brand" / "artifacts" / "meta_approach_STATUS.json"
 
@@ -185,23 +204,28 @@ def write_status(
     pid: int | None = None,
     extra: dict[str, Any] | None = None,
 ) -> Path:
-    """Crash-safe aggregate status from per-approach checkpoints (survives Cursor death)."""
+    """Crash-safe aggregate status from history tails + checkpoints (live iters)."""
     rows: list[dict[str, Any]] = []
     for name in approaches:
         ad = out_dir / name
         ckpt = load_ckpt(ad / "checkpoint.json") or {}
         summary = load_ckpt(ad / "summary.json") or {}
         hist = ad / "history.jsonl"
-        hist_lines = 0
-        if hist.is_file():
-            try:
-                hist_lines = sum(1 for _ in hist.open(encoding="utf-8") if _.strip())
-            except Exception:
-                hist_lines = 0
-        done = int(ckpt.get("iters_done") or summary.get("iters_done") or 0)
-        champ = float(
-            summary.get("champ_raw", ckpt.get("champ_raw", ckpt.get("champ_r", float("nan"))))
+        last = last_hist_row(hist) or {}
+        hist_iter = int(last.get("iter") or 0)
+        done = max(
+            hist_iter,
+            int(ckpt.get("iters_done") or 0),
+            int(summary.get("iters_done") or 0),
         )
+        champ_val = last.get(
+            "champ_raw",
+            summary.get("champ_raw", ckpt.get("champ_raw", ckpt.get("champ_r", float("nan")))),
+        )
+        try:
+            champ = float(champ_val)
+        except (TypeError, ValueError):
+            champ = float("nan")
         complete = bool(summary) and done >= target_iters
         rows.append(
             {
@@ -211,14 +235,22 @@ def write_status(
                 "pct": round(100.0 * done / max(target_iters, 1), 2),
                 "champ_r": None if champ != champ else champ,
                 "lstm_in_champ": bool(
-                    summary.get("lstm_in_champ", ckpt.get("champ_lstm", False))
+                    last.get(
+                        "lstm_in_champ",
+                        summary.get("lstm_in_champ", ckpt.get("champ_lstm", False)),
+                    )
                 ),
                 "xlstm_in_champ": bool(
-                    summary.get("xlstm_in_champ", ckpt.get("champ_xlstm", False))
+                    last.get(
+                        "xlstm_in_champ",
+                        summary.get("xlstm_in_champ", ckpt.get("champ_xlstm", False)),
+                    )
                 ),
-                "wall_s": float(summary.get("wall_s", ckpt.get("wall_s", 0.0)) or 0.0),
+                "wall_s": float(
+                    last.get("wall_s", summary.get("wall_s", ckpt.get("wall_s", 0.0))) or 0.0
+                ),
                 "complete": complete,
-                "history_lines": hist_lines,
+                "history_lines": hist_iter,
                 "has_checkpoint": (ad / "checkpoint.json").is_file(),
             }
         )
@@ -967,6 +999,8 @@ def run_approach(
             residual=r_raw,
             wall_s=elapsed_prev + (time.time() - t0),
         )
+        # Live STATUS every iter so dashboards see progress between checkpoints.
+        refresh_status("running", it)
 
         if it % ckpt_every == 0 or it == iters:
             payload: dict[str, Any] = {
@@ -1163,7 +1197,16 @@ def main() -> int:
         default=",".join(APPROACHES),
         help="Comma-separated subset of: " + ",".join(APPROACHES),
     )
-    ap.add_argument("--no-resume", action="store_true")
+    ap.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Deprecated; ignored unless --force-fresh is also set.",
+    )
+    ap.add_argument(
+        "--force-fresh",
+        action="store_true",
+        help="Wipe checkpoints/history and start from scratch.",
+    )
     ap.add_argument(
         "--out-dir",
         type=Path,
@@ -1179,9 +1222,18 @@ def main() -> int:
         if n not in APPROACHES:
             raise SystemExit(f"Unknown approach {n!r}; choose from {APPROACHES}")
 
+    # Protect long runs: --no-resume alone must not wipe progress.
+    allow_fresh = bool(args.force_fresh)
+    if args.no_resume and not allow_fresh:
+        print(
+            "WARN: --no-resume ignored without --force-fresh; resuming from checkpoints",
+            flush=True,
+        )
+    resume = not allow_fresh
+
     print(f"lstm in BLOCKS: {'lstm' in BLOCKS}", flush=True)
     print(f"xlstm in BLOCKS: {'xlstm' in BLOCKS}", flush=True)
-    print(f"device={device} iters={args.iters} approaches={names}", flush=True)
+    print(f"device={device} iters={args.iters} approaches={names} resume={resume}", flush=True)
     write_status(
         out_dir,
         phase="launch",
@@ -1208,7 +1260,7 @@ def main() -> int:
                 batch=args.batch,
                 pop_size=args.pop_size,
                 ckpt_every=args.ckpt_every,
-                resume=not args.no_resume,
+                resume=resume,
                 all_approaches=names,
             )
         )

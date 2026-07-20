@@ -2,9 +2,10 @@
 """Live surveillance dashboard for meta-approach 5k compare (TensorBoard-like).
 
 Serves a local HTML dashboard that auto-refreshes STATUS + champion-R curves
-from brand/artifacts/meta_approach_compare/.
+from brand/artifacts/meta_approach_compare/. Progress is derived from live
+history.jsonl tails (not only checkpointed STATUS), so the UI moves every iter.
 
-  .venv_gpu\\Scripts\\python.exe scripts\\meta_approach_dashboard.py
+  .venv_gpu\\Scripts\\python.exe scripts\\meta_approach_dashboard.py --open
   # open http://127.0.0.1:8765/
 """
 from __future__ import annotations
@@ -22,6 +23,10 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "brand" / "artifacts" / "meta_approach_compare"
 APPROACHES = ("random", "cmaes", "reinforce", "aging_evo", "tpe", "hybrid_lstm")
+
+# Incremental history cache: name -> {size, pts, baselines}
+_CURVE_CACHE: dict[str, dict[str, Any]] = {}
+_CURVE_LOCK = threading.Lock()
 
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -52,6 +57,11 @@ HTML = r"""<!DOCTYPE html>
   header h1 { font-size: 1.05rem; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
   header .meta { color: var(--muted); font-size: 0.85rem; }
   header .live { color: var(--ok); font-weight: 600; }
+  header .live.pulse { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
   main { padding: 16px 20px 32px; display: grid; gap: 16px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
   .card {
@@ -62,7 +72,7 @@ HTML = r"""<!DOCTYPE html>
   .card .value { font-size: 1.25rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .card .sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
   .bar-wrap { height: 6px; background: #2a3542; border-radius: 3px; margin-top: 8px; overflow: hidden; }
-  .bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--ok)); width: 0%; }
+  .bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--ok)); width: 0%; transition: width 0.35s ease; }
   .chart-wrap { background: var(--panel); border: 1px solid #2a3542; border-radius: 8px; padding: 12px 14px; }
   .chart-wrap h2 { margin: 0 0 10px; font-size: 0.95rem; font-weight: 600; }
   canvas { max-height: 360px; }
@@ -73,14 +83,20 @@ HTML = r"""<!DOCTYPE html>
   .active { color: var(--accent); font-weight: 600; }
   .done { color: var(--ok); }
   footer { color: var(--muted); font-size: 0.75rem; padding: 0 20px 20px; }
+  .flash { animation: flash 0.45s ease; }
+  @keyframes flash {
+    from { background: rgba(61,156,253,0.18); }
+    to { background: transparent; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>DenoiseOpt · meta-approach compare</h1>
   <span class="meta" id="phase">loading…</span>
-  <span class="meta live" id="live">LIVE</span>
+  <span class="meta live pulse" id="live">LIVE</span>
   <span class="meta" id="updated"></span>
+  <span class="meta" id="tickAge"></span>
 </header>
 <main>
   <div class="grid" id="kpis"></div>
@@ -102,7 +118,7 @@ HTML = r"""<!DOCTYPE html>
   </div>
 </main>
 <footer>
-  Auto-refresh ~3s · data from STATUS.json + history.jsonl ·
+  Auto-refresh ~1s (live history tails) ·
   <span id="outDir"></span>
 </footer>
 <script>
@@ -115,9 +131,13 @@ const COLORS = {
   hybrid_lstm: '#D55E00',
 };
 let chart;
+let lastFingerprint = '';
+let lastOkAt = 0;
+let tickBusy = false;
+const POLL_MS = 1000;
 
 async function fetchJSON(url) {
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(url + (url.includes('?') ? '&' : '?') + '_=' + Date.now(), { cache: 'no-store' });
   if (!r.ok) throw new Error(url + ' ' + r.status);
   return r.json();
 }
@@ -127,10 +147,18 @@ function fmt(x, d=5) {
   return Number(x).toFixed(d);
 }
 
+function fingerprint(st, curves) {
+  const rows = (st.rows || []).map(r =>
+    [r.approach, r.iters_done, r.champ_r, r.lstm_in_champ, r.xlstm_in_champ].join(':')
+  ).join('|');
+  const seriesLens = Object.entries(curves.series || {}).map(([k,v]) => k + ':' + (v||[]).length).join(',');
+  return rows + '#' + seriesLens + '#' + (st.current_iter ?? '') + '#' + (st.current_approach || '');
+}
+
 function renderStatus(st) {
   document.getElementById('phase').textContent =
     `phase=${st.phase || '?'} · ${st.n_complete || 0}/${st.n_total || 0} complete · current=${st.current_approach || '—'}@${st.current_iter ?? '—'}`;
-  document.getElementById('updated').textContent = st.updated_at || '';
+  document.getElementById('updated').textContent = st.live_updated_at || st.updated_at || '';
   document.getElementById('outDir').textContent = st.out_dir || '';
   const rows = st.rows || [];
   const active = rows.find(r => r.approach === st.current_approach) || rows.find(r => r.iters_done > 0) || {};
@@ -138,7 +166,7 @@ function renderStatus(st) {
     { label: 'Current', value: st.current_approach || '—', sub: `iter ${st.current_iter ?? 0}` },
     { label: 'Champ R', value: fmt(active.champ_r), sub: active.approach || '' },
     { label: 'Progress', value: `${st.n_complete || 0}/${st.n_total || 0}`, sub: 'approaches done' },
-    { label: 'Target', value: String(st.target_iters || 5000), sub: 'iters / approach' },
+    { label: 'Active %', value: `${(active.pct || 0).toFixed(1)}%`, sub: `${active.iters_done || 0}/${active.target_iters || st.target_iters || 5000}` },
   ];
   document.getElementById('kpis').innerHTML = kpis.map(k => `
     <div class="card"><div class="label">${k.label}</div>
@@ -149,7 +177,7 @@ function renderStatus(st) {
     let state = r.complete ? 'DONE' : (r.iters_done ? 'RUN' : 'PEND');
     if (st.current_approach === r.approach && !r.complete) state = 'ACTIVE';
     const cls = state === 'ACTIVE' ? 'active' : (state === 'DONE' ? 'done' : '');
-    return `<tr>
+    return `<tr class="${state === 'ACTIVE' ? 'flash' : ''}">
       <td class="${cls}">${r.approach}</td>
       <td class="num">${r.iters_done || 0}/${r.target_iters || 0}</td>
       <td class="num">${pct.toFixed(1)}%
@@ -227,88 +255,255 @@ function renderCurves(curves) {
   }
 }
 
+function updateTickAge() {
+  const el = document.getElementById('tickAge');
+  if (!lastOkAt) { el.textContent = ''; return; }
+  const age = ((Date.now() - lastOkAt) / 1000).toFixed(1);
+  el.textContent = `poll ${age}s ago`;
+}
+
 async function tick() {
+  if (tickBusy) return;
+  if (document.hidden) return;
+  tickBusy = true;
   try {
     const [st, curves] = await Promise.all([
       fetchJSON('/api/status'),
-      fetchJSON('/api/curves'),
+      fetchJSON('/api/curves?stride=1'),
     ]);
+    const fp = fingerprint(st, curves);
     renderStatus(st);
-    renderCurves(curves);
-    document.getElementById('live').textContent = 'LIVE';
-    document.getElementById('live').style.color = '#3dd68c';
+    if (fp !== lastFingerprint) {
+      renderCurves(curves);
+      lastFingerprint = fp;
+    }
+    lastOkAt = Date.now();
+    const live = document.getElementById('live');
+    live.textContent = 'LIVE';
+    live.style.color = '#3dd68c';
+    live.classList.add('pulse');
   } catch (e) {
-    document.getElementById('live').textContent = 'STALE';
-    document.getElementById('live').style.color = '#f5a524';
+    const live = document.getElementById('live');
+    live.textContent = 'STALE';
+    live.style.color = '#f5a524';
+    live.classList.remove('pulse');
     console.error(e);
+  } finally {
+    tickBusy = false;
+    updateTickAge();
   }
 }
 tick();
-setInterval(tick, 3000);
+setInterval(tick, POLL_MS);
+setInterval(updateTickAge, 250);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 </script>
 </body>
 </html>
 """
 
 
-def load_status(out_dir: Path) -> dict:
-    path = out_dir / "STATUS.json"
+def last_hist_row(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
-        return {
+        return None
+    try:
+        size = path.stat().st_size
+        if size <= 0:
+            return None
+        with path.open("rb") as f:
+            f.seek(max(0, size - 65536))
+            chunk = f.read().decode("utf-8", errors="ignore")
+        lines = [ln for ln in chunk.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        return json.loads(lines[-1])
+    except Exception:
+        return None
+
+
+def load_status(out_dir: Path) -> dict:
+    """Merge STATUS.json with live history.jsonl tails so iters move every poll."""
+    path = out_dir / "STATUS.json"
+    if path.is_file():
+        try:
+            st = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            st = {}
+    else:
+        st = {
             "schema": "denoiseopt.meta_approach_status.v1",
             "phase": "waiting",
-            "rows": [{"approach": a, "iters_done": 0, "target_iters": 5000, "pct": 0.0} for a in APPROACHES],
+            "approaches_planned": list(APPROACHES),
             "n_complete": 0,
             "n_total": len(APPROACHES),
             "out_dir": str(out_dir),
+            "target_iters": 5000,
+            "rows": [],
         }
-    return json.loads(path.read_text(encoding="utf-8"))
+
+    target = int(st.get("target_iters") or 5000)
+    planned = list(st.get("approaches_planned") or APPROACHES)
+    by_name = {r.get("approach"): dict(r) for r in (st.get("rows") or []) if r.get("approach")}
+
+    best_live_name = None
+    best_live_iter = -1
+    rows_out: list[dict[str, Any]] = []
+    for name in planned:
+        row = by_name.get(name, {
+            "approach": name,
+            "iters_done": 0,
+            "target_iters": target,
+            "pct": 0.0,
+            "champ_r": None,
+            "lstm_in_champ": False,
+            "xlstm_in_champ": False,
+            "wall_s": 0.0,
+            "complete": False,
+        })
+        last = last_hist_row(out_dir / name / "history.jsonl") or {}
+        if last:
+            hist_iter = int(last.get("iter") or 0)
+            if hist_iter > int(row.get("iters_done") or 0):
+                row["iters_done"] = hist_iter
+            if hist_iter > best_live_iter:
+                best_live_iter = hist_iter
+                best_live_name = name
+            champ = last.get("champ_raw", last.get("champ", last.get("residual")))
+            if champ is not None:
+                try:
+                    row["champ_r"] = float(champ)
+                except (TypeError, ValueError):
+                    pass
+            if "lstm_in_champ" in last:
+                row["lstm_in_champ"] = bool(last["lstm_in_champ"])
+            if "xlstm_in_champ" in last:
+                row["xlstm_in_champ"] = bool(last["xlstm_in_champ"])
+            if last.get("wall_s") is not None:
+                row["wall_s"] = float(last["wall_s"])
+            row["history_lines"] = hist_iter
+        done = int(row.get("iters_done") or 0)
+        row["target_iters"] = target
+        row["pct"] = round(100.0 * done / max(target, 1), 2)
+        summary = out_dir / name / "summary.json"
+        if summary.is_file() and done >= target:
+            row["complete"] = True
+        rows_out.append(row)
+
+    st["rows"] = rows_out
+    st["n_complete"] = sum(1 for r in rows_out if r.get("complete"))
+    st["n_total"] = len(planned)
+    st["live_updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Prefer live current from the approach that is still growing.
+    if best_live_name and not any(r.get("complete") and r["approach"] == best_live_name for r in rows_out):
+        # If STATUS already points at an incomplete approach, keep it; else use hist leader.
+        cur = st.get("current_approach")
+        cur_row = next((r for r in rows_out if r["approach"] == cur), None)
+        if cur_row is None or cur_row.get("complete") or int(cur_row.get("iters_done") or 0) < best_live_iter:
+            st["current_approach"] = best_live_name
+            st["current_iter"] = best_live_iter
+        else:
+            st["current_iter"] = max(int(st.get("current_iter") or 0), int(cur_row.get("iters_done") or 0))
+    return st
+
+
+def _parse_hist_line(line: str, i: int) -> dict[str, Any] | None:
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        row = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return {
+        "iter": int(row.get("iter", i + 1)),
+        "champ": float(row.get("champ_raw", row.get("champ", row.get("residual", 0.0)))),
+        "trial": float(row["residual"]) if row.get("residual") is not None else (
+            float(row["r_raw"]) if row.get("r_raw") is not None else None
+        ),
+        "wall_s": float(row["wall_s"]) if row.get("wall_s") is not None else None,
+        "_dc": row.get("baseline_dual_cosine"),
+        "_nb": row.get("baseline_nobake"),
+    }
 
 
 def load_curves(out_dir: Path, stride: int = 1) -> dict:
+    """Incrementally append new history.jsonl bytes so 1Hz polls stay cheap."""
     series: dict[str, list[dict]] = {}
     baseline_dc = None
     baseline_nb = None
     target = 5000
-    for name in APPROACHES:
-        hist = out_dir / name / "history.jsonl"
-        pts: list[dict] = []
-        if hist.is_file():
-            with hist.open(encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if baseline_dc is None and row.get("baseline_dual_cosine") is not None:
-                        baseline_dc = float(row["baseline_dual_cosine"])
-                    if baseline_nb is None and row.get("baseline_nobake") is not None:
-                        baseline_nb = float(row["baseline_nobake"])
-                    pts.append(
-                        {
-                            "iter": int(row.get("iter", i + 1)),
-                            "champ": float(row.get("champ_raw", row.get("champ", row.get("residual", 0.0)))),
-                            "trial": float(row.get("residual", row.get("r_raw", 0.0)))
-                            if row.get("residual") is not None or row.get("r_raw") is not None
-                            else None,
-                            "wall_s": float(row["wall_s"]) if row.get("wall_s") is not None else None,
-                        }
-                    )
-        if stride > 1 and len(pts) > 400:
-            pts = pts[:: max(1, len(pts) // 400)] + ([pts[-1]] if pts else [])
-        if pts:
-            series[name] = pts
-        ckpt = out_dir / name / "checkpoint.json"
-        if ckpt.is_file():
-            try:
-                c = json.loads(ckpt.read_text(encoding="utf-8"))
-                if c.get("baseline_dual_cosine") is not None:
-                    baseline_dc = float(c["baseline_dual_cosine"])
-            except Exception:
-                pass
+
+    with _CURVE_LOCK:
+        for name in APPROACHES:
+            hist = out_dir / name / "history.jsonl"
+            cache = _CURVE_CACHE.get(name)
+            if cache is None:
+                cache = {"size": 0, "pts": [], "dc": None, "nb": None}
+                _CURVE_CACHE[name] = cache
+
+            if hist.is_file():
+                try:
+                    size = hist.stat().st_size
+                except OSError:
+                    size = 0
+                if size < cache["size"]:
+                    # Truncated / restarted
+                    cache["size"] = 0
+                    cache["pts"] = []
+                    cache["dc"] = None
+                    cache["nb"] = None
+                if size > cache["size"]:
+                    with hist.open("rb") as f:
+                        f.seek(cache["size"])
+                        chunk = f.read().decode("utf-8", errors="ignore")
+                    cache["size"] = size
+                    # Drop partial trailing line; keep remainder for next read via size adjust
+                    if chunk and not chunk.endswith(("\n", "\r")):
+                        cut = chunk.rfind("\n")
+                        if cut >= 0:
+                            partial = chunk[cut + 1 :]
+                            chunk = chunk[: cut + 1]
+                            cache["size"] -= len(partial.encode("utf-8", errors="ignore"))
+                        else:
+                            cache["size"] -= len(chunk.encode("utf-8", errors="ignore"))
+                            chunk = ""
+                    start_i = len(cache["pts"])
+                    for j, line in enumerate(chunk.splitlines()):
+                        pt = _parse_hist_line(line, start_i + j)
+                        if pt is None:
+                            continue
+                        if baseline_dc is None and pt.get("_dc") is not None:
+                            baseline_dc = float(pt["_dc"])
+                            cache["dc"] = baseline_dc
+                        if baseline_nb is None and pt.get("_nb") is not None:
+                            baseline_nb = float(pt["_nb"])
+                            cache["nb"] = baseline_nb
+                        cache["pts"].append({
+                            "iter": pt["iter"],
+                            "champ": pt["champ"],
+                            "trial": pt["trial"],
+                            "wall_s": pt["wall_s"],
+                        })
+                if cache.get("dc") is not None:
+                    baseline_dc = cache["dc"]
+                if cache.get("nb") is not None:
+                    baseline_nb = cache["nb"]
+
+            pts = cache["pts"]
+            if stride > 1 and len(pts) > 400:
+                pts = pts[:: max(1, len(pts) // 400)] + ([pts[-1]] if pts else [])
+            if pts:
+                series[name] = pts
+
+            ckpt = out_dir / name / "checkpoint.json"
+            if ckpt.is_file() and baseline_dc is None:
+                try:
+                    c = json.loads(ckpt.read_text(encoding="utf-8"))
+                    if c.get("baseline_dual_cosine") is not None:
+                        baseline_dc = float(c["baseline_dual_cosine"])
+                except Exception:
+                    pass
+
     st = load_status(out_dir)
     target = int(st.get("target_iters") or target)
     return {
@@ -388,7 +583,8 @@ def make_handler(out_dir: Path):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
             self.send_response(code)
             self.send_header("Content-Type", ctype)
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.send_header("Pragma", "no-cache")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
