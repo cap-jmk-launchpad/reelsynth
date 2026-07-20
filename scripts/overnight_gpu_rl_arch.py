@@ -11,7 +11,8 @@ Algorithms (named accurately — not claimed as SOTA):
   - Depth bias: deeper graphs rewarded when residual holds above DualCosine + margin
   - MoE soft gates over heterogeneous parallel experts (Shazeer-inspired, tiny)
 
-Primary score: prolonged residual R in [0,1] (1=best), vs DualCosine baseline.
+Primary score: prolonged residual R in [0,1] (1=best vs ideal sibling).
+PPO advantage is centered as (R - DualCosine) for zero-mean early credit assignment; selection uses absolute R.
 Dense history.jsonl every iter. Saves unfitted (arch JSON) and fitted (weights+arch).
 
 Arch complexity / depth / mixtures preferred over raw it/s; paper target remains 1M if rate allows,
