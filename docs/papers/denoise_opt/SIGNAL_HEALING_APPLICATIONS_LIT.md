@@ -21,9 +21,11 @@ DenoiseOpt’s core mathematical object is a **single (quasi-)period 1D cycle** 
 4. **Computer graphics: seamless texture / video loops / closed curves** — strongest *optimization* analogy (min-cut seams, cyclification, residual discontinuity post-process); different signal class.
 5. **ECG / quasi-periodic biomedical cycles** — Cycle-GAN / diffusion “restoration” and beat-morphology priors; seams exist but clinical constraints dominate; transfer needs careful metric redesign.
 
-**Medium:** FFT periodization / circular-convolution edge effects; rotating-machinery order tracking; robotics periodic gait continuity.
+**Medium:** FFT periodization / circular-convolution edge effects; rotating-machinery order tracking (**promoted — see §10**); robotics periodic gait continuity; synchrophasor windows; NMR apodization.
 
-**Speculative / weak force-fits:** climate seasonality (nonstationary harmonics, not wrap cliffs); cyclic voltammetry iR-drop (not a period seam); seam carving (retargeting, not cycle wrap); generic Cycle-GAN for audio (domain translation ≠ wrap protocol).
+**Speculative / weak force-fits:** climate seasonality (nonstationary harmonics, not wrap cliffs — though year-boundary spline artifacts exist, §10); cyclic voltammetry iR-drop (not a period seam); seam carving (retargeting, not cycle wrap); generic Cycle-GAN for audio (domain translation ≠ wrap protocol); radar *range* PRI ambiguity (aliasing ≠ seam heal).
+
+**Sci/eng deep-dive:** §10 ranks natural-science and engineering transfers with verified citations and concrete non-audio experiments.
 
 **Prior-art gap:** Classical (a) periodize/fade/BLEP is abundant. Learning-based (b) *wrap-aware* methods exist mainly as LoopGen (inference circular attention) and DWTS (hard continuity constraint on tables). **NAS / meta-search over repair graphs scored by prolonged residual \(R\)** — DenoiseOpt’s distinctive (c) — appears largely **unoccupied** outside the DenoiseOpt line of work.
 
@@ -60,7 +62,7 @@ DenoiseOpt’s core mathematical object is a **single (quasi-)period 1D cycle** 
 | FFT / circular convolution | **Medium–high** (math) | Standard DSP (Harris windows; Oppenheim & Schafer lineage); DST book leakage notes | Same wrap assumption; repair is usually *window*, not waveform heal. |
 | Graphics: texture / video / closed curves | **High** (opt analogy) | Efros & Freeman 2001; Kwatra et al. 2003; Schödl et al. 2000; Zhou et al. 2013 | Min-cut / cyclify / residual stitch; 2D–3D, visual cost. |
 | ECG / biomedical cycles | **Medium** | Kıranyaz et al. 2022; BeatDiff / PulseDiff (2023–2024); template priors | Quasi-period + morphology priors; clinical “don’t invent beats.” |
-| Vibration / order tracking | **Medium** | Fyfe & Munck 1997; Bossio et al. 2006 (COT discontinuities) | Angle-domain wrap; discontinuities from tach resampling, not musical cliff. |
+| Vibration / order tracking | **Medium–high** | Fyfe & Munck 1997; Saavedra & Rodríguez 2005/06 (COT accuracy); Guo et al. 2014 (envelope deformation) | Angle-domain wrap; discontinuities from tach resampling / constant-accel assumption. |
 | Robotics / periodic gait | **Medium–low** | CPG + BO / RL (e.g. 2024–2025 CPG papers); smoothstep C1 joins | Continuity of *control trajectories*; different sensors/actuators. |
 | Ocean / climate seasonality | **Low–medium** | Pezzulli et al. 2005; EHA / S_TIDE / F_TIDE line | Nonstationary harmonics; “periodization” usually statistical, not wrap bake. |
 | NMR / spectroscopy | **Low–medium** | Standard FID apodization literature | Truncation → sinc wiggles; windowing (a), not sibling residual search. |
@@ -157,13 +159,13 @@ DenoiseOpt’s core mathematical object is a **single (quasi-)period 1D cycle** 
 
 ### 4.7 Vibration / rotating machinery — **MEDIUM**
 
-**Analogy.** Order tracking resamples vibration into the **angle domain** (one shaft revolution ≈ one period). Computed order tracking can inject **periodic discontinuities** when angular acceleration models switch between tach pulses (Bossio et al., Shock and Vibration / related COT accuracy papers, 2006; classical COT: Fyfe & Munck 1997).
+**Analogy.** Order tracking resamples vibration into the **angle domain** (one shaft revolution ≈ one period). Computed order tracking accuracy depends on tach sampling, interpolation, and pulses/rev; the classical constant-acceleration assumption between tach pulses is a known error source (Fyfe & Munck, MSSP 1997; Saavedra & Rodríguez, Shock and Vibration 2005/06, doi:10.1155/2006/838097). Envelope analysis after COT can further **deform** the angular-domain envelope (Cheng et al., MSSP 2014).
 
-**Classical (a).** More tach pulses/rev, better interpolation, tracking filters.
+**Classical (a).** More tach pulses/rev, better interpolation, Vold–Kalman / hybrid COT (Bossley et al., MSSP 1999), tracking filters.
 
-**Differs.** Physical keyphasor geometry; diagnostic goal is order spectra, not musical timbre.
+**Differs.** Physical keyphasor geometry; diagnostic goal is order spectra / bearing fault rates, not musical timbre.
 
-**Transfer.** Angle-domain “wavetable” of one revolution; residual under multi-rev tiling; meta-search of resample/repair graphs — speculative but structurally clean.
+**Transfer.** Angle-domain “wavetable” of one revolution; residual under multi-rev tiling; meta-search of resample/repair graphs — **structurally one of the strongest non-audio matches** (see §10).
 
 ---
 
@@ -439,13 +441,36 @@ Ranked by closeness to *wrap-aware, cycle-local repair* (not general SE):
   pages={187--205},
   year={1997}
 }
-@article{bossio2006cot,
+@article{saavedra2006cot,
   title={Accurate Assessment of Computed Order Tracking},
-  author={Bossio, Guillermo R. and others},
+  author={Saavedra, P. N. and Rodr{\'i}guez, C. G.},
   journal={Shock and Vibration},
-  year={2006},
+  year={2005},
+  volume={13},
+  number={1},
+  pages={13--32},
   doi={10.1155/2006/838097},
-  note={Documents angle-domain discontinuities under varying acceleration}
+  note={COT accuracy vs tach sampling, interpolation, pulses/rev; OA PDF available}
+}
+@article{bossley1999hybridcot,
+  title={Hybrid Computed Order Tracking},
+  author={Bossley, K. M. and McKendrick, R. J. and Harris, C. J. and Mercer, C.},
+  journal={Mechanical Systems and Signal Processing},
+  volume={13},
+  number={4},
+  pages={627--641},
+  year={1999},
+  doi={10.1006/mssp.1999.1225}
+}
+@article{cheng2014envelopecot,
+  title={Envelope deformation in computed order tracking and error in order analysis},
+  author={Cheng, Weidong and Gao, Robert X. and Wang, Jinjiang and Wang, Tianyang and Wen, Weigang and Li, Jianyong},
+  journal={Mechanical Systems and Signal Processing},
+  volume={48},
+  number={1--2},
+  pages={92--102},
+  year={2014},
+  doi={10.1016/j.ymssp.2014.03.004}
 }
 
 % --- Climate / tides ---
@@ -518,15 +543,195 @@ Ranked by closeness to *wrap-aware, cycle-local repair* (not general SE):
 | PSOLA periodization | Charpentier 1986, Kortekaas 1997, Longster 2003 |
 | Texture / video seams | Efros 2001, Kwatra 2003, Schödl 2000, Zhou 2013 |
 | ECG restoration | Kıranyaz TBME 2022, BeatDiff, PulseDiff |
-| Order tracking discontinuities | Bossio 2006, Fyfe 1997 |
-| Seasonality | Pezzulli 2005, EHA 2021 |
+| Order tracking discontinuities | Fyfe & Munck 1997; Saavedra & Rodríguez 2005; Cheng et al. 2014 envelope deformation; Bossley hybrid COT 1999 |
+| Seasonality | Pezzulli 2005, EHA 2021; Arguez & Applequist 2013 (year-wrap harmonics); MODIS cubic-spline periodic BC |
 | Granular artefacts | Truax 1988, DAFx Lagrange 2021 |
-| NMR / CV | Apodization texts; Elgrishi CV guide (weak) |
+| NMR / CV | Apodization / FID truncation (Ernst FT-NMR tradition; facility tutorials); Elgrishi CV guide (weak) |
+| Synchrophasor / PQ | Harris 1978 windows; Romano EPFL thesis; IpDFT / i-IpDFT line (Frigo–Pegoraro–Toscani); IEEE C37.118 leakage |
+| OFDM / CP | Cruz-Roldán et al. arXiv:2012.04527 (ISI/ICI unified; CP/CS/windowing) |
+| Radar / PRI | Classical range–Doppler ambiguity (PRI wrap ≠ waveform seam heal); Doppler CPI windowing |
+| CNC / CAM | Beudaert et al. 2013 corner rounding; G2/G3 toolpath smoothing literature |
+| Fatigue / rainflow | ASTM E1049; Marsh et al. 2016 residue concatenation |
+| ECG beat templates | Agostinelli et al. SBMM 2016; ESBMM 2020; Cycle-GAN / BeatDiff |
 
-MCP `research_search_papers` was useful for ECG / LoopGen / DWTS confirmation; broad keyword queries (“periodization”, “wrap”) were noisy (history/chem false positives) — prefer domain-qualified queries.
+MCP `research_search_papers` / `research_get_paper` (user-klaut-research) used for COT, ECG, OFDM, CNC, climate normals confirmation; broad keyword queries (“periodization”, “wrap”, “PRI wrap”) remain noisy (chemRxiv / history false positives) — prefer domain-qualified queries + DOI checks.
 
 ---
 
 ## 9. One-line takeaway
 
 **Transfer hardest where classical fade already “good enough”; transfer most valuable where prolonged tiling exposes cliffs that fixed crossfades smear rather than heal — and where a searchable repair graph can be scored by a residual like DenoiseOpt’s \(R\).** Top soil: wavetable/sample loops, grains/PSOLA splices, and 1D analogues of graphics seam optimization.
+
+---
+
+## 10. Natural sciences & engineering transfer
+
+**Status:** deep-dive addendum (2026-07-23). Scope locked to **natural sciences + engineering/technology**. Music/synth/graphics entertainment are out of scope here except where a method is engineering-core (e.g. Harris DFT windows, CNC G2 continuity). Citations below were checked via OpenAlex/Crossref/Semantic Scholar/arXiv or publisher OA PDFs; **no invented papers**.
+
+### 10.1 Mapping rule (what is / is not a DenoiseOpt wrap)
+
+DenoiseOpt-style transfer needs **all four**:
+
+1. A **known period / cycle length** \(L\) (beat, shaft rev, AC cycle, CPI, closed contour, year).
+2. A **measurable discontinuity at the seam** \(x[L{-}1]\!\leftrightarrow\!x[0]\) (value and/or derivative cliff).
+3. A **prolonged tiling / multi-period protocol** that exposes the cliff (order spectrum, multi-rev FFT, repeated gait, tiled annual cycle, repeated load block).
+4. A **repair operator Θ** scored by residual \(R\) vs an ideal sibling (or physics-constrained proxy) — not only “denoise the whole recording.”
+
+| Maps to wrap seam | Does **not** map (do not force) |
+|-------------------|----------------------------------|
+| Angle-domain one-rev vibration with tach resampling cliffs | Generic bearing ML classifiers without angle periodization |
+| ECG/PPG **beat templates** stitched end-to-end after length normalization | Full-trace clinical denoise without beat segmentation |
+| Synchrophasor / PQ **DFT window** mismatch to exact AC period (leakage) | Optimal power flow, grid OPF, cyber-PQ unrelated to cycle edges |
+| NMR/FTIR **FID truncation → sinc wiggles** (rectangular periodization) | Quantum computing-with-NMR tutorials; StyleGAN “FID” metric |
+| CNC **closed contour** G0/G1 corners needing G2/G3 join | General VLA / mobile-manipulation foundation models |
+| Climate **annual cycle** Dec↔Jan endpoint mismatch | Paleo calendar-month redefinition alone (orbital, not sample wrap) |
+| Fatigue **block repetition / rainflow residue close** | Cyclic voltammetry iR-drop (electrochemical IR, not period seam) |
+| OFDM **insufficient CP / windowing** → ISI/ICI | “Cyclic prefix” as marketing synonym for fade — CP *is* a deliberate wrap protocol, but Θ is usually length/window design, not waveform bake |
+| Radar **Doppler CPI window leakage** (slow-time periodize) | Range **ambiguity** (PRI modulo fold of *true range*) — aliasing, not seam heal |
+
+### 10.2 Ranked domains
+
+#### HIGH (strong structural match; Θ-search plausible)
+
+| Rank | Domain | Why high | Key verified citations | Classical (a) vs learning (b) vs NAS (c) |
+|------|--------|----------|------------------------|------------------------------------------|
+| H1 | **Rotating machinery / COT / angle-domain vibration** | One shaft revolution is literally a period; COT builds the angular “table”; interpolation / constant-accel assumptions inject periodic errors; multi-rev order spectra = prolonged tiling. | Fyfe & Munck, *MSSP* **11**(2):187–205, 1997, doi:10.1006/mssp.1996.0056; Saavedra & Rodríguez, *Shock Vib.* **13**(1):13–32, 2005, doi:10.1155/2006/838097; Bossley et al., *MSSP* **13**(4):627–641, 1999 (hybrid COT); Cheng, Gao, Wang, Wang, Wen, Li, *MSSP* **48**(1–2):92–102, 2014, doi:10.1016/j.ymssp.2014.03.004 (envelope deformation under COT); Bonnardot, Randall, Antoni, *IJAV* 2004 (angular resampling for bearings). | (a) dominant; (b) sparse for *seam heal*; (c) open — best engineering soil for DenoiseOpt-like \(R\). |
+| H2 | **CNC / CAM closed toolpaths (engineering continuity)** | Piecewise-linear G01 paths have **tangency/curvature discontinuities**; local corner rounding restores G2/G3; closed contours must meet at start/end. Prolonged “tiling” = repeated toolpath loops / contouring. | Beudaert, Lavernhe, Tournier, *Int. J. Mach. Tools Manuf.* **73**:9–16, 2013, doi:10.1016/j.ijmachtools.2013.05.008; Beudaert et al. feedrate/jerk papers same venue 2011–2012; Zhong et al. toolpath interpolation review, *Int. J. Autom. Comput.* 2019, doi:10.1007/s11633-019-1190-y. | (a) mature (Bezier/NURBS/PH); (c) meta-search of local repair graphs scored by contour error + vibration residual is open. |
+| H3 | **ECG / PPG beat-cycle templates** | Beats are quasi-periods; template methods **modulate length then concatenate**; concatenation seams + morphology fidelity are explicit. Prolonged residual = multi-beat stitch error. | Agostinelli et al., Segmented-Beat Modulation Method, *Med. Eng. Phys.* **38**(6):560–568, 2016, doi:10.1016/j.medengphy.2016.03.011; Extended SBMM, *Electronics* **9**(7):1178, 2020, doi:10.3390/electronics9071178; Kıranyaz et al., Operational Cycle-GANs, *IEEE TBME* 2022 / arXiv:2202.00589; BeatDiff, NeurIPS 2024. | (a) SBMM; (b) Cycle-GAN/diffusion strong but clinical; (c) wrap-local NAS rare. |
+| H4 | **Power systems: AC-cycle / synchrophasor DFT periodization** | Phasor estimation assumes nearly periodic AC; off-nominal frequency or non-integer cycles → **spectral leakage** = wrap mismatch in analysis window. Prolonged protocol = streaming PMU estimates / PQ harmonics. | Harris, *Proc. IEEE* **66**(1):51–83, 1978 (windows); Romano, EPFL thesis 2016 (DFT synchrophasors); Frigo, Pegoraro, Toscani IpDFT / Taylor–Fourier line (e.g. *Appl. Sci.* 2021 doi:10.3390/app11052261; *IEEE TIM* 2024 doi:10.1109/TIM.2024.3384553); IEEE Std C37.118.1 performance classes (P/M). | (a) windows + IpDFT; (b)/(c) data-dependent Θ rare; transfer is multi-objective (TVE, response time), not musical \(R\). |
+
+#### MEDIUM (same math object; different success metric or weaker cliff)
+
+| Rank | Domain | Why medium | Key verified citations | Caveat |
+|------|--------|------------|------------------------|--------|
+| M1 | **NMR / FTIR FID / interferogram truncation** | Truncated FID ≡ hard rectangular window → **sinc ringing** after FT (convolution theorem). Apodization forces smooth decay to zero = classical seam softener. | Ernst & Anderson FT-NMR lineage (standard texts); Harris 1978; facility/processing notes on FID truncation (e.g. Manchester NMR processing notes; U Ottawa NMR Facility blog 2007 — cite as pedagogy, not primary research). | Repair is almost always **window**, not inventing a continuous sibling FID; sensitivity–resolution tradeoff dominates. |
+| M2 | **Communications: OFDM cyclic prefix / windowed OFDM** | CP makes the channel circular so one OFDM symbol is a **periodized** block; insufficient CP or bad windowing → ISI/ICI at symbol edges. | Cruz-Roldán et al., *Intersymbol and Intercarrier Interference in OFDM Systems*, arXiv:2012.04527 (unified CP/CS/window formulation). | **Careful analogy:** CP is a *designed* wrap protocol. DenoiseOpt would map to searching CP length / TX-RX windows / edge taper Θ — not baking musical tables. Do not claim OFDM invents wrap repair. |
+| M3 | **Radar / sonar: Doppler CPI periodization** | Slow-time samples over a CPI are DFT’d; edge mismatch → Doppler leakage (windows again). | Classical pulse-Doppler notes (MIT LL / textbook PRF tradeoffs); Neuberger et al. arXiv:2601.09317 (range–Doppler–acceleration; modern, waveform-focused). | **Range PRI wrap** is **ambiguity/aliasing** of true range — **not** a 1D waveform seam to heal. Only CPI / matched-filter sidelobe control is analogous. |
+| M4 | **Oceanography / climate / paleoclimate seasonal cycles** | Extracted annual cycle must join Dec↔Jan; unconstrained splines create **year-boundary discontinuities**; harmonic / periodic-BC splines fix them. | Arguez & Applequist, *J. Atmos. Oceanic Technol.*, 2013, doi:10.1175/JTECH-D-12-00195.1 (constrained harmonic daily normals; replaces spline with year-end issues); Pezzulli, Stephenson, Hannachi, *J. Climate* 2005; Wongsai, Wongsai, Huete, *Remote Sens.* **9**(12):1254, 2017, doi:10.3390/rs9121254 (cubic spline with annual periodic BC). | Usually **statistical seasonality**, not a hard sample cliff; DenoiseOpt \(R\) would be niche (forcing datasets / viz / downscaling). |
+| M5 | **Control / robotics: periodic gait / cyclic references** | One stride is a multi-channel period; open-loop tiling needs C0/C1 joins; CPG phases define the wrap. | Shao et al., phase-guided gait, *IEEE Robot. Autom. Lett.* 2022 / arXiv:2201.00206; Freeman et al. soft-robot gait cycles, *IEEE TRO* 2025 / arXiv:2402.03617. | Stability / contact dominate; spectral \(R\) secondary. |
+| M6 | **Fatigue load cycles / rainflow residue** | Variable-amplitude histories leave **open residue**; concatenation / block repetition closes hysteresis — a form of period stitch for damage counting. | ASTM E1049 (cycle counting practices); Marsh et al., *Int. J. Fatigue*, 2016, doi:10.1016/j.ijfatigue.2015.10.007 (residue processing; Amzallag et al. 1994 method). | Goal is **damage sum**, not continuous waveform sibling; analogy is residue-under-tiling, not click removal. |
+
+#### SPECULATIVE / WEAK (mention only with caveats)
+
+| Domain | Verdict |
+|--------|---------|
+| **Cyclic voltammetry** | iR-drop / uncompensated resistance distorts *I–V* loops (Elgrishi et al., *J. Chem. Educ.* 2018). **Not** a period-seam cliff. Keep as negative control. |
+| **Tribology friction loops** | Closed fretting/friction hysteresis exists, but literature is physics of wear, not wrap bake. Speculative only if angle-synced friction traces show tach-like resampling seams. |
+| **Generic “signal healing” medicine** | Inpainting/denoise without periodize protocol — language overlap only. |
+| **Seam carving / Cycle-GAN-VC** | Already excluded in §4.12. |
+
+### 10.3 Domain-by-domain depth (engineering focus)
+
+#### 10.3.1 Rotating machinery (best non-audio match)
+
+**Object.** Vibration \(v(t)\) + tach/keyphasor → angular signal \(v(\theta)\), \(\theta\in[0,2\pi)\). One rev = DenoiseOpt cycle.
+
+**Artifact.** COT resample times from quadratic angle model between tach pulses; coarse tach rate / bad interpolation → amplitude/phase errors that **repeat every rev** and pollute order bins (Fyfe & Munck 1997; Saavedra & Rodríguez 2005). Envelope-after-COT can further warp the synchronized envelope (Cheng et al. 2014).
+
+**Prolonged \(R\).** Tile \(N\) revolutions of a repaired one-rev table; score order-spectrum residual vs a high-tach-rate / encoder “ideal sibling,” plus optional BPFO/BPFI peak fidelity (do not erase real faults).
+
+**Θ search space.** Interpolation kernels, tach smoothing, local seam crossfade in angle, BLEP-like anti-cliff for impulsive faults, tiny residual nets — scored by prolonged multi-rev \(R\). This is the cleanest **(c)** experiment outside audio.
+
+#### 10.3.2 ECG / PPG
+
+**Object.** Beat-aligned templates after R-peak (ECG) or systolic-peak (PPG) detection.
+
+**Artifact.** Naive template average + concatenate ignores HRV → morphology error at joins; SBMM modulates TUP duration before/after median template (Agostinelli et al. 2016). Cuts/noise still produce cliffs; Cycle-GAN restoration (Kıranyaz 2022) maps corrupted→clean segments without an explicit wrap protocol.
+
+**Maps.** Beat-boundary continuity + multi-beat tiled residual.
+
+**Does not map.** Inventing healthy morphology for arrhythmia (clinical veto); whole-record SE without segmentation.
+
+**Θ score.** Edge RMSE at R–R join + morphology distance (DTW / wavelet) + cardiologist-safe constraints — **not** musical \(R\).
+
+#### 10.3.3 Power systems / PQ / synchrophasors
+
+**Object.** Nominal 50/60 Hz periods; DFT / IpDFT windows of a few cycles.
+
+**Artifact.** Off-nominal \(f\), harmonics, interharmonics → leakage / picket-fence (Harris 1978; Romano 2016; IpDFT literature). This is the **analysis-domain** twin of DenoiseOpt’s wrap cliff.
+
+**Maps.** Window / taper / fractional-cycle alignment as Θ; prolonged residual = TVE / FE / RFE over streaming windows.
+
+**Does not map.** Healing the physical voltage waveform into a “pretty sinusoid” (would destroy PQ information). Prefer **estimator** Θ, not voltage bake.
+
+#### 10.3.4 NMR / FTIR
+
+**Object.** Complex FID / interferogram of length \(N\).
+
+**Artifact.** Early truncation = multiply by rect → convolve spectrum with sinc → baseline wiggles. Apodization (exponential, cosine-bell, etc.) is classical Θ.
+
+**Maps.** Truncation cliff at end of FID (often forced to zero, not circular wrap of a musical table). Closest when zero-filling after abrupt cutoff.
+
+**Does not map.** Learned “sibling FID” without physical decay model — easy to hallucinate peaks. Prefer search over apodization graphs scored by residual vs long-acquisition sibling (Noise2Noise-adjacent).
+
+#### 10.3.5 Radar / sonar
+
+**Split carefully:**
+
+- **PRI / range ambiguity:** returns fold modulo unambiguous range — **aliasing**. Resolve with staggered PRF, not seam bake.
+- **Doppler CPI FFT:** slow-time periodization + window = medium analogy (Harris again).
+- **Pulse compression range sidelobes:** matched-filter design, not cycle wrap.
+
+Only the middle bullet is DenoiseOpt-adjacent.
+
+#### 10.3.6 Ocean / climate / paleoclimate
+
+**Object.** Climatological annual cycle \(c(d)\), \(d=1..365/366\).
+
+**Artifact.** Cubic spline through 12 monthly normals without periodic BC → Dec–Jan jump; Arguez & Applequist (2013) replace that with constrained harmonics; Wongsai et al. (2017) use cubic splines with **smooth periodicity** BCs for MODIS LST.
+
+**Maps.** Year-wrap continuity of the extracted seasonal component.
+
+**Does not map.** Nonstationary modulated seasonality as a whole (Pezzulli 2005) — harmonic model, not cliff repair.
+
+#### 10.3.7 CNC / CAM / tribology-adjacent manufacturing
+
+**Object.** Closed contour toolpath \(\mathbf{r}(s)\), \(s\in[0,1]\), \(\mathbf{r}(0)=\mathbf{r}(1)\).
+
+**Artifact.** G01 corners = G0/G1 discontinuities → feedrate collapse, vibration (Beudaert et al. 2013). Local corner rounding / NURBS transitions restore G2+.
+
+**Maps.** Spatial wrap of a closed path; prolonged residual = repeated contouring error / accelerometer residual.
+
+**Tribology.** Only if friction/force is sampled vs crank angle with the same tach issues as §10.3.1 — otherwise weak.
+
+#### 10.3.8 Control / robotics gaits
+
+**Object.** One gait cycle of joint references / CPG phases.
+
+**Artifact.** Mode switches and open-loop tile joins need C0/C1 (smoothstep, phase resets). Shao et al. (2022) use explicit phases as gait interface.
+
+**Maps.** Multi-channel wavetable of one stride; \(R\) = torque / tracking residual under repeated strides.
+
+**Does not map.** End-to-end RL policies without an explicit cycle table.
+
+#### 10.3.9 Communications (OFDM) — careful
+
+CP + optional CS + TX/RX windows exist specifically to manage **circularity and edge interference** (Cruz-Roldán et al. 2020). DenoiseOpt-like work would be **meta-search of CP/window graphs** under multipath traces scored by BER/SINR — engineering-valid but culturally different from waveform healing. State as **protocol analogy**, not prior art for audio tables.
+
+#### 10.3.10 Materials: fatigue vs voltammetry
+
+- **Fatigue:** Rainflow leaves residue; Marsh et al. (2016) show **concatenating residue periods** recovers transition cycles — prolonged tiling of load blocks. Medium structural analogy.
+- **CV:** Keep Elgrishi 2018 as **anti-citation** (iR-drop ≠ wrap).
+
+### 10.4 Concrete experiment ideas (outside audio)
+
+1. **Angle-domain bearing “wavetable” bake (H1 — primary).**  
+   Record vibration + high-rate encoder on a run-up. Build one-rev tables with deliberately degraded COT (1 ppr tach, linear interp). Search Θ (interp + local angle-seam ops) scored by prolonged multi-rev order residual vs encoder-ideal sibling. Report BPFO visibility before/after (must not erase faults).
+
+2. **ECG beat-seam residual benchmark (H3).**  
+   MIT-BIH / CPSC beats; compare STM vs SBMM vs DenoiseOpt-like Θ on **beat-join RMSE** + multi-beat tiled residual, with arrhythmia held out. Cardiology metrics mandatory; no claim of clinical device.
+
+3. **Synchrophasor window NAS (H4).**  
+   Synthetic off-nominal + harmonic grids (IEEE C37.118.1 test suite). Search short operator graphs over window family / IpDFT depth scored by TVE+latency Pareto — prolonged = streaming windows.
+
+4. **Closed G01 contour heal (H2).**  
+   Synthetic square/rounded CAD contours exported as dense G01. Meta-search local corner repairs under chord-error constraint; score accelerometer residual on a desktop CNC or sim vs Beudaert-style analytic blend baseline.
+
+5. **FID apodization search (M1 — low-cost probe).**  
+   Truncate long FIDs; search classical apodization graphs scored by residual vs full-length sibling spectrum (peak list + baseline wiggle energy). Positions DenoiseOpt \(R\) against matched-filter theory.
+
+### 10.5 Sci/eng takeaway (ranked for DenoiseOpt transfer)
+
+**Best bets:** (1) angle-domain machinery COT, (2) CNC closed-contour continuity, (3) ECG/PPG beat-template seams, (4) synchrophasor/PQ window periodization, (5) NMR FID apodization search as a cheap physics probe.  
+**Handle with care:** OFDM CP (protocol twin), radar Doppler windows (yes) vs PRI range ambiguity (no), climate year-wrap (statistical), fatigue residue concat (damage, not waveform).  
+**Reject as wrap prior art:** cyclic voltammetry iR-drop, generic medical “healing,” seam carving, musical LoopGen (out of this section’s scope but still the closest *audio* neighbor).
