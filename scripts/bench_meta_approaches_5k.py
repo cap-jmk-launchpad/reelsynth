@@ -1128,6 +1128,150 @@ DISPLAY_NAMES = {
     "hybrid_lstm": "Ours (hybrid GA–PPO)",
 }
 
+# Okabe–Ito (same as learning-curve figure)
+BAR_COLORS = {
+    "random": "#000000",
+    "cmaes": "#0072B2",
+    "reinforce": "#009E73",
+    "aging_evo": "#E69F00",
+    "tpe": "#CC79A7",
+    "hybrid_lstm": "#D55E00",
+}
+
+
+def plot_bars(aggregate: dict[str, Any], out_png: Path, out_pdf: Path | None = None) -> None:
+    """At-a-glance bar chart: champ R (+ optional ΔR panel). Manuscript display names."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    order = [m for m in APPROACHES if any(r["method"] == m for r in aggregate.get("table", []))]
+    by_m = {r["method"]: r for r in aggregate.get("table", [])}
+    labels = [DISPLAY_NAMES.get(m, m) for m in order]
+    rs = [float(by_m[m]["champ_r"]) for m in order]
+    deltas = [float(by_m[m]["delta_r_vs_dual_cosine"]) for m in order]
+    colors = [BAR_COLORS.get(m, "#666666") for m in order]
+    hatches = ["", "//", "\\\\", "xx", "..", "++"]
+
+    fig, (ax0, ax1) = plt.subplots(
+        1, 2, figsize=(7.2, 3.4), gridspec_kw={"width_ratios": [1.15, 1.0]}
+    )
+    x = np.arange(len(order))
+    bars0 = ax0.bar(x, rs, color=colors, edgecolor="#333333", linewidth=0.8, width=0.72)
+    for b, h in zip(bars0, hatches):
+        b.set_hatch(h)
+    ax0.set_xticks(x)
+    ax0.set_xticklabels(labels, rotation=28, ha="right", fontsize=7.5)
+    ax0.set_ylabel("Champion prolonged $R$")
+    ax0.set_title("(a) Absolute champion $R$@5k")
+    ymin = max(0.96, min(rs) - 0.008) if rs else 0.96
+    ax0.set_ylim(ymin, min(1.0, max(rs) + 0.004) if rs else 1.0)
+    ax0.grid(True, axis="y", alpha=0.28)
+    base = aggregate.get("baseline_dual_cosine")
+    if base is not None:
+        ax0.axhline(float(base), color="#999999", linestyle="--", linewidth=1.2, label="DualCosine")
+        ax0.legend(loc="lower right", fontsize=7, frameon=False)
+
+    bars1 = ax1.bar(x, deltas, color=colors, edgecolor="#333333", linewidth=0.8, width=0.72)
+    for b, h in zip(bars1, hatches):
+        b.set_hatch(h)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(labels, rotation=28, ha="right", fontsize=7.5)
+    ax1.set_ylabel("$\\Delta R$ vs DualCosine")
+    ax1.set_title("(b) Gap vs DualCosine (reporting only)")
+    ax1.axhline(0.0, color="#666666", linewidth=0.8)
+    ax1.grid(True, axis="y", alpha=0.28)
+
+    fig.suptitle(
+        "Matched 5k meta-approach comparison (seed 1902771841)",
+        fontsize=10,
+        y=1.02,
+    )
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=220, bbox_inches="tight")
+    if out_pdf is not None:
+        fig.savefig(out_pdf, bbox_inches="tight")
+    plt.close(fig)
+
+
+def build_aggregate_from_summaries(
+    out_dir: Path,
+    *,
+    iters: int,
+    seed: int,
+    batch: int,
+    fit_steps: int,
+    pop_size: int,
+    device: str,
+    approaches: list[str] | None = None,
+) -> dict[str, Any]:
+    """Rebuild publishable aggregate JSON from per-approach summary.json files."""
+    names = list(approaches or APPROACHES)
+    summaries: list[dict[str, Any]] = []
+    for name in names:
+        sp = out_dir / name / "summary.json"
+        if not sp.is_file():
+            raise FileNotFoundError(f"missing summary for {name}: {sp}")
+        summaries.append(json.loads(sp.read_text(encoding="utf-8")))
+    baseline = summaries[0].get("baseline_dual_cosine")
+    for s in summaries:
+        if s.get("baseline_dual_cosine") is not None:
+            baseline = s["baseline_dual_cosine"]
+            break
+    return {
+        "schema": "denoiseopt.meta_approach_compare.v1",
+        "publishable": True,
+        "seed": seed,
+        "iters": iters,
+        "batch": batch,
+        "fit_steps": fit_steps,
+        "pop_size": pop_size,
+        "device": device,
+        "baseline_dual_cosine": baseline,
+        "lstm_in_search_vocab": True,
+        "xlstm_in_search_vocab": True,
+        "reward_modes": list(getattr(og, "REWARD_MODES", ())),
+        "blocks": list(BLOCKS),
+        "approaches": {s["approach"]: s for s in summaries},
+        "table": [
+            {
+                "method": s["approach"],
+                "champ_r": s["champ_raw"],
+                "delta_r_vs_dual_cosine": s["delta_r_vs_dual_cosine"],
+                "wall_h": s["wall_h"],
+                "lstm_in_champ": s["lstm_in_champ"],
+                "xlstm_in_champ": s.get("xlstm_in_champ", False),
+            }
+            for s in summaries
+        ],
+        "created_at": utc_now(),
+    }
+
+
+def publish_aggregate_artifacts(aggregate: dict[str, Any], out_dir: Path) -> tuple[Path, Path, Path]:
+    """Write aggregate JSON, learning-curve PNG, bar chart, and TeX table into paper figures."""
+    paper_fig = META_ROOT / "paper" / "v7" / "figures"
+    paper_fig.mkdir(parents=True, exist_ok=True)
+    agg_path = out_dir / "meta_approach_compare.json"
+    agg_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
+    shutil.copy2(agg_path, paper_fig / "meta_approach_compare.json")
+
+    png = paper_fig / "fig_meta_approach_compare.png"
+    plot_compare(aggregate, png)
+    shutil.copy2(png, out_dir / "fig_meta_approach_compare.png")
+
+    bars_png = paper_fig / "meta_approach_bars.png"
+    bars_pdf = paper_fig / "meta_approach_bars.pdf"
+    plot_bars(aggregate, bars_png, bars_pdf)
+    shutil.copy2(bars_png, out_dir / "meta_approach_bars.png")
+
+    write_meta_table_tex(aggregate, paper_fig / "meta_approaches_table.tex")
+    return agg_path, png, bars_png
+
+
 def plot_compare(aggregate: dict[str, Any], out_png: Path) -> None:
     import matplotlib
 
@@ -1221,6 +1365,11 @@ def main() -> int:
         type=Path,
         default=ROOT / "brand" / "artifacts" / "meta_approach_compare",
     )
+    ap.add_argument(
+        "--aggregate-only",
+        action="store_true",
+        help="Rebuild aggregate JSON + TeX + learning-curve/bar figures from summary.json; no search.",
+    )
     args = ap.parse_args()
 
     device = torch.device(args.device if args.device != "cuda" or torch.cuda.is_available() else "cpu")
@@ -1230,6 +1379,39 @@ def main() -> int:
     for n in names:
         if n not in APPROACHES:
             raise SystemExit(f"Unknown approach {n!r}; choose from {APPROACHES}")
+
+    if args.aggregate_only:
+        aggregate = build_aggregate_from_summaries(
+            out_dir,
+            iters=args.iters,
+            seed=args.seed,
+            batch=args.batch,
+            fit_steps=args.fit_steps,
+            pop_size=args.pop_size,
+            device=str(device),
+            approaches=names,
+        )
+        agg_path, png, bars_png = publish_aggregate_artifacts(aggregate, out_dir)
+        write_status(
+            out_dir,
+            phase="all_complete",
+            target_iters=args.iters,
+            approaches=names,
+            current=None,
+            current_iter=args.iters,
+            pid=os.getpid(),
+            extra={
+                "aggregate": str(agg_path),
+                "figure": str(png),
+                "bars": str(bars_png),
+                "mode": "aggregate_only",
+            },
+        )
+        print(json.dumps(aggregate["table"], indent=2), flush=True)
+        print(f"Wrote {agg_path}", flush=True)
+        print(f"Wrote {png}", flush=True)
+        print(f"Wrote {bars_png}", flush=True)
+        return 0
 
     # Protect long runs: --no-resume alone must not wipe progress.
     allow_fresh = bool(args.force_fresh)
@@ -1303,17 +1485,7 @@ def main() -> int:
         ],
         "created_at": utc_now(),
     }
-    agg_path = out_dir / "meta_approach_compare.json"
-    agg_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
-
-    paper_fig = META_ROOT / "paper" / "v7" / "figures"
-    paper_fig.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(agg_path, paper_fig / "meta_approach_compare.json")
-
-    png = paper_fig / "fig_meta_approach_compare.png"
-    plot_compare(aggregate, png)
-    shutil.copy2(png, out_dir / "fig_meta_approach_compare.png")
-    write_meta_table_tex(aggregate, paper_fig / "meta_approaches_table.tex")
+    agg_path, png, bars_png = publish_aggregate_artifacts(aggregate, out_dir)
     write_status(
         out_dir,
         phase="all_complete",
@@ -1322,11 +1494,12 @@ def main() -> int:
         current=None,
         current_iter=args.iters,
         pid=os.getpid(),
-        extra={"aggregate": str(agg_path), "figure": str(png)},
+        extra={"aggregate": str(agg_path), "figure": str(png), "bars": str(bars_png)},
     )
     print(json.dumps(aggregate["table"], indent=2), flush=True)
     print(f"Wrote {agg_path}", flush=True)
     print(f"Wrote {png}", flush=True)
+    print(f"Wrote {bars_png}", flush=True)
     return 0
 
 
