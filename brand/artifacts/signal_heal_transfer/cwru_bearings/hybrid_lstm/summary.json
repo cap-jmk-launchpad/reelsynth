@@ -1,0 +1,77 @@
+{
+  "approach": "hybrid_lstm",
+  "iters": 250,
+  "iters_done": 250,
+  "seed": 1902771841,
+  "champ_raw": 0.8869196176528931,
+  "champ_r": 0.8903362843195597,
+  "history_peak_champ_raw": 0.8870948553085327,
+  "baseline_dual_cosine": 0.7834904193878174,
+  "nobake": 0.8679422736167908,
+  "delta_r_vs_dual_cosine": 0.10342919826507568,
+  "champ_arch": {
+    "depth": 12,
+    "width": 16,
+    "act": "silu",
+    "ops": [
+      "cycle_net",
+      "skip_blend"
+    ],
+    "wet": 0.5334429876701008,
+    "fir": [
+      0.5833104248156142,
+      0.25912494322031254,
+      0.4094761883718637,
+      0.1665421920598879,
+      0.07076931697117937
+    ],
+    "cell_kind": "mlp",
+    "soft_logits": [
+      -0.8431345663359484,
+      0.027577117927605616,
+      -0.4506905521719321,
+      0.839172910911197,
+      0.2733045067229642,
+      0.4265280456408639,
+      0.6646487641547146,
+      0.5585955069843893,
+      -0.11523703019445858,
+      0.33825607133153046,
+      0.0787662968299373,
+      -0.27070150117058095,
+      0.3803744273524087,
+      1.167444339848031,
+      -0.168249810303175
+    ],
+    "blocks": [
+      "mlp",
+      "tf_split",
+      "dual_path",
+      "noise_cond"
+    ],
+    "use_adv_aux": true,
+    "moe_mode": "moe_parallel"
+  },
+  "champ_hp": {
+    "lr": 0.08511604007094715,
+    "fit_steps": 54,
+    "batch": 32,
+    "entropy_coef": 0.059263315347852945,
+    "ppo_clip": 0.25000000000000006,
+    "adv_coef": 0.00780347922075432,
+    "reward_mode": "abs_r"
+  },
+  "branch_best": {
+    "ppo": 0.885719358921051,
+    "ga": 0.8832349181175232,
+    "pbt": 0.884894609451294,
+    "nas": 0.8809938728809357,
+    "combo": 0.8869196176528931
+  },
+  "wall_s": 1143.3729808330536,
+  "finished_at": "20260723T195145Z",
+  "partial": false,
+  "note": "Recovered after stdout-pipe kill; arch from last checkpoint (it=200); history peak R=0.8871",
+  "metric": "prolonged residual R (DenoiseOpt)",
+  "holdout_refit_R": 0.870513379573822
+}

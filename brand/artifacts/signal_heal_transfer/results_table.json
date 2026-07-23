@@ -1,0 +1,128 @@
+{
+  "finished_at": "20260723T201503Z",
+  "config": {
+    "iters": 250,
+    "fit_steps": 40,
+    "batch": 48,
+    "pop_size": 8,
+    "seed": 1902771841,
+    "device": "cuda",
+    "period_l": 256,
+    "metric": "prolonged residual R (DenoiseOpt)",
+    "method": "hybrid_lstm only"
+  },
+  "datasets_ran": [
+    "cwru_bearings",
+    "mitbih_ecg"
+  ],
+  "skipped": {
+    "mfpt_bearings": "MFPT zip URL returned HTML (login/wall); skipped",
+    "kit_cnc": "skipped \u2014 KIT CNC DOI browser/login flow",
+    "ieee_pmu": "skipped \u2014 IEEE DataPort free-account wall",
+    "bmrb_nmr": "skipped \u2014 BMRB FID deferred"
+  },
+  "skipped_optional": {
+    "mfpt_bearings": "MFPT zip URL returned HTML (login/wall); skipped",
+    "kit_cnc": "skipped \u2014 KIT CNC DOI browser/login flow",
+    "ieee_pmu": "skipped \u2014 IEEE DataPort free-account wall",
+    "bmrb_nmr": "skipped \u2014 BMRB FID deferred"
+  },
+  "table": {
+    "cwru_bearings": {
+      "no_bake": 0.8674694895744324,
+      "dual_cosine": 0.7846347093582153,
+      "soft_periodize_hann": 0.770349383354187,
+      "linear_fade": 0.7928553819656372,
+      "endpoint_pin_mean": 0.798958957195282,
+      "seam_fir3": 0.7864798307418823,
+      "cot_linear_periodize": 0.8674694895744324,
+      "cot_cubic_then_dualcosine": 0.7846347093582153,
+      "ours_hybrid_lstm": 0.870513379573822
+    },
+    "mitbih_ecg": {
+      "no_bake": 0.6403351426124573,
+      "dual_cosine": 0.20090612769126892,
+      "soft_periodize_hann": 0.14786206185817719,
+      "linear_fade": 0.27193111181259155,
+      "endpoint_pin_mean": 0.7795746326446533,
+      "seam_fir3": 0.6614500284194946,
+      "spline_join": 0.7133563756942749,
+      "beat_average_sbmm_lite": 0.21354642510414124,
+      "ours_hybrid_lstm": 0.8792431354522705
+    }
+  },
+  "per_dataset": {
+    "cwru_bearings": {
+      "meta": {
+        "domain": "bearings",
+        "files": [
+          "105.mat",
+          "169.mat",
+          "209.mat",
+          "97.mat"
+        ],
+        "n": 256,
+        "period_l": 256,
+        "wrap": "Per-rev windows from CWRU DE @12 kHz; ideal=cubic resample to L; engine=linear (bad-COT proxy) + DenoiseOpt-style wrap cliff+noise.",
+        "fs_hz": 12000.0,
+        "citation": "Case Western Reserve University Bearing Data Center",
+        "seed": 1902771841
+      },
+      "baseline_labels": {
+        "no_bake": "classical / passthrough",
+        "dual_cosine": "classical DualCosine fade",
+        "soft_periodize_hann": "classical Hann soft-periodize",
+        "linear_fade": "classical linear fade",
+        "endpoint_pin_mean": "classical endpoint pin",
+        "seam_fir3": "classical seam FIR3",
+        "cot_linear_periodize": "bearings classical bad-COT control (passthrough of linear resample)",
+        "cot_cubic_then_dualcosine": "bearings classical: DualCosine on cracked (not published deep COT)",
+        "ours_hybrid_lstm": "Ours (hybrid GA\u2013PPO / hybrid_lstm outer loop)"
+      },
+      "champ_raw": 0.8869196176528931,
+      "holdout_refit_R": 0.870513379573822,
+      "iters_done": 250,
+      "note": "Recovered after stdout-pipe kill; arch from last checkpoint (it=200); history peak R=0.8871"
+    },
+    "mitbih_ecg": {
+      "meta": {
+        "domain": "ecg",
+        "records": [
+          "100",
+          "101",
+          "103",
+          "105",
+          "112",
+          "113",
+          "115",
+          "117",
+          "121",
+          "123"
+        ],
+        "n": 256,
+        "period_l": 256,
+        "wrap": "R\u2013R normal beats resampled to L; ideal=local mean template with mild endpoint equalize (SBMM-lite classical); engine=single beat + wrap cliff.",
+        "fs_hz": 360.0,
+        "citation": "MIT-BIH Arrhythmia Database (PhysioNet, ODC-By 1.0)",
+        "seed": 1902771841,
+        "baseline_note": "ECG baselines are classical board + beat-average / spline join \u2014 not Cycle-GAN / BeatDiff SOTA (those need trained weights)."
+      },
+      "baseline_labels": {
+        "no_bake": "classical / passthrough",
+        "dual_cosine": "classical DualCosine fade",
+        "soft_periodize_hann": "classical Hann soft-periodize",
+        "linear_fade": "classical linear fade",
+        "endpoint_pin_mean": "classical endpoint pin",
+        "seam_fir3": "classical seam FIR3",
+        "spline_join": "ECG classical spline/FIR join (not Cycle-GAN)",
+        "beat_average_sbmm_lite": "ECG classical SBMM-lite beat average (not BeatDiff/Cycle-GAN)",
+        "ours_hybrid_lstm": "Ours (hybrid GA\u2013PPO / hybrid_lstm outer loop)"
+      },
+      "champ_raw": 0.8832423090934753,
+      "holdout_refit_R": 0.8792431354522705,
+      "iters_done": 250,
+      "note": null
+    }
+  },
+  "honesty": "Classical board + domain classical proxies (bad-COT / SBMM-lite). Not a deep SOTA bake-off unless published model weights were run."
+}

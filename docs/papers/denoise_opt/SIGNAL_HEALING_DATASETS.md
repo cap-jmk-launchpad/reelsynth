@@ -52,3 +52,13 @@
 3. **Probe:** KIT CNC *or* synthetic G01 + one MW/BMRB FID + NOAA normals.
 
 Full ranked table, honesty notes, and citations: lit survey **§11**.
+
+## Transfer pilot (2026-07-23)
+
+Publishable-scale wrap-heal pilot using **only** hybrid GA–PPO (`hybrid_lstm`):
+
+- Scripts: `scripts/bench_signal_heal_transfer.py`, `scripts/signal_heal/`, `scripts/download_signal_heal_data.py`
+- Artifacts: `brand/artifacts/signal_heal_transfer/`
+- Results note: [`SIGNAL_HEAL_TRANSFER_PILOT.md`](SIGNAL_HEAL_TRANSFER_PILOT.md)
+
+Ran **CWRU** + **MIT-BIH**. MFPT / KIT / PMU / BMRB skipped (download walls) — see artifact README.

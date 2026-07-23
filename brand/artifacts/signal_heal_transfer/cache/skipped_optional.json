@@ -1,0 +1,5 @@
+{
+  "kit_cnc": "skipped \u2014 KIT CNC DOI needs browser/login flow; not fetched in pilot",
+  "ieee_pmu": "skipped \u2014 IEEE DataPort free account wall",
+  "bmrb_nmr": "skipped \u2014 BMRB FID needs per-entry API hunt; defer to follow-up"
+}
