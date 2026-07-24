@@ -33,7 +33,7 @@ python brand/artifacts/render_benchmark_matrix.py
 
 ## v8 (2026-07-24) — current
 
-Review-response rewrite (scaffold W0; clarity/math/eval/HP in progress).
+Review-response rewrite complete (W0–W5): IMRaD Methods + math formalization; vibrato/hear/WT gallery; HP ±50% OAT sensitivity (500 iters, seed `1902771841`); Discussion/Limitations honesty; `REVIEW_RESPONSE.md` filled.
 See upstream: `denoise-opt-meta/paper/v8` (+ `REVIEW_RESPONSE.md`).
 
 ## v7 (2026-07-19) — archived
