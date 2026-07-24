@@ -1,6 +1,6 @@
-﻿# DenoiseOpt paper (local mirror)
+# DenoiseOpt paper (local mirror)
 
-Canonical versioned paper: **[reeldemo/denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta)** → `paper/v8/`.
+Canonical versioned paper: **[reeldemo/denoise-opt-meta](https://github.com/reeldemo/denoise-opt-meta)** → `paper/Unsupervised_Wavetable_Seam_Artifact_Repair_via_Hybrid_GA-PPO_Meta-Search_v8/`.
 
 **Application lit survey:** [SIGNAL_HEALING_APPLICATIONS_LIT.md](SIGNAL_HEALING_APPLICATIONS_LIT.md) — where wrap/seam/periodize repair could transfer (wavetable, granular, PSOLA, graphics seams, ECG, …).
 
@@ -28,13 +28,13 @@ R=\mathrm{clamp}\!\left(1-\frac{\mathrm{rms}(y_{\mathrm{engine}}-y_{\mathrm{idea
 cargo run -p reelsynth --release --bin bench_denoise_meta
 python brand/artifacts/render_benchmark_matrix.py
 # Full paper:
-#   cd ../denoise-opt-meta/paper/v8 && pdflatex main.tex
+#   cd ../denoise-opt-meta/paper/Unsupervised_Wavetable_Seam_Artifact_Repair_via_Hybrid_GA-PPO_Meta-Search_v8 && pdflatex main.tex
 ```
 
 ## v8 (2026-07-24) — current
 
 Review-response rewrite complete (W0–W5): IMRaD Methods + math formalization; vibrato/hear/WT gallery; HP ±50% OAT sensitivity (500 iters, seed `1902771841`); Discussion/Limitations honesty; `REVIEW_RESPONSE.md` filled.
-See upstream: `denoise-opt-meta/paper/v8` (+ `REVIEW_RESPONSE.md`).
+See upstream: `denoise-opt-meta/paper/Unsupervised_Wavetable_Seam_Artifact_Repair_via_Hybrid_GA-PPO_Meta-Search_v8` (+ `REVIEW_RESPONSE.md`).
 
 ## v7 (2026-07-19) — archived
 

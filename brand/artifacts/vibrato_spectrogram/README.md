@@ -8,7 +8,7 @@ Slow vibrato playback of cracked / DualCosine / Ours on holdout tile **46**.
 - Duration: **2.0 s**
 - Seeds: eval **20260719**, search/refit **1902771841**
 
-Figures: `fig_vibrato_spectrogram.{png,pdf}` (mirrored to `paper/v8/figures/`).
+Figures: `fig_vibrato_spectrogram.{png,pdf}` (mirrored to `paper/Unsupervised_Wavetable_Seam_Artifact_Repair_via_Hybrid_GA-PPO_Meta-Search_v8/figures/`).
 
 Rebuild:
 
